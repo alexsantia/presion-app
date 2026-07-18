@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor de Presión Arterial</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --normal: #2e9e5b;
+    --elevada: #d8a400;
+    --etapa1: #e07a1f;
+    --etapa2: #d9432f;
+    --crisis: #a0182a;
+    --border: #e2e2e2;
+    --bg-card: #ffffff;
+    --bg-page: #f7f7f8;
+    --text: #1d1d1f;
+    --text-muted: #6b6b70;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg-page);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  h1 { font-size: 22px; margin: 0; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .card .value { font-size: 22px; font-weight: 600; }
+  .card .value.small { font-size: 15px; font-weight: 500; }
+  .section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  .section h2 { font-size: 15px; margin: 0 0 12px 0; }
+  .chart-wrap { position: relative; height: 300px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px;
+    font-weight: 600; color: white; white-space: nowrap;
+  }
+  .obs { color: var(--text-muted); font-size: 12px; max-width: 360px; }
+  .flag { color: var(--etapa2); font-size: 11px; font-weight: 600; }
+  form.add-form { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: end; }
+  form.add-form label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  form.add-form input, form.add-form textarea {
+    width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+  form.add-form .full { grid-column: 1 / -1; }
+  form.add-form button {
+    background: #1d1d1f; color: white; border: none; border-radius: 6px; padding: 9px 14px; font-size: 13px; cursor: pointer;
+  }
+  form.add-form button:hover { background: #333; }
+  .alert-box {
+    border-left: 4px solid var(--etapa2); background: #fdf1ef; padding: 12px 14px;
+    border-radius: 6px; font-size: 13px; margin-bottom: 10px;
+  }
+  .alert-box.note { border-left-color: var(--elevada); background: #fdf8e8; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .btn-secondary {
+    background: white; border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; font-size: 12px; cursor: pointer;
+  }
+  .btn-secondary:hover { background: #f0f0f0; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  textarea#shareOutput { width: 100%; height: 160px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+  .row-actions { display: flex; gap: 6px; white-space: nowrap; }
+  .btn-mini { padding: 4px 9px; font-size: 11px; border-radius: 5px; border: 1px solid var(--border); background: white; cursor: pointer; color: var(--text); }
+  .btn-mini:hover { background: #f0f0f0; }
+  .btn-mini.danger { color: #a0182a; border-color: #f0c9c4; }
+  .btn-mini.danger:hover { background: #fdf1ef; }
+  #cancelEditBtn { background: white; color: var(--text); border: 1px solid var(--border); }
+  .editing-banner { grid-column: 1 / -1; font-size: 12px; color: var(--elevada); font-weight: 600; margin-bottom: -2px; }
+  .status-banner { font-size: 12px; padding: 8px 12px; border-radius: 6px; margin-bottom: 14px; }
+  .status-banner.loading { background: #eef2fb; color: #2e5fb0; }
+  .status-banner.error { background: #fdf1ef; color: #a0182a; }
+  .logout-link { font-size: 12px; color: var(--text-muted); text-decoration: none; }
+  .logout-link:hover { text-decoration: underline; }
+  #emptyState { font-size: 13px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Monitor de Presión Arterial</h1>
+  <form method="POST" action="/logout"><button type="submit" class="logout-link" style="background:none;border:none;cursor:pointer;">Cerrar sesión</button></form>
+</div>
+<div class="subtitle">Registro personal · categorías según guía AHA (2017) · datos en Google Sheets</div>
+
+<div id="statusBanner"></div>
+
+<div class="grid" id="summaryCards"></div>
+
+<div class="section" id="alertsSection">
+  <h2>Alertas y notas</h2>
+  <div id="alertsContent"></div>
+</div>
+
+<div class="section">
+  <h2>Tendencia</h2>
+  <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend">
+    <span><span class="dot" style="background:#2e6fd9"></span>Sistólica</span>
+    <span><span class="dot" style="background:#5ba7d9"></span>Diastólica</span>
+    <span><span class="dot" style="background:#8a8a8a"></span>LPM</span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Agregar lectura</h2>
+  <form class="add-form" id="addForm">
+    <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
+    <div>
+      <label>Fecha</label>
+      <input type="date" id="f_date" required>
+    </div>
+    <div>
+      <label>Hora</label>
+      <input type="time" id="f_time" required>
+    </div>
+    <div>
+      <label>Sistólica</label>
+      <input type="number" id="f_sys" required min="50" max="260">
+    </div>
+    <div>
+      <label>Diastólica</label>
+      <input type="number" id="f_dia" required min="30" max="180">
+    </div>
+    <div>
+      <label>LPM</label>
+      <input type="number" id="f_hr" min="30" max="220">
+    </div>
+    <div class="row-actions">
+      <button type="submit" id="submitBtn">Agregar</button>
+      <button type="button" id="cancelEditBtn" class="btn-mini" style="display:none;">Cancelar</button>
+    </div>
+    <div class="full">
+      <label>Observaciones (contexto, medicamento, síntomas)</label>
+      <textarea id="f_obs" rows="2"></textarea>
+    </div>
+  </form>
+</div>
+
+<div class="section">
+  <div class="toolbar">
+    <h2 style="flex:1">Historial de lecturas</h2>
+    <button class="btn-secondary" id="shareBtn">Generar resumen para compartir</button>
+    <button class="btn-secondary" id="printBtn">Imprimir / PDF</button>
+  </div>
+  <div id="shareWrap" style="display:none; margin-bottom:14px;">
+    <textarea id="shareOutput" readonly></textarea>
+    <div class="disclaimer">Selecciona el texto y cópialo para enviarlo por WhatsApp o correo.</div>
+  </div>
+  <div id="emptyState" style="display:none;">
+    Todavía no hay lecturas en la hoja de cálculo.
+    <button class="btn-secondary" id="importSeedBtn">Importar lecturas del 14–18 de julio</button>
+  </div>
+  <table id="readingsTable">
+    <thead>
+      <tr>
+        <th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Categoría</th><th>Observaciones</th><th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="readingsBody"></tbody>
+  </table>
+</div>
+
+<script>
+// ---- Lecturas base del 14 al 18 de julio, solo para la importación inicial ----
+const seedData = [
+  {date:"2026-07-14", time:"17:00", sys:148, dia:98, hr:null, obs:"", flag:"LPM no registrado ese día"},
+  {date:"2026-07-14", time:"22:00", sys:126, dia:84, hr:null, obs:"", flag:"LPM no registrado ese día"},
+  {date:"2026-07-15", time:"07:30", sys:119, dia:75, hr:null, obs:"", flag:"LPM no registrado ese día"},
+  {date:"2026-07-15", time:"10:00", sys:127, dia:61, hr:null, obs:"", flag:"LPM no registrado ese día"},
+  {date:"2026-07-15", time:"18:00", sys:123, dia:86, hr:null, obs:"", flag:""},
+  {date:"2026-07-15", time:"22:00", sys:112, dia:79, hr:68, obs:"Continúa zumbido", flag:""},
+  {date:"2026-07-16", time:"06:00", sys:114, dia:81, hr:49, obs:"Continúa zumbido, CDMX antes de viaje", flag:""},
+  {date:"2026-07-16", time:"13:00", sys:110, dia:71, hr:58, obs:"Acapulco, a pie de playa, después de almorzar a las 11:00. Toma de Telmisartán a las 6:00. Continúa zumbido.", flag:""},
+  {date:"2026-07-16", time:"19:40", sys:101, dia:71, hr:57, obs:"Acapulco, después de 3 horas de trabajo continuo en computadora. Comida a las 16:00. Continúa zumbido.", flag:""},
+  {date:"2026-07-16", time:"22:00", sys:116, dia:80, hr:56, obs:"Acapulco, después de cenar dos quesadillas de maíz y 2 horas de trabajo en computadora. Continúa zumbido.", flag:""},
+  {date:"2026-07-17", time:"00:30", sys:114, dia:78, hr:62, obs:"Acapulco, después de bañarse, a punto de dormir, tras 2 horas de trabajo en computadora. Continúa zumbido.", flag:""},
+  {date:"2026-07-17", time:"09:15", sys:113, dia:72, hr:60, obs:"Acapulco, despertar 7:30. 1 hora de trabajo en computadora, sin desayunar. Telmisartán a las 9:10 (toma del día anterior fue a las 6:20). Continúa zumbido.", flag:""},
+  {date:"2026-07-17", time:"17:30", sys:106, dia:68, hr:71, obs:"Acapulco, después de comida (14:30–16:00) y 1 hora de descanso. Continúa zumbido.", flag:""},
+  {date:"2026-07-17", time:"22:00", sys:98, dia:71, hr:67, obs:"Cena a las 21:00. Medición tras 1 hora de descanso. Zumbido parece disminuir.", flag:"Hora original anotada como 11:00; se ajustó a 22:00 por el contexto (cena a las 21h + 1h de descanso). Confirmar."},
+  {date:"2026-07-18", time:"07:30", sys:95, dia:68, hr:53, obs:"Acapulco, 30 min después de despertar, ~8h de sueño. Telmisartán 40mg justo después de esta medición.", flag:""},
+  {date:"2026-07-18", time:"14:00", sys:100, dia:65, hr:67, obs:"Acapulco, después de botana y cerveza sin alcohol, descanso y lectura. Persiste zumbido.", flag:""},
+];
+
+function classify(sys, dia) {
+  if (sys >= 180 || dia >= 120) return {label: "Crisis hipertensiva", key:"crisis"};
+  if (sys >= 140 || dia >= 90) return {label: "Hipertensión etapa 2", key:"etapa2"};
+  if (sys >= 130 || dia >= 80) return {label: "Hipertensión etapa 1", key:"etapa1"};
+  if (sys >= 120 && dia < 80) return {label: "Elevada", key:"elevada"};
+  return {label: "Normal", key:"normal"};
+}
+const categoryColors = { normal:"#2e9e5b", elevada:"#d8a400", etapa1:"#e07a1f", etapa2:"#d9432f", crisis:"#a0182a" };
+function fmtDate(d) { const [y,m,day] = d.split("-"); return `${day}/${m}`; }
+
+let chartInstance = null;
+let editingId = null;
+let currentData = [];
+
+function setStatus(kind, msg) {
+  const el = document.getElementById("statusBanner");
+  if (!kind) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="status-banner ${kind}">${msg}</div>`;
+}
+
+async function apiList() {
+  const res = await fetch("/api/readings");
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al leer");
+  return json.data;
+}
+async function apiAdd(values) {
+  const res = await fetch("/api/readings", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(values) });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al agregar");
+  return json;
+}
+async function apiUpdate(id, values) {
+  const res = await fetch("/api/readings/" + encodeURIComponent(id), { method: "PUT", headers: {"Content-Type":"application/json"}, body: JSON.stringify(values) });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al editar");
+  return json;
+}
+async function apiDelete(id) {
+  const res = await fetch("/api/readings/" + encodeURIComponent(id), { method: "DELETE" });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al eliminar");
+  return json;
+}
+
+async function loadAndRender() {
+  setStatus("loading", "Cargando lecturas desde Google Sheets…");
+  try {
+    currentData = await apiList();
+    currentData.sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
+    setStatus(null);
+    render();
+  } catch (err) {
+    setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
+  }
+}
+
+function render() {
+  const data = currentData;
+  const emptyState = document.getElementById("emptyState");
+  const table = document.getElementById("readingsTable");
+  if (!data.length) {
+    emptyState.style.display = "block";
+    table.style.display = "none";
+    document.getElementById("summaryCards").innerHTML = "";
+    document.getElementById("alertsContent").innerHTML = "";
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    return;
+  }
+  emptyState.style.display = "none";
+  table.style.display = "table";
+
+  // ---- Tabla ----
+  const tbody = document.getElementById("readingsBody");
+  tbody.innerHTML = "";
+  data.forEach(r => {
+    const cat = classify(r.sys, r.dia);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtDate(r.date)}</td>
+      <td>${r.time}</td>
+      <td><strong>${r.sys}/${r.dia}</strong></td>
+      <td>${r.hr ?? "—"}</td>
+      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
+      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}</td>
+      <td>
+        <div class="row-actions">
+          <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
+          <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // ---- Tarjetas resumen ----
+  const sysVals = data.map(r => r.sys);
+  const diaVals = data.map(r => r.dia);
+  const hrVals = data.filter(r => r.hr != null).map(r => r.hr);
+  const avg = arr => Math.round(arr.reduce((a,b)=>a+b,0) / arr.length);
+  const counts = {};
+  data.forEach(r => { const k = classify(r.sys, r.dia).key; counts[k] = (counts[k] || 0) + 1; });
+  const last = data[data.length - 1];
+  const lastCat = classify(last.sys, last.dia);
+
+  document.getElementById("summaryCards").innerHTML = `
+    <div class="card">
+      <div class="label">Última lectura</div>
+      <div class="value">${last.sys}/${last.dia}</div>
+      <div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div>
+    </div>
+    <div class="card">
+      <div class="label">Promedio del período</div>
+      <div class="value">${avg(sysVals)}/${avg(diaVals)}</div>
+      <div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div>
+    </div>
+    <div class="card">
+      <div class="label">Rango sistólica</div>
+      <div class="value">${Math.min(...sysVals)}–${Math.max(...sysVals)}</div>
+      <div class="value small">mmHg</div>
+    </div>
+    <div class="card">
+      <div class="label">Distribución de categorías</div>
+      <div class="value small">${Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(" · ")}</div>
+    </div>
+  `;
+
+  // ---- Alertas ----
+  const highReadings = data.filter(r => ["etapa2","crisis"].includes(classify(r.sys, r.dia).key));
+  let alertsHtml = "";
+  if (highReadings.length) {
+    alertsHtml += `<div class="alert-box"><strong>${highReadings.length} lectura(s) en etapa 2 o superior.</strong> La más alta: ${highReadings[0].date.split("-").reverse().join("/")} ${highReadings[0].time} — ${highReadings[0].sys}/${highReadings[0].dia}. Vale la pena comentarlo en la próxima consulta.</div>`;
+  }
+  alertsHtml += `<div class="alert-box note"><strong>Zumbido persistente:</strong> revisa si sigue apareciendo en tus observaciones recientes. El tinnitus pulsátil puede relacionarse con la presión arterial; conviene mencionarlo explícitamente al médico si continúa.</div>`;
+  const flaggedRows = data.filter(r => r.flag);
+  if (flaggedRows.length) {
+    alertsHtml += `<div class="alert-box note"><strong>${flaggedRows.length} lectura(s) con datos a confirmar.</strong> Revisadas en la tabla con ⚠.</div>`;
+  }
+  document.getElementById("alertsContent").innerHTML = alertsHtml;
+
+  // ---- Gráfica ----
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  const labels = data.map(r => `${fmtDate(r.date)} ${r.time}`);
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
+        { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
+        { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { position: "left", title: { display: true, text: "mmHg" } },
+        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
+
+function startEdit(id) {
+  const r = currentData.find(e => e.id === id);
+  if (!r) return;
+  editingId = id;
+  document.getElementById("f_date").value = r.date;
+  document.getElementById("f_time").value = r.time;
+  document.getElementById("f_sys").value = r.sys;
+  document.getElementById("f_dia").value = r.dia;
+  document.getElementById("f_hr").value = r.hr ?? "";
+  document.getElementById("f_obs").value = r.obs || "";
+  document.getElementById("submitBtn").textContent = "Guardar cambios";
+  document.getElementById("cancelEditBtn").style.display = "inline-block";
+  document.getElementById("editingBanner").style.display = "block";
+  document.getElementById("addForm").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function cancelEdit() {
+  editingId = null;
+  document.getElementById("addForm").reset();
+  document.getElementById("submitBtn").textContent = "Agregar";
+  document.getElementById("cancelEditBtn").style.display = "none";
+  document.getElementById("editingBanner").style.display = "none";
+}
+document.getElementById("cancelEditBtn").addEventListener("click", cancelEdit);
+
+document.getElementById("readingsBody").addEventListener("click", async e => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.classList.contains("row-delete")) {
+    if (!confirm("¿Eliminar esta lectura? Esta acción no se puede deshacer.")) return;
+    try {
+      setStatus("loading", "Eliminando…");
+      await apiDelete(id);
+      if (editingId === id) cancelEdit();
+      await loadAndRender();
+    } catch (err) {
+      setStatus("error", err.message);
+    }
+  } else if (btn.classList.contains("row-edit")) {
+    startEdit(id);
+  }
+});
+
+document.getElementById("addForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const values = {
+    date: document.getElementById("f_date").value,
+    time: document.getElementById("f_time").value,
+    sys: Number(document.getElementById("f_sys").value),
+    dia: Number(document.getElementById("f_dia").value),
+    hr: document.getElementById("f_hr").value ? Number(document.getElementById("f_hr").value) : null,
+    obs: document.getElementById("f_obs").value,
+    flag: "",
+  };
+  try {
+    setStatus("loading", editingId ? "Guardando cambios…" : "Agregando lectura…");
+    if (editingId) {
+      await apiUpdate(editingId, values);
+      cancelEdit();
+    } else {
+      await apiAdd(values);
+      e.target.reset();
+    }
+    await loadAndRender();
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+document.getElementById("importSeedBtn").addEventListener("click", async () => {
+  if (!confirm("Esto agregará las 16 lecturas del 14 al 18 de julio a la hoja. ¿Continuar?")) return;
+  setStatus("loading", "Importando lecturas iniciales…");
+  try {
+    for (const entry of seedData) {
+      await apiAdd(entry);
+    }
+    await loadAndRender();
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+document.getElementById("printBtn").addEventListener("click", () => window.print());
+
+document.getElementById("shareBtn").addEventListener("click", () => {
+  const data = currentData;
+  const last5 = data.slice(-5);
+  let text = `Resumen de presión arterial y frecuencia cardiaca\n\n`;
+  last5.forEach(r => {
+    const cat = classify(r.sys, r.dia);
+    text += `${r.date.split("-").reverse().join("/")} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr ? `, ${r.hr} LPM` : ""} (${cat.label})\n`;
+    if (r.obs) text += `  ${r.obs}\n`;
+  });
+  const sysVals = data.map(r => r.sys);
+  const diaVals = data.map(r => r.dia);
+  const avg = arr => Math.round(arr.reduce((a,b)=>a+b,0) / arr.length);
+  text += `\nPromedio del período completo (${data.length} lecturas): ${avg(sysVals)}/${avg(diaVals)} mmHg`;
+  document.getElementById("shareOutput").value = text;
+  document.getElementById("shareWrap").style.display = "block";
+});
+
+loadAndRender();
+</script>
+</body>
+</html>

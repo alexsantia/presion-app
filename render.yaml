@@ -1,0 +1,23 @@
+# Blueprint opcional de Render. Si usas "New > Blueprint" en vez de
+# "New > Web Service" y apuntas a este repo, Render lee este archivo y
+# preconfigura el servicio; de cualquier forma tendrás que rellenar a mano
+# las variables marcadas con sync: false desde el dashboard (son secretas,
+# nunca viven en el repo).
+services:
+  - type: web
+    name: presion-app
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: SHEETS_WEBAPP_URL
+        sync: false
+      - key: SHEETS_TOKEN
+        sync: false
