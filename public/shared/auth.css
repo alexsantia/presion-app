@@ -21,6 +21,8 @@ body {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
   padding: 32px; width: 100%; max-width: 360px; box-shadow: 0 2px 12px rgba(60,90,80,0.06);
 }
+.auth-card h1.brand-heading { margin: 0 0 18px 0; text-align: center; }
+.auth-card h1.brand-heading .brand-logo { display: block; width: 100%; max-width: 220px; height: auto; margin: 0 auto; }
 .auth-card h1 { font-size: 19px; margin: 0 0 4px 0; font-weight: 650; }
 .auth-card p.sub { font-size: 13px; color: var(--text-muted); margin: 0 0 22px 0; }
 .auth-card label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; margin-top: 14px; }
