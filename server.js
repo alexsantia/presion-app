@@ -92,7 +92,7 @@ app.get("/", requireRole("patient"), (req, res) => res.sendFile(path.join(__dirn
 
 app.post("/signup", asyncRoute(async (req, res) => {
   const { name, email, password, birthdate } = req.body;
-  if (!name || !email || !password) return res.status(400).json({ ok: false, error: "faltan datos" });
+  if (!name || !email || !password || !birthdate) return res.status(400).json({ ok: false, error: "faltan datos" });
   if (password.length < 8) return res.status(400).json({ ok: false, error: "la contraseña debe tener al menos 8 caracteres" });
   const hash = await bcrypt.hash(password, 10);
   const result = await callSheetsApi(null, { action: "signup_patient", name, email, password_hash: hash, birthdate: birthdate || "" });

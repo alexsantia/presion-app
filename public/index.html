@@ -82,6 +82,8 @@
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   .pw-form { display: grid; gap: 10px; max-width: 320px; }
   footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
+  .greeting-name { font-weight: 750; font-size: 19px; }
+  .monitoring-since { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
   @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
@@ -95,6 +97,11 @@
   </div>
 </div>
 <div class="subtitle">Monitoreo de presión arterial, frecuencia cardiaca y peso · categorías según guía AHA (2017)</div>
+
+<div id="greetingSection" style="margin-bottom: 16px;">
+  <div class="greeting-name" id="greetingText"></div>
+  <div class="monitoring-since" id="monitoringSince"></div>
+</div>
 
 <div id="statusBanner"></div>
 
@@ -222,6 +229,77 @@ let editingId = null;
 let currentData = [];
 let currentComments = [];
 let currentAccount = null;
+let lastWeight = null;
+
+// ---- Saludo con el nombre del paciente ----
+const GREETINGS = [
+  "¡Bienvenido, {nombre}!",
+  "¡Te veo de nuevo, {nombre}!",
+  "¡Vas con todo, {nombre}!",
+  "¡Qué gusto verte, {nombre}!",
+  "¡Arriba ese ánimo, {nombre}!",
+  "{nombre}, tu salud te lo agradece",
+  "¡Hoy también cuenta, {nombre}!",
+  "Sigues en la jugada, {nombre}",
+  "{nombre}, un día más en el camino",
+  "¡Qué constancia, {nombre}!",
+  "De vuelta al reino, {nombre}",
+  "Tu corona te espera, {nombre}",
+  "¡Aquí vamos de nuevo, {nombre}!",
+  "{nombre}, reinando sobre tu presión",
+  "Un aplauso para ti, {nombre}",
+  "¿Listo para otro registro, {nombre}?",
+  "{nombre}, tu constancia impresiona",
+  "A seguir sumando días, {nombre}",
+  "Nos alegra verte, {nombre}",
+  "{nombre}, vas por buen camino",
+];
+let greetingPhrase = null; // fija por carga de página, no cambia entre re-renders
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function formatMonitoringDuration(days) {
+  if (days <= 0) return "menos de 1 día";
+  if (days === 1) return "1 día";
+  if (days < 14) return `${days} días`;
+  if (days < 60) { const w = Math.floor(days / 7); return `${w} semana${w === 1 ? "" : "s"}`; }
+  const months = Math.floor(days / 30);
+  if (months < 24) return `${months} mes${months === 1 ? "" : "es"}`;
+  const years = Math.floor(days / 365);
+  return `${years} año${years === 1 ? "" : "s"}`;
+}
+
+function renderGreeting() {
+  const nameFull = (currentAccount && currentAccount.name) ? currentAccount.name.trim() : "";
+  const firstName = nameFull ? nameFull.split(/\s+/)[0] : "";
+  const greetingEl = document.getElementById("greetingText");
+  if (greetingEl) {
+    if (firstName) {
+      if (!greetingPhrase) greetingPhrase = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+      greetingEl.textContent = greetingPhrase.replace("{nombre}", firstName);
+    } else {
+      greetingEl.textContent = "";
+    }
+  }
+  const sinceEl = document.getElementById("monitoringSince");
+  if (sinceEl) {
+    if (currentData.length) {
+      const firstDate = currentData[0].date; // currentData va ordenado ascendente
+      const days = Math.round((new Date(todayStr() + "T00:00:00") - new Date(firstDate + "T00:00:00")) / 86400000);
+      sinceEl.textContent = `📅 Llevas ${formatMonitoringDuration(days)} monitoreando tu salud`;
+    } else {
+      sinceEl.textContent = "";
+    }
+  }
+}
+
+// ---- Peso: siempre precargar el último registrado, hasta que se cambie ----
+function applyDefaultWeight() {
+  const el = document.getElementById("f_weight");
+  if (el && !editingId && lastWeight != null && !el.value) {
+    el.value = lastWeight;
+  }
+}
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
@@ -261,6 +339,7 @@ async function loadAccount() {
     document.getElementById("p_birthdate").value = currentAccount.birthdate || "";
     updateAgeDisplay();
     document.getElementById("familyLink").textContent = window.location.origin + "/familia/" + currentAccount.share_token;
+    renderGreeting();
   } catch (err) { /* silencioso */ }
 }
 function updateAgeDisplay() {
@@ -355,10 +434,14 @@ async function loadAndRender() {
   try {
     currentData = await apiGet("/api/readings");
     currentData.sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
+    const withWeight = currentData.filter(r => r.weight != null);
+    if (withWeight.length) lastWeight = withWeight[withWeight.length - 1].weight;
     setStatus(null);
     render();
     renderComments();
     renderStreak();
+    renderGreeting();
+    applyDefaultWeight();
   } catch (err) {
     setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
   }
@@ -511,7 +594,12 @@ document.getElementById("addForm").addEventListener("submit", async e => {
   try {
     setStatus("loading", editingId ? "Guardando cambios…" : "Agregando lectura…");
     if (editingId) { await apiPut("/api/readings/" + encodeURIComponent(editingId), values); cancelEdit(); }
-    else { await apiPost("/api/readings", values); e.target.reset(); }
+    else {
+      await apiPost("/api/readings", values);
+      if (values.weight != null) lastWeight = values.weight;
+      e.target.reset();
+      applyDefaultWeight();
+    }
     await loadAndRender();
   } catch (err) { setStatus("error", err.message); }
 });
