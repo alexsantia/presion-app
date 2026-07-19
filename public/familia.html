@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reigning Blood Pressure App · Seguimiento</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="/shared/common.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --normal: #6FA98C; --elevada: #D8AE5C; --etapa1: #D98E5F; --etapa2: #C97064; --crisis: #A6534B;
+    --border: #E1E9E4; --bg-card: #ffffff; --bg-page: #F4F7F5; --text: #33403D; --text-muted: #7C8A85;
+    --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC; --weight: #9B8AC4;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; max-width: 900px; margin-left: auto; margin-right: auto; }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
+  .badge-role { background: var(--accent-soft); color: var(--accent-hover); font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .card .value { font-size: 21px; font-weight: 650; }
+  .card .value.small { font-size: 14px; font-weight: 500; }
+  .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
+  .chart-wrap { position: relative; height: 280px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .link-btn { font-size: 12px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
+  .status-banner { font-size: 12px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
+  .status-banner.loading { background: var(--accent-soft); color: var(--accent-hover); }
+  .status-banner.error { background: #FBF0EE; color: var(--crisis); }
+  footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Reigning Blood Pressure App <span class="badge-role">Seguimiento</span></h1>
+  <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
+</div>
+<div class="subtitle" id="subtitleText">Vista de solo lectura, compartida por el paciente</div>
+
+<div id="statusBanner"></div>
+<div class="section" id="streakSection"></div>
+<div class="grid" id="summaryCards"></div>
+
+<div class="section">
+  <h2>Tendencia</h2>
+  <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend">
+    <span><span class="dot" style="background:#2e6fd9"></span>Sistólica</span>
+    <span><span class="dot" style="background:#5ba7d9"></span>Diastólica</span>
+    <span><span class="dot" style="background:#8a8a8a"></span>LPM</span>
+    <span><span class="dot" style="background:var(--weight)"></span>Peso (kg)</span>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Historial de lecturas</h2>
+  <div id="emptyState" style="display:none; font-size:13px; color:var(--text-muted);">Todavía no hay lecturas registradas.</div>
+  <table id="readingsTable">
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th></tr></thead>
+    <tbody id="readingsBody"></tbody>
+  </table>
+</div>
+
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
+
+<script>
+const token = window.location.pathname.split("/").filter(Boolean).pop();
+let chartInstance = null;
+
+function setStatus(kind, msg) {
+  const el = document.getElementById("statusBanner");
+  if (!kind) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="status-banner ${kind}">${msg}</div>`;
+}
+
+async function load() {
+  setStatus("loading", "Cargando…");
+  try {
+    const res = await fetch("/api/familia/" + encodeURIComponent(token));
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || "enlace no válido");
+    setStatus(null);
+    const { patient, readings } = json.data;
+    document.getElementById("subtitleText").textContent = `Seguimiento de ${patient.name || "este paciente"}, compartido en modo de solo lectura`;
+    const data = readings.slice().sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
+    render(data);
+  } catch (err) {
+    setStatus("error", "No se pudo cargar esta página: " + err.message);
+  }
+}
+
+function render(data) {
+  const streak = computeStreak(data.map(r => r.date));
+  document.getElementById("streakSection").innerHTML = streakLevelHTML(streak);
+
+  const emptyState = document.getElementById("emptyState");
+  const table = document.getElementById("readingsTable");
+  if (!data.length) {
+    emptyState.style.display = "block"; table.style.display = "none";
+    document.getElementById("summaryCards").innerHTML = "";
+    return;
+  }
+  emptyState.style.display = "none"; table.style.display = "table";
+
+  const tbody = document.getElementById("readingsBody");
+  tbody.innerHTML = "";
+  data.forEach(r => {
+    const cat = classify(r.sys, r.dia);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${fmtDate(r.date)}</td><td>${r.time}</td>
+      <td><strong>${r.sys}/${r.dia}</strong></td>
+      <td>${r.hr ?? "—"}</td>
+      <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
+      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>`;
+    tbody.appendChild(tr);
+  });
+
+  const sysVals = data.map(r => r.sys), diaVals = data.map(r => r.dia);
+  const hrVals = data.filter(r => r.hr != null).map(r => r.hr);
+  const weightVals = data.filter(r => r.weight != null).map(r => r.weight);
+  const avg = arr => Math.round((arr.reduce((a,b)=>a+b,0) / arr.length) * 10) / 10;
+  const last = data[data.length - 1];
+  const lastCat = classify(last.sys, last.dia);
+
+  document.getElementById("summaryCards").innerHTML = `
+    <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div></div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div></div>
+    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div></div>
+    <div class="card"><div class="label">Lecturas registradas</div><div class="value">${data.length}</div><div class="value small">${fmtDate(data[0].date)} – ${fmtDate(last.date)}</div></div>
+  `;
+
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  const labels = data.map(r => `${fmtDate(r.date)} ${r.time}`);
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [
+      { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
+      { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
+      { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { position: "left", title: { display: true, text: "mmHg" } },
+        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
+        y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
+      },
+    },
+  });
+}
+
+wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+load();
+</script>
+</body>
+</html>

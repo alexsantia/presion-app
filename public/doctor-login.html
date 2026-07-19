@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acceso del médico · Reigning Blood Pressure App</title>
+<link rel="stylesheet" href="/shared/auth.css">
+</head>
+<body>
+  <form class="auth-card" id="loginForm">
+    <h1>Reigning Blood Pressure App</h1>
+    <p class="sub">Acceso del médico (solo lectura)</p>
+    <label>Correo</label>
+    <input type="email" id="email" required autofocus>
+    <label>Contraseña</label>
+    <input type="password" id="password" required>
+    <div class="err" id="err" style="display:none;"></div>
+    <button type="submit">Entrar</button>
+    <div class="switch">¿Aún no tienes cuenta? Pídele a tu paciente su enlace de invitación.</div>
+  </form>
+<script>
+document.getElementById("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errEl = document.getElementById("err");
+  errEl.style.display = "none";
+  try {
+    const res = await fetch("/doctor/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: document.getElementById("email").value, password: document.getElementById("password").value }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || "no se pudo iniciar sesión");
+    window.location.href = json.redirect || "/doctor";
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = "block";
+  }
+});
+</script>
+</body>
+</html>

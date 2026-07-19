@@ -6,87 +6,48 @@
 <title>Reigning Blood Pressure App</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/shared/common.js"></script>
 <style>
   :root {
     color-scheme: light;
-    --normal: #6FA98C;
-    --elevada: #D8AE5C;
-    --etapa1: #D98E5F;
-    --etapa2: #C97064;
-    --crisis: #A6534B;
-    --border: #E1E9E4;
-    --bg-card: #ffffff;
-    --bg-page: #F4F7F5;
-    --text: #33403D;
-    --text-muted: #7C8A85;
-    --accent: #4F7A6F;
-    --accent-hover: #436A60;
-    --accent-soft: #E8F0EC;
-    --weight: #9B8AC4;
+    --normal: #6FA98C; --elevada: #D8AE5C; --etapa1: #D98E5F; --etapa2: #C97064; --crisis: #A6534B;
+    --border: #E1E9E4; --bg-card: #ffffff; --bg-page: #F4F7F5; --text: #33403D; --text-muted: #7C8A85;
+    --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC; --weight: #9B8AC4;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 24px;
-    background: var(--bg-page);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-  }
-  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
+  .topbar-links { display: flex; gap: 14px; align-items: center; }
   h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 16px 18px;
-    box-shadow: 0 1px 3px rgba(60,90,80,0.04);
-  }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
   .card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
   .card .value { font-size: 21px; font-weight: 650; }
   .card .value.small { font-size: 14px; font-weight: 500; }
-  .section {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 1px 3px rgba(60,90,80,0.04);
-  }
+  .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .section h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 12px; }
   .chart-wrap { position: relative; height: 300px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
-  .badge {
-    display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px;
-    font-weight: 600; color: white; white-space: nowrap;
-  }
-  .obs { color: var(--text-muted); font-size: 12px; max-width: 320px; }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
+  .obs { color: var(--text-muted); font-size: 12px; max-width: 300px; }
   .flag { color: var(--etapa2); font-size: 11px; font-weight: 600; margin-top: 3px; }
   .doctor-note { color: var(--accent); font-size: 11px; font-weight: 500; margin-top: 3px; background: var(--accent-soft); padding: 3px 7px; border-radius: 6px; display: inline-block; }
   form.add-form { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: end; }
-  form.add-form label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
-  form.add-form input, form.add-form textarea {
+  form.add-form label, .field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  form.add-form input, form.add-form textarea, .field input {
     width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;
   }
   form.add-form .full { grid-column: 1 / -1; }
-  .btn-primary {
-    background: var(--accent); color: white; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer;
-  }
+  .btn-primary { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; }
   .btn-primary:hover { background: var(--accent-hover); }
-  .alert-box {
-    border-left: 4px solid var(--etapa2); background: #FBF0EE; padding: 12px 14px;
-    border-radius: 8px; font-size: 13px; margin-bottom: 10px;
-  }
+  .alert-box { border-left: 4px solid var(--etapa2); background: #FBF0EE; padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 10px; }
   .alert-box.note { border-left-color: var(--elevada); background: #FBF5E7; }
   .toolbar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
-  .btn-secondary {
-    background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text);
-  }
+  .btn-secondary { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text); }
   .btn-secondary:hover { background: var(--accent-soft); }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -104,40 +65,47 @@
   .status-banner.loading { background: var(--accent-soft); color: var(--accent-hover); }
   .status-banner.error { background: #FBF0EE; color: var(--crisis); }
   .status-banner.success { background: #EEF6F1; color: var(--normal); }
-  .logout-link { font-size: 12px; color: var(--text-muted); background:none; border:none; cursor:pointer; padding:0; }
-  .logout-link:hover { text-decoration: underline; }
+  .link-btn { font-size: 12px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
   #emptyState { font-size: 13px; color: var(--text-muted); }
-  .profile-form { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; }
-  .profile-form label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
-  .profile-form input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .field-row { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; }
   .comment-item { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .comment-item:last-child { border-bottom: none; }
   .comment-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
-  .share-box { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; font-size: 13px; }
-  .share-box code { background: white; padding: 2px 6px; border-radius: 5px; font-size: 12px; }
+  .share-box { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; font-size: 13px; margin-bottom: 12px; }
+  .share-box:last-child { margin-bottom: 0; }
+  .share-box code { background: white; padding: 2px 6px; border-radius: 5px; font-size: 12px; word-break: break-all; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .pw-form { display: grid; gap: 10px; max-width: 320px; }
   footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
+  @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <h1>Reigning Blood Pressure App</h1>
-  <form method="POST" action="/logout"><button type="submit" class="logout-link">Cerrar sesión</button></form>
+  <div class="topbar-links">
+    <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
+    <form method="POST" action="/logout"><button type="submit" class="link-btn">Cerrar sesión</button></form>
+  </div>
 </div>
 <div class="subtitle">Monitoreo de presión arterial, frecuencia cardiaca y peso · categorías según guía AHA (2017)</div>
 
 <div id="statusBanner"></div>
 
+<div class="section" id="streakSection"></div>
+
 <div class="section">
   <h2>Datos del paciente</h2>
-  <form class="profile-form" id="profileForm">
-    <div>
+  <form class="field-row" id="profileForm">
+    <div class="field">
       <label>Nombre</label>
-      <input type="text" id="p_name" placeholder="Nombre del paciente">
+      <input type="text" id="p_name">
     </div>
-    <div>
-      <label>Edad</label>
-      <input type="number" id="p_age" min="0" max="130">
+    <div class="field">
+      <label>Fecha de nacimiento <span id="p_age_display" style="font-weight:400;"></span></label>
+      <input type="date" id="p_birthdate">
     </div>
     <div>
       <button type="submit" class="btn-primary">Guardar</button>
@@ -172,30 +140,12 @@
   <h2>Agregar lectura</h2>
   <form class="add-form" id="addForm">
     <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
-    <div>
-      <label>Fecha</label>
-      <input type="date" id="f_date" required>
-    </div>
-    <div>
-      <label>Hora</label>
-      <input type="time" id="f_time" required>
-    </div>
-    <div>
-      <label>Sistólica</label>
-      <input type="number" id="f_sys" required min="50" max="260">
-    </div>
-    <div>
-      <label>Diastólica</label>
-      <input type="number" id="f_dia" required min="30" max="180">
-    </div>
-    <div>
-      <label>LPM</label>
-      <input type="number" id="f_hr" min="30" max="220">
-    </div>
-    <div>
-      <label>Peso (kg)</label>
-      <input type="number" id="f_weight" min="20" max="300" step="0.1">
-    </div>
+    <div><label>Fecha</label><input type="date" id="f_date" required></div>
+    <div><label>Hora</label><input type="time" id="f_time" required></div>
+    <div><label>Sistólica</label><input type="number" id="f_sys" required min="50" max="260"></div>
+    <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
+    <div><label>LPM</label><input type="number" id="f_hr" min="30" max="220"></div>
+    <div><label>Peso (kg)</label><input type="number" id="f_weight" min="20" max="300" step="0.1"></div>
     <div class="row-actions">
       <button type="submit" id="submitBtn" class="btn-primary">Agregar</button>
       <button type="button" id="cancelEditBtn" class="btn-mini" style="display:none;">Cancelar</button>
@@ -220,57 +170,60 @@
     <textarea id="shareOutput" readonly></textarea>
     <div class="disclaimer">Selecciona el texto y cópialo para enviarlo por WhatsApp o correo.</div>
   </div>
-  <div id="emptyState" style="display:none;">
-    Todavía no hay lecturas registradas. Usa el formulario de arriba o importa un archivo.
-  </div>
+  <div id="emptyState" style="display:none;">Todavía no hay lecturas registradas. Usa el formulario de arriba o importa un archivo.</div>
   <table id="readingsTable">
-    <thead>
-      <tr>
-        <th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th><th>Acciones</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th><th>Acciones</th></tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
 </div>
 
 <div class="section">
-  <h2>Compartir con tu médico</h2>
-  <div class="share-box">
-    Comparte este enlace con tu médico: <code id="doctorLink"></code>
-    <button class="btn-secondary" id="copyDoctorLink" style="margin-left:8px;">Copiar enlace</button>
-    <div class="disclaimer" style="margin-top:8px;">
-      El médico necesita además la contraseña que definiste como <code>DOCTOR_PASSWORD</code> al desplegar la app
-      (compártesela por un medio distinto al del enlace). Con ese acceso puede ver tus lecturas, tu perfil y dejar
-      comentarios o recomendaciones, pero no puede editar ni borrar información.
+  <div class="two-col">
+    <div>
+      <h2>Invitar a tu médico</h2>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura.</p>
+      <button class="btn-secondary" id="generateInviteBtn">Generar enlace para mi médico</button>
+      <div class="share-box" id="inviteBox" style="display:none; margin-top:12px;">
+        <code id="inviteLink"></code>
+        <button class="btn-secondary" id="copyInviteLink" style="margin-left:8px;">Copiar</button>
+      </div>
+    </div>
+    <div>
+      <h2>Compartir con familia y amigos</h2>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Enlace de solo lectura, sin contraseña, para que quienes quieras estén al tanto de tu progreso (no incluye los comentarios de tu médico).</p>
+      <div class="share-box">
+        <code id="familyLink"></code>
+        <button class="btn-secondary" id="copyFamilyLink" style="margin-left:8px;">Copiar</button>
+        <button class="btn-secondary" id="regenerateFamilyLink" style="margin-left:8px;">Regenerar</button>
+      </div>
     </div>
   </div>
+</div>
+
+<div class="section">
+  <h2>Cambiar mi contraseña</h2>
+  <form class="pw-form" id="passwordForm">
+    <div class="field"><label>Contraseña actual</label><input type="password" id="pw_current" required></div>
+    <div class="field"><label>Nueva contraseña</label><input type="password" id="pw_new" required minlength="8"></div>
+    <div class="field"><label>Confirmar nueva contraseña</label><input type="password" id="pw_new2" required minlength="8"></div>
+    <button type="submit" class="btn-primary" style="justify-self:start;">Actualizar contraseña</button>
+  </form>
 </div>
 
 <footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
 
 <script>
-function classify(sys, dia) {
-  if (sys >= 180 || dia >= 120) return {label: "Crisis hipertensiva", key:"crisis"};
-  if (sys >= 140 || dia >= 90) return {label: "Hipertensión etapa 2", key:"etapa2"};
-  if (sys >= 130 || dia >= 80) return {label: "Hipertensión etapa 1", key:"etapa1"};
-  if (sys >= 120 && dia < 80) return {label: "Elevada", key:"elevada"};
-  return {label: "Normal", key:"normal"};
-}
-const categoryColors = { normal:"#6FA98C", elevada:"#D8AE5C", etapa1:"#D98E5F", etapa2:"#C97064", crisis:"#A6534B" };
-function fmtDate(d) { const [y,m,day] = d.split("-"); return `${day}/${m}`; }
-
 let chartInstance = null;
 let editingId = null;
 let currentData = [];
 let currentComments = [];
+let currentAccount = null;
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
   if (!kind) { el.innerHTML = ""; return; }
   el.innerHTML = `<div class="status-banner ${kind}">${msg}</div>`;
 }
-
-// ---- API ----
 async function apiGet(url) {
   const res = await fetch(url);
   const json = await res.json();
@@ -296,19 +249,28 @@ async function apiDelete(url) {
   return json;
 }
 
-// ---- Perfil ----
-async function loadProfile() {
+// ---- Cuenta / perfil ----
+async function loadAccount() {
   try {
-    const profile = await apiGet("/api/profile");
-    document.getElementById("p_name").value = profile.name || "";
-    document.getElementById("p_age").value = profile.age ?? "";
-  } catch (err) { /* silencioso, no bloquea el resto del panel */ }
+    currentAccount = await apiGet("/api/account");
+    document.getElementById("p_name").value = currentAccount.name || "";
+    document.getElementById("p_birthdate").value = currentAccount.birthdate || "";
+    updateAgeDisplay();
+    document.getElementById("familyLink").textContent = window.location.origin + "/familia/" + currentAccount.share_token;
+  } catch (err) { /* silencioso */ }
 }
+function updateAgeDisplay() {
+  const bd = document.getElementById("p_birthdate").value;
+  const age = calcAge(bd);
+  document.getElementById("p_age_display").textContent = age != null ? `(${age} años)` : "";
+}
+document.getElementById("p_birthdate").addEventListener("change", updateAgeDisplay);
+
 document.getElementById("profileForm").addEventListener("submit", async e => {
   e.preventDefault();
   try {
     setStatus("loading", "Guardando perfil…");
-    await apiPost("/api/profile", { name: document.getElementById("p_name").value, age: document.getElementById("p_age").value ? Number(document.getElementById("p_age").value) : null });
+    await apiPost("/api/account/profile", { name: document.getElementById("p_name").value, birthdate: document.getElementById("p_birthdate").value });
     setStatus("success", "Perfil guardado.");
     setTimeout(() => setStatus(null), 1500);
   } catch (err) {
@@ -316,13 +278,55 @@ document.getElementById("profileForm").addEventListener("submit", async e => {
   }
 });
 
+document.getElementById("passwordForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const n1 = document.getElementById("pw_new").value;
+  const n2 = document.getElementById("pw_new2").value;
+  if (n1 !== n2) { setStatus("error", "Las contraseñas nuevas no coinciden."); return; }
+  try {
+    setStatus("loading", "Actualizando contraseña…");
+    await apiPost("/api/account/password", { currentPassword: document.getElementById("pw_current").value, newPassword: n1 });
+    document.getElementById("passwordForm").reset();
+    setStatus("success", "Contraseña actualizada.");
+    setTimeout(() => setStatus(null), 1500);
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+document.getElementById("generateInviteBtn").addEventListener("click", async () => {
+  try {
+    setStatus("loading", "Generando enlace…");
+    const result = await apiPost("/api/account/invite", {});
+    const link = window.location.origin + "/doctor/invite/" + result.invite_token;
+    document.getElementById("inviteLink").textContent = link;
+    document.getElementById("inviteBox").style.display = "block";
+    setStatus(null);
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+document.getElementById("copyInviteLink").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("inviteLink").textContent);
+});
+document.getElementById("copyFamilyLink").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("familyLink").textContent);
+});
+document.getElementById("regenerateFamilyLink").addEventListener("click", async () => {
+  if (!confirm("Esto invalida el enlace anterior; quien lo tenga guardado dejará de poder ver tus datos. ¿Continuar?")) return;
+  try {
+    const result = await apiPost("/api/account/share-token/regenerate", {});
+    document.getElementById("familyLink").textContent = window.location.origin + "/familia/" + result.share_token;
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+
 // ---- Comentarios ----
 async function loadComments() {
-  try {
-    currentComments = await apiGet("/api/comments");
-  } catch (err) {
-    currentComments = [];
-  }
+  try { currentComments = await apiGet("/api/comments"); } catch (err) { currentComments = []; }
   renderComments();
 }
 function renderComments() {
@@ -339,6 +343,7 @@ function renderComments() {
     return `<div class="comment-item"><div class="comment-meta">${c.author || "Médico"} · ${when}${readingLabel}</div>${c.text}</div>`;
   }).join("");
 }
+function commentsForReading(id) { return currentComments.filter(c => c.reading_id === id); }
 
 // ---- Lecturas ----
 async function loadAndRender() {
@@ -349,13 +354,15 @@ async function loadAndRender() {
     setStatus(null);
     render();
     renderComments();
+    renderStreak();
   } catch (err) {
     setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
   }
 }
 
-function commentsForReading(id) {
-  return currentComments.filter(c => c.reading_id === id);
+function renderStreak() {
+  const streak = computeStreak(currentData.map(r => r.date));
+  document.getElementById("streakSection").innerHTML = streakLevelHTML(streak);
 }
 
 function render() {
@@ -373,7 +380,6 @@ function render() {
   emptyState.style.display = "none";
   table.style.display = "table";
 
-  // ---- Tabla ----
   const tbody = document.getElementById("readingsBody");
   tbody.innerHTML = "";
   data.forEach(r => {
@@ -381,24 +387,19 @@ function render() {
     const notes = commentsForReading(r.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${fmtDate(r.date)}</td>
-      <td>${r.time}</td>
+      <td>${fmtDate(r.date)}</td><td>${r.time}</td>
       <td><strong>${r.sys}/${r.dia}</strong></td>
       <td>${r.hr ?? "—"}</td>
       <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
-          <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
-        </div>
-      </td>
-    `;
+      <td><div class="row-actions">
+        <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
+        <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
+      </div></td>`;
     tbody.appendChild(tr);
   });
 
-  // ---- Tarjetas resumen ----
   const sysVals = data.map(r => r.sys);
   const diaVals = data.map(r => r.dia);
   const hrVals = data.filter(r => r.hr != null).map(r => r.hr);
@@ -410,28 +411,12 @@ function render() {
   const lastCat = classify(last.sys, last.dia);
 
   document.getElementById("summaryCards").innerHTML = `
-    <div class="card">
-      <div class="label">Última lectura</div>
-      <div class="value">${last.sys}/${last.dia}</div>
-      <div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div>
-    </div>
-    <div class="card">
-      <div class="label">Promedio del período</div>
-      <div class="value">${avg(sysVals)}/${avg(diaVals)}</div>
-      <div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div>
-    </div>
-    <div class="card">
-      <div class="label">Peso</div>
-      <div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div>
-      <div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div>
-    </div>
-    <div class="card">
-      <div class="label">Distribución de categorías</div>
-      <div class="value small">${Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(" · ")}</div>
-    </div>
+    <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div></div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div></div>
+    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div></div>
+    <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(" · ")}</div></div>
   `;
 
-  // ---- Alertas ----
   const highReadings = data.filter(r => ["etapa2","crisis"].includes(classify(r.sys, r.dia).key));
   let alertsHtml = "";
   if (highReadings.length) {
@@ -441,29 +426,21 @@ function render() {
   if (flaggedRows.length) {
     alertsHtml += `<div class="alert-box note"><strong>${flaggedRows.length} lectura(s) con datos a confirmar.</strong> Revisadas en la tabla con ⚠.</div>`;
   }
-  if (!alertsHtml) {
-    alertsHtml = `<div style="color:var(--text-muted); font-size:13px;">Sin alertas por ahora. Tus lecturas más recientes están dentro de rangos normales o solo levemente elevados.</div>`;
-  }
+  if (!alertsHtml) alertsHtml = `<div style="color:var(--text-muted); font-size:13px;">Sin alertas por ahora.</div>`;
   document.getElementById("alertsContent").innerHTML = alertsHtml;
 
-  // ---- Gráfica ----
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = data.map(r => `${fmtDate(r.date)} ${r.time}`);
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(ctx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
-        { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
-        { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
-        { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
+    data: { labels, datasets: [
+      { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
+      { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
+      { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
@@ -509,9 +486,7 @@ document.getElementById("readingsBody").addEventListener("click", async e => {
       await apiDelete("/api/readings/" + encodeURIComponent(id));
       if (editingId === id) cancelEdit();
       await loadAndRender();
-    } catch (err) {
-      setStatus("error", err.message);
-    }
+    } catch (err) { setStatus("error", err.message); }
   } else if (btn.classList.contains("row-edit")) {
     startEdit(id);
   }
@@ -531,58 +506,28 @@ document.getElementById("addForm").addEventListener("submit", async e => {
   };
   try {
     setStatus("loading", editingId ? "Guardando cambios…" : "Agregando lectura…");
-    if (editingId) {
-      await apiPut("/api/readings/" + encodeURIComponent(editingId), values);
-      cancelEdit();
-    } else {
-      await apiPost("/api/readings", values);
-      e.target.reset();
-    }
+    if (editingId) { await apiPut("/api/readings/" + encodeURIComponent(editingId), values); cancelEdit(); }
+    else { await apiPost("/api/readings", values); e.target.reset(); }
     await loadAndRender();
-  } catch (err) {
-    setStatus("error", err.message);
-  }
+  } catch (err) { setStatus("error", err.message); }
 });
 
 // ---- Importación genérica desde CSV/XLSX ----
-function normalizeHeader(h) {
-  return String(h || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-}
+function normalizeHeader(h) { return String(h || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim(); }
 const HEADER_MAP = {
-  date: ["fecha", "date"],
-  time: ["hora", "time"],
-  sys: ["sistolica", "sys", "systolic"],
-  dia: ["diastolica", "dia", "diastolic"],
+  date: ["fecha", "date"], time: ["hora", "time"],
+  sys: ["sistolica", "sys", "systolic"], dia: ["diastolica", "dia", "diastolic"],
   hr: ["lpm", "hr", "pulso", "frecuencia cardiaca", "bpm"],
-  weight: ["peso", "weight", "kg"],
-  obs: ["observaciones", "obs", "notas", "notes"],
+  weight: ["peso", "weight", "kg"], obs: ["observaciones", "obs", "notas", "notes"],
 };
 function mapRow(rawRow) {
   const normalizedEntries = Object.entries(rawRow).map(([k, v]) => [normalizeHeader(k), v]);
-  const get = (field) => {
-    for (const alias of HEADER_MAP[field]) {
-      const found = normalizedEntries.find(([k]) => k === alias);
-      if (found) return found[1];
-    }
-    return "";
-  };
-  const dateRaw = get("date");
-  const timeRaw = get("time");
-  // Excel puede traer la fecha/hora como objeto Date; XLSX ya las convierte con cellDates.
+  const get = (field) => { for (const alias of HEADER_MAP[field]) { const found = normalizedEntries.find(([k]) => k === alias); if (found) return found[1]; } return ""; };
+  const dateRaw = get("date"), timeRaw = get("time");
   const date = dateRaw instanceof Date ? dateRaw.toISOString().slice(0, 10) : String(dateRaw || "").trim();
   const time = timeRaw instanceof Date ? timeRaw.toISOString().slice(11, 16) : String(timeRaw || "").trim();
-  return {
-    date,
-    time,
-    sys: Number(get("sys")) || null,
-    dia: Number(get("dia")) || null,
-    hr: get("hr") ? Number(get("hr")) : null,
-    weight: get("weight") ? Number(get("weight")) : null,
-    obs: String(get("obs") || ""),
-    flag: "",
-  };
+  return { date, time, sys: Number(get("sys")) || null, dia: Number(get("dia")) || null, hr: get("hr") ? Number(get("hr")) : null, weight: get("weight") ? Number(get("weight")) : null, obs: String(get("obs") || ""), flag: "" };
 }
-
 document.getElementById("importBtn").addEventListener("click", () => document.getElementById("importFile").click());
 document.getElementById("importFile").addEventListener("change", async e => {
   const file = e.target.files[0];
@@ -597,34 +542,22 @@ document.getElementById("importFile").addEventListener("change", async e => {
     const skipped = rows.length - mapped.length;
     if (!mapped.length) {
       setStatus("error", "No se encontraron filas válidas. Revisa que el archivo tenga columnas Fecha, Hora, Sistólica y Diastólica.");
-      e.target.value = "";
-      return;
+      e.target.value = ""; return;
     }
     let done = 0;
-    for (const row of mapped) {
-      setStatus("loading", `Importando ${done + 1} de ${mapped.length}…`);
-      await apiPost("/api/readings", row);
-      done++;
-    }
+    for (const row of mapped) { setStatus("loading", `Importando ${done + 1} de ${mapped.length}…`); await apiPost("/api/readings", row); done++; }
     setStatus("success", `Se importaron ${done} lectura(s).${skipped ? ` Se omitieron ${skipped} fila(s) incompletas.` : ""}`);
     await loadAndRender();
-  } catch (err) {
-    setStatus("error", "No se pudo importar: " + err.message);
-  }
+  } catch (err) { setStatus("error", "No se pudo importar: " + err.message); }
   e.target.value = "";
 });
-
 document.getElementById("templateBtn").addEventListener("click", () => {
   const csv = "Fecha,Hora,Sistolica,Diastolica,LPM,Peso,Observaciones\n2026-07-14,17:00,120,80,70,75,Ejemplo de observación\n";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "plantilla-lecturas.csv";
-  a.click();
+  a.href = URL.createObjectURL(blob); a.download = "plantilla-lecturas.csv"; a.click();
 });
-
 document.getElementById("printBtn").addEventListener("click", () => window.print());
-
 document.getElementById("shareBtn").addEventListener("click", () => {
   const data = currentData;
   const last5 = data.slice(-5);
@@ -634,24 +567,14 @@ document.getElementById("shareBtn").addEventListener("click", () => {
     text += `${r.date.split("-").reverse().join("/")} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr ? `, ${r.hr} LPM` : ""}${r.weight ? `, ${r.weight} kg` : ""} (${cat.label})\n`;
     if (r.obs) text += `  ${r.obs}\n`;
   });
-  const sysVals = data.map(r => r.sys);
-  const diaVals = data.map(r => r.dia);
+  const sysVals = data.map(r => r.sys), diaVals = data.map(r => r.dia);
   const avg = arr => Math.round(arr.reduce((a,b)=>a+b,0) / arr.length);
   text += `\nPromedio del período completo (${data.length} lecturas): ${avg(sysVals)}/${avg(diaVals)} mmHg`;
   document.getElementById("shareOutput").value = text;
   document.getElementById("shareWrap").style.display = "block";
 });
 
-document.getElementById("doctorLink").textContent = window.location.origin + "/doctor";
-document.getElementById("copyDoctorLink").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(window.location.origin + "/doctor");
-  const btn = document.getElementById("copyDoctorLink");
-  const original = btn.textContent;
-  btn.textContent = "Copiado";
-  setTimeout(() => { btn.textContent = original; }, 1500);
-});
-
-loadProfile();
+loadAccount();
 loadAndRender();
 </script>
 </body>

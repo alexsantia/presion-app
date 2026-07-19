@@ -5,31 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reigning Blood Pressure App · Vista del médico</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="/shared/common.js"></script>
 <style>
   :root {
     color-scheme: light;
-    --normal: #6FA98C;
-    --elevada: #D8AE5C;
-    --etapa1: #D98E5F;
-    --etapa2: #C97064;
-    --crisis: #A6534B;
-    --border: #E1E9E4;
-    --bg-card: #ffffff;
-    --bg-page: #F4F7F5;
-    --text: #33403D;
-    --text-muted: #7C8A85;
-    --accent: #4F7A6F;
-    --accent-hover: #436A60;
-    --accent-soft: #E8F0EC;
-    --weight: #9B8AC4;
+    --normal: #6FA98C; --elevada: #D8AE5C; --etapa1: #D98E5F; --etapa2: #C97064; --crisis: #A6534B;
+    --border: #E1E9E4; --bg-card: #ffffff; --bg-page: #F4F7F5; --text: #33403D; --text-muted: #7C8A85;
+    --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC; --weight: #9B8AC4;
   }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 24px; background: var(--bg-page); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-  }
-  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
+  .topbar { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
+  .topbar-links { display: flex; gap: 14px; align-items: center; }
   h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
   .badge-role { background: var(--accent-soft); color: var(--accent-hover); font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
@@ -51,8 +38,8 @@
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-  .logout-link { font-size: 12px; color: var(--text-muted); background:none; border:none; cursor:pointer; padding:0; }
-  .logout-link:hover { text-decoration: underline; }
+  .link-btn { font-size: 12px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
   .status-banner { font-size: 12px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
   .status-banner.loading { background: var(--accent-soft); color: var(--accent-hover); }
   .status-banner.error { background: #FBF0EE; color: var(--crisis); }
@@ -68,6 +55,9 @@
   .profile-line { font-size: 14px; margin-bottom: 4px; }
   .profile-line strong { font-weight: 650; }
   #emptyState { font-size: 13px; color: var(--text-muted); }
+  .pw-form { display: grid; gap: 10px; max-width: 320px; }
+  .field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .field input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
   footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
 </style>
 </head>
@@ -75,11 +65,16 @@
 
 <div class="topbar">
   <h1>Reigning Blood Pressure App <span class="badge-role">Vista del médico</span></h1>
-  <form method="POST" action="/logout"><button type="submit" class="logout-link">Cerrar sesión</button></form>
+  <div class="topbar-links">
+    <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
+    <form method="POST" action="/logout"><button type="submit" class="link-btn">Cerrar sesión</button></form>
+  </div>
 </div>
 <div class="subtitle">Solo lectura · puedes revisar lecturas y dejar comentarios, no puedes editar ni borrar datos</div>
 
 <div id="statusBanner"></div>
+
+<div class="section" id="streakSection"></div>
 
 <div class="section">
   <h2>Paciente</h2>
@@ -103,9 +98,7 @@
   <h2>Historial de lecturas</h2>
   <div id="emptyState" style="display:none;">El paciente todavía no ha registrado lecturas.</div>
   <table id="readingsTable">
-    <thead>
-      <tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th></tr>
-    </thead>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th></tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
 </div>
@@ -113,9 +106,7 @@
 <div class="section">
   <h2>Dejar un comentario o recomendación</h2>
   <form class="comment-form" id="commentForm">
-    <select id="c_reading">
-      <option value="">Comentario general (no ligado a una lectura)</option>
-    </select>
+    <select id="c_reading"><option value="">Comentario general (no ligado a una lectura)</option></select>
     <textarea id="c_text" rows="3" placeholder="Escribe tu observación o recomendación aquí…" required></textarea>
     <button type="submit" class="btn-primary" style="grid-column: 1 / -1; justify-self: start;">Guardar comentario</button>
   </form>
@@ -126,19 +117,19 @@
   <div id="commentsContent"></div>
 </div>
 
+<div class="section">
+  <h2>Cambiar mi contraseña</h2>
+  <form class="pw-form" id="passwordForm">
+    <div class="field"><label>Contraseña actual</label><input type="password" id="pw_current" required></div>
+    <div class="field"><label>Nueva contraseña</label><input type="password" id="pw_new" required minlength="8"></div>
+    <div class="field"><label>Confirmar nueva contraseña</label><input type="password" id="pw_new2" required minlength="8"></div>
+    <button type="submit" class="btn-primary" style="justify-self:start;">Actualizar contraseña</button>
+  </form>
+</div>
+
 <footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
 
 <script>
-function classify(sys, dia) {
-  if (sys >= 180 || dia >= 120) return {label: "Crisis hipertensiva", key:"crisis"};
-  if (sys >= 140 || dia >= 90) return {label: "Hipertensión etapa 2", key:"etapa2"};
-  if (sys >= 130 || dia >= 80) return {label: "Hipertensión etapa 1", key:"etapa1"};
-  if (sys >= 120 && dia < 80) return {label: "Elevada", key:"elevada"};
-  return {label: "Normal", key:"normal"};
-}
-const categoryColors = { normal:"#6FA98C", elevada:"#D8AE5C", etapa1:"#D98E5F", etapa2:"#C97064", crisis:"#A6534B" };
-function fmtDate(d) { const [y,m,day] = d.split("-"); return `${day}/${m}`; }
-
 let chartInstance = null;
 let currentData = [];
 let currentComments = [];
@@ -161,41 +152,27 @@ async function apiPost(url, body) {
   return json;
 }
 
-async function loadProfile() {
+async function loadPatient() {
   try {
-    const profile = await apiGet("/api/profile");
-    const el = document.getElementById("profileContent");
-    if (!profile.name && !profile.age) {
-      el.innerHTML = `<div class="profile-line" style="color:var(--text-muted);">El paciente aún no completó su perfil.</div>`;
-      return;
-    }
-    el.innerHTML = `
+    const profile = await apiGet("/api/patient");
+    const age = calcAge(profile.birthdate);
+    document.getElementById("profileContent").innerHTML = `
       <div class="profile-line"><strong>${profile.name || "(sin nombre)"}</strong></div>
-      <div class="profile-line" style="color:var(--text-muted);">${profile.age ? profile.age + " años" : "edad no registrada"}</div>
+      <div class="profile-line" style="color:var(--text-muted);">${age != null ? age + " años" : "edad no registrada"}</div>
     `;
   } catch (err) {
     document.getElementById("profileContent").innerHTML = `<div class="profile-line" style="color:var(--crisis);">No se pudo cargar el perfil.</div>`;
   }
 }
 
-function commentsForReading(id) {
-  return currentComments.filter(c => c.reading_id === id);
-}
-
+function commentsForReading(id) { return currentComments.filter(c => c.reading_id === id); }
 async function loadComments() {
-  try {
-    currentComments = await apiGet("/api/comments");
-  } catch (err) {
-    currentComments = [];
-  }
+  try { currentComments = await apiGet("/api/comments"); } catch (err) { currentComments = []; }
   renderComments();
 }
 function renderComments() {
   const el = document.getElementById("commentsContent");
-  if (!currentComments.length) {
-    el.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Todavía no hay comentarios.</div>`;
-    return;
-  }
+  if (!currentComments.length) { el.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Todavía no hay comentarios.</div>`; return; }
   const sorted = [...currentComments].sort((a,b) => (b.created_at||"").localeCompare(a.created_at||""));
   el.innerHTML = sorted.map(c => {
     const reading = c.reading_id ? currentData.find(r => r.id === c.reading_id) : null;
@@ -214,11 +191,15 @@ async function loadAndRender() {
     render();
     renderComments();
     fillReadingSelect();
+    renderStreak();
   } catch (err) {
     setStatus("error", "No se pudo cargar la información: " + err.message);
   }
 }
-
+function renderStreak() {
+  const streak = computeStreak(currentData.map(r => r.date));
+  document.getElementById("streakSection").innerHTML = streakLevelHTML(streak);
+}
 function fillReadingSelect() {
   const sel = document.getElementById("c_reading");
   const current = sel.value;
@@ -232,14 +213,12 @@ function render() {
   const emptyState = document.getElementById("emptyState");
   const table = document.getElementById("readingsTable");
   if (!data.length) {
-    emptyState.style.display = "block";
-    table.style.display = "none";
+    emptyState.style.display = "block"; table.style.display = "none";
     document.getElementById("summaryCards").innerHTML = "";
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     return;
   }
-  emptyState.style.display = "none";
-  table.style.display = "table";
+  emptyState.style.display = "none"; table.style.display = "table";
 
   const tbody = document.getElementById("readingsBody");
   tbody.innerHTML = "";
@@ -248,19 +227,16 @@ function render() {
     const notes = commentsForReading(r.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${fmtDate(r.date)}</td>
-      <td>${r.time}</td>
+      <td>${fmtDate(r.date)}</td><td>${r.time}</td>
       <td><strong>${r.sys}/${r.dia}</strong></td>
       <td>${r.hr ?? "—"}</td>
       <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
-      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>
-    `;
+      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
     tbody.appendChild(tr);
   });
 
-  const sysVals = data.map(r => r.sys);
-  const diaVals = data.map(r => r.dia);
+  const sysVals = data.map(r => r.sys), diaVals = data.map(r => r.dia);
   const hrVals = data.filter(r => r.hr != null).map(r => r.hr);
   const weightVals = data.filter(r => r.weight != null).map(r => r.weight);
   const avg = arr => Math.round((arr.reduce((a,b)=>a+b,0) / arr.length) * 10) / 10;
@@ -268,26 +244,10 @@ function render() {
   const lastCat = classify(last.sys, last.dia);
 
   document.getElementById("summaryCards").innerHTML = `
-    <div class="card">
-      <div class="label">Última lectura</div>
-      <div class="value">${last.sys}/${last.dia}</div>
-      <div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div>
-    </div>
-    <div class="card">
-      <div class="label">Promedio del período</div>
-      <div class="value">${avg(sysVals)}/${avg(diaVals)}</div>
-      <div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div>
-    </div>
-    <div class="card">
-      <div class="label">Peso</div>
-      <div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div>
-      <div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div>
-    </div>
-    <div class="card">
-      <div class="label">Lecturas registradas</div>
-      <div class="value">${data.length}</div>
-      <div class="value small">${fmtDate(data[0].date)} – ${fmtDate(last.date)}</div>
-    </div>
+    <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div></div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div></div>
+    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div></div>
+    <div class="card"><div class="label">Lecturas registradas</div><div class="value">${data.length}</div><div class="value small">${fmtDate(data[0].date)} – ${fmtDate(last.date)}</div></div>
   `;
 
   const ctx = document.getElementById("trendChart").getContext("2d");
@@ -295,18 +255,13 @@ function render() {
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(ctx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
-        { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
-        { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
-        { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
+    data: { labels, datasets: [
+      { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
+      { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
+      { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
@@ -329,12 +284,26 @@ document.getElementById("commentForm").addEventListener("submit", async e => {
     await loadComments();
     render();
     setTimeout(() => setStatus(null), 1500);
-  } catch (err) {
-    setStatus("error", err.message);
-  }
+  } catch (err) { setStatus("error", err.message); }
 });
 
-loadProfile();
+document.getElementById("passwordForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const n1 = document.getElementById("pw_new").value;
+  const n2 = document.getElementById("pw_new2").value;
+  if (n1 !== n2) { setStatus("error", "Las contraseñas nuevas no coinciden."); return; }
+  try {
+    setStatus("loading", "Actualizando contraseña…");
+    await apiPost("/api/account/password", { currentPassword: document.getElementById("pw_current").value, newPassword: n1 });
+    document.getElementById("passwordForm").reset();
+    setStatus("success", "Contraseña actualizada.");
+    setTimeout(() => setStatus(null), 1500);
+  } catch (err) { setStatus("error", err.message); }
+});
+
+wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+
+loadPatient();
 loadAndRender();
 </script>
 </body>

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invitación de médico · Reigning Blood Pressure App</title>
+<link rel="stylesheet" href="/shared/auth.css">
+</head>
+<body>
+  <div class="auth-card" id="loadingCard">
+    <h1>Reigning Blood Pressure App</h1>
+    <p class="sub">Verificando tu invitación…</p>
+  </div>
+
+  <div class="auth-card" id="invalidCard" style="display:none;">
+    <h1>Reigning Blood Pressure App</h1>
+    <p class="sub">Esta invitación no es válida o ya fue usada. Pídele a tu paciente que genere un enlace nuevo desde su panel.</p>
+  </div>
+
+  <form class="auth-card" id="signupForm" style="display:none;">
+    <h1>Reigning Blood Pressure App</h1>
+    <p class="sub" id="patientNameSub">Estás creando tu acceso de médico</p>
+    <label>Tu nombre</label>
+    <input type="text" id="name" required autofocus>
+    <label>Tu correo</label>
+    <input type="email" id="email" required>
+    <label>Elige una contraseña</label>
+    <input type="password" id="password" required minlength="8">
+    <label>Confirmar contraseña</label>
+    <input type="password" id="password2" required minlength="8">
+    <div class="err" id="err" style="display:none;"></div>
+    <button type="submit">Crear mi acceso</button>
+    <div class="switch">¿Ya tienes cuenta con este paciente? <a href="/doctor/login">Inicia sesión</a></div>
+  </form>
+
+<script>
+const token = window.location.pathname.split("/").filter(Boolean).pop();
+
+(async () => {
+  try {
+    const res = await fetch("/api/invite/" + encodeURIComponent(token));
+    const json = await res.json();
+    document.getElementById("loadingCard").style.display = "none";
+    if (!json.ok || !json.data) {
+      document.getElementById("invalidCard").style.display = "block";
+      return;
+    }
+    document.getElementById("patientNameSub").textContent = `Vas a poder ver las lecturas de ${json.data.name} en modo de solo lectura`;
+    document.getElementById("signupForm").style.display = "block";
+  } catch (err) {
+    document.getElementById("loadingCard").style.display = "none";
+    document.getElementById("invalidCard").style.display = "block";
+  }
+})();
+
+document.getElementById("signupForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errEl = document.getElementById("err");
+  errEl.style.display = "none";
+  const password = document.getElementById("password").value;
+  const password2 = document.getElementById("password2").value;
+  if (password !== password2) {
+    errEl.textContent = "Las contraseñas no coinciden.";
+    errEl.style.display = "block";
+    return;
+  }
+  try {
+    const res = await fetch("/doctor/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        invite_token: token,
+        name: document.getElementById("name").value,
+        email: document.getElementById("email").value,
+        password,
+      }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || "no se pudo crear tu acceso");
+    window.location.href = json.redirect || "/doctor";
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = "block";
+  }
+});
+</script>
+</body>
+</html>

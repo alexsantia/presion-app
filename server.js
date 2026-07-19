@@ -1,32 +1,32 @@
-// Backend de Reigning Blood Pressure App.
-// Sirve dos vistas protegidas por contraseñas distintas (paciente y médico),
-// y hace de proxy hacia el Google Apps Script Web App: el token de Sheets
-// vive solo aquí, nunca llega al navegador.
+// Backend de Reigning Blood Pressure App (multipaciente).
+// Cada paciente tiene su propia cuenta; cada médico está ligado a un solo
+// paciente vía un enlace de invitación de un solo uso. Este servidor nunca
+// guarda contraseñas en texto plano (usa bcrypt) y es el único que conoce el
+// token de Sheets (nunca llega al navegador).
 
 require("dotenv").config();
 const path = require("path");
 const express = require("express");
 const cookieSession = require("cookie-session");
+const bcrypt = require("bcryptjs");
 
 const {
   PORT = 3000,
   SESSION_SECRET,
-  APP_PASSWORD,
-  DOCTOR_PASSWORD,
   SHEETS_WEBAPP_URL,
   SHEETS_TOKEN,
 } = process.env;
 
-if (!SESSION_SECRET || !APP_PASSWORD || !DOCTOR_PASSWORD || !SHEETS_WEBAPP_URL || !SHEETS_TOKEN) {
+if (!SESSION_SECRET || !SHEETS_WEBAPP_URL || !SHEETS_TOKEN) {
   console.error(
     "Faltan variables de entorno. Revisa .env.example y crea tu propio .env con " +
-    "SESSION_SECRET, APP_PASSWORD, DOCTOR_PASSWORD, SHEETS_WEBAPP_URL y SHEETS_TOKEN."
+    "SESSION_SECRET, SHEETS_WEBAPP_URL y SHEETS_TOKEN."
   );
   process.exit(1);
 }
 
 const app = express();
-app.set("trust proxy", 1); // detrás de Nginx o de Render
+app.set("trust proxy", 1);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
@@ -34,80 +34,17 @@ app.use(
   cookieSession({
     name: "bp_session",
     keys: [SESSION_SECRET],
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 días
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
   })
 );
-
-// ---- Login del paciente ----
-function loginPage(title, action, error) {
-  return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${title}</title>
-<style>
-  :root { color-scheme: light; }
-  body { font-family: -apple-system, sans-serif; background:#F4F7F5; display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }
-  form { background:white; padding:32px; border-radius:14px; border:1px solid #E1E9E4; width:280px; box-shadow: 0 2px 10px rgba(60,90,80,0.06); }
-  h1 { font-size: 17px; margin: 0 0 4px 0; color:#33403D; }
-  p.sub { font-size: 12px; color:#7C8A85; margin: 0 0 18px 0; }
-  input { width:100%; padding:10px; margin-top:6px; margin-bottom:14px; border:1px solid #DCE5E0; border-radius:8px; box-sizing:border-box; font-size:14px; }
-  button { width:100%; padding:11px; background:#4F7A6F; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
-  button:hover { background:#436A60; }
-  .err { color:#B9564C; font-size:13px; margin-bottom:10px; }
-</style></head>
-<body>
-  <form method="POST" action="${action}">
-    <h1>Reigning Blood Pressure App</h1>
-    <p class="sub">${title}</p>
-    <label style="font-size:12px;color:#7C8A85;">Contraseña</label>
-    <input type="password" name="password" autofocus required>
-    ${error ? '<div class="err">Contraseña incorrecta.</div>' : ""}
-    <button type="submit">Entrar</button>
-  </form>
-</body></html>`;
-}
-
-app.get("/login", (req, res) => {
-  res.type("html").send(loginPage("Acceso del paciente", "/login", req.query.error));
-});
-app.post("/login", (req, res) => {
-  if (req.body.password === APP_PASSWORD) {
-    req.session = { role: "patient" };
-    return res.redirect("/");
-  }
-  res.redirect("/login?error=1");
-});
-
-app.get("/doctor/login", (req, res) => {
-  res.type("html").send(loginPage("Acceso del médico", "/doctor/login", req.query.error));
-});
-app.post("/doctor/login", (req, res) => {
-  if (req.body.password === DOCTOR_PASSWORD) {
-    req.session = { role: "doctor" };
-    return res.redirect("/doctor");
-  }
-  res.redirect("/doctor/login?error=1");
-});
-
-app.post("/logout", (req, res) => {
-  const wasDoctor = req.session && req.session.role === "doctor";
-  req.session = null;
-  res.redirect(wasDoctor ? "/doctor/login" : "/login");
-});
-
-function requireRole(role) {
-  return (req, res, next) => {
-    if (req.session && req.session.role === role) return next();
-    if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "no autenticado" });
-    return res.redirect(role === "doctor" ? "/doctor/login" : "/login");
-  };
-}
-function requireAnyRole(req, res, next) {
-  if (req.session && (req.session.role === "patient" || req.session.role === "doctor")) return next();
-  return res.status(401).json({ ok: false, error: "no autenticado" });
-}
+// Solo se expone estáticamente la carpeta "shared" (JS común, sin datos ni
+// lógica de sesión). Las páginas HTML se sirven una por una más abajo con
+// sendFile, cada una detrás de su propio control de acceso, para que nadie
+// pueda pedir /index.html o /doctor.html directo sin pasar por ahí.
+app.use("/shared", express.static(path.join(__dirname, "public", "shared")));
 
 // ---- Proxy hacia el Apps Script Web App ----
 async function callSheetsApi(params, body) {
@@ -124,75 +61,179 @@ async function callSheetsApi(params, body) {
   return resp.json();
 }
 
-// ---- Vistas protegidas ----
-app.get("/", requireRole("patient"), (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-app.get("/doctor", requireRole("doctor"), (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "doctor.html"));
+function asyncRoute(fn) {
+  return (req, res) => fn(req, res).catch(err => res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message }));
+}
+
+// ---- Middlewares de autenticación ----
+function requireRole(role) {
+  return (req, res, next) => {
+    if (req.session && req.session.role === role) return next();
+    if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "no autenticado" });
+    return res.redirect(role === "doctor" ? "/doctor/login" : "/login");
+  };
+}
+function requireAnyRole(req, res, next) {
+  if (req.session && (req.session.role === "patient" || req.session.role === "doctor")) return next();
+  return res.status(401).json({ ok: false, error: "no autenticado" });
+}
+
+app.post("/logout", (req, res) => {
+  const wasDoctor = req.session && req.session.role === "doctor";
+  req.session = null;
+  res.redirect(wasDoctor ? "/doctor/login" : "/login");
 });
 
-// ---- API: lecturas ----
-app.get("/api/readings", requireAnyRole, async (req, res) => {
-  try {
-    res.json(await callSheetsApi({ action: "list" }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
-app.post("/api/readings", requireRole("patient"), async (req, res) => {
-  try {
-    res.json(await callSheetsApi(null, { action: "add", ...req.body }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
-app.put("/api/readings/:id", requireRole("patient"), async (req, res) => {
-  try {
-    res.json(await callSheetsApi(null, { action: "update", id: req.params.id, ...req.body }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
-app.delete("/api/readings/:id", requireRole("patient"), async (req, res) => {
-  try {
-    res.json(await callSheetsApi(null, { action: "delete", id: req.params.id }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
+// ================= PACIENTE =================
 
-// ---- API: perfil del paciente ----
-app.get("/api/profile", requireAnyRole, async (req, res) => {
-  try {
-    res.json(await callSheetsApi({ action: "get_profile" }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
-app.post("/api/profile", requireRole("patient"), async (req, res) => {
-  try {
-    res.json(await callSheetsApi(null, { action: "set_profile", ...req.body }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
-  }
-});
+app.get("/signup", (req, res) => res.sendFile(path.join(__dirname, "public", "signup.html")));
+app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
+app.get("/", requireRole("patient"), (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
-// ---- API: comentarios del médico ----
-app.get("/api/comments", requireAnyRole, async (req, res) => {
-  try {
-    res.json(await callSheetsApi({ action: "list_comments" }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
+app.post("/signup", asyncRoute(async (req, res) => {
+  const { name, email, password, birthdate } = req.body;
+  if (!name || !email || !password) return res.status(400).json({ ok: false, error: "faltan datos" });
+  if (password.length < 8) return res.status(400).json({ ok: false, error: "la contraseña debe tener al menos 8 caracteres" });
+  const hash = await bcrypt.hash(password, 10);
+  const result = await callSheetsApi(null, { action: "signup_patient", name, email, password_hash: hash, birthdate: birthdate || "" });
+  if (!result.ok) return res.status(400).json(result);
+  req.session = { role: "patient", patientId: result.id, email: String(email).toLowerCase() };
+  res.json({ ok: true, redirect: "/" });
+}));
+
+app.post("/login", asyncRoute(async (req, res) => {
+  const { email, password } = req.body;
+  const result = await callSheetsApi({ action: "get_patient_by_email", email: String(email || "").toLowerCase() });
+  const patient = result.ok ? result.data : null;
+  if (!patient || !(await bcrypt.compare(password || "", patient.password_hash || ""))) {
+    return res.status(401).json({ ok: false, error: "correo o contraseña incorrectos" });
   }
-});
-app.post("/api/comments", requireRole("doctor"), async (req, res) => {
-  try {
-    res.json(await callSheetsApi(null, { action: "add_comment", author: "Médico", ...req.body }));
-  } catch (err) {
-    res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message });
+  req.session = { role: "patient", patientId: patient.id, email: patient.email };
+  res.json({ ok: true, redirect: "/" });
+}));
+
+// ================= MEDICO =================
+
+app.get("/doctor/invite/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-invite.html")));
+app.get("/doctor/login", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-login.html")));
+app.get("/doctor", requireRole("doctor"), (req, res) => res.sendFile(path.join(__dirname, "public", "doctor.html")));
+
+app.get("/api/invite/:token", asyncRoute(async (req, res) => {
+  const result = await callSheetsApi({ action: "get_patient_by_invite_token", token_value: req.params.token });
+  res.json(result);
+}));
+
+app.post("/doctor/signup", asyncRoute(async (req, res) => {
+  const { invite_token, name, email, password } = req.body;
+  if (!invite_token || !name || !email || !password) return res.status(400).json({ ok: false, error: "faltan datos" });
+  if (password.length < 8) return res.status(400).json({ ok: false, error: "la contraseña debe tener al menos 8 caracteres" });
+  const hash = await bcrypt.hash(password, 10);
+  const result = await callSheetsApi(null, { action: "signup_doctor", invite_token, name, email, password_hash: hash });
+  if (!result.ok) return res.status(400).json(result);
+  req.session = { role: "doctor", doctorId: result.id, patientId: result.patient_id, email: String(email).toLowerCase() };
+  res.json({ ok: true, redirect: "/doctor" });
+}));
+
+app.post("/doctor/login", asyncRoute(async (req, res) => {
+  const { email, password } = req.body;
+  const result = await callSheetsApi({ action: "get_doctor_by_email", email: String(email || "").toLowerCase() });
+  const doctor = result.ok ? result.data : null;
+  if (!doctor || !(await bcrypt.compare(password || "", doctor.password_hash || ""))) {
+    return res.status(401).json({ ok: false, error: "correo o contraseña incorrectos" });
   }
-});
+  req.session = { role: "doctor", doctorId: doctor.id, patientId: doctor.patient_id, email: doctor.email };
+  res.json({ ok: true, redirect: "/doctor" });
+}));
+
+// ================= FAMILIA (público, solo lectura) =================
+
+app.get("/familia/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "familia.html")));
+
+app.get("/api/familia/:token", asyncRoute(async (req, res) => {
+  const patientResult = await callSheetsApi({ action: "get_patient_by_share_token", token_value: req.params.token });
+  if (!patientResult.ok || !patientResult.data) return res.status(404).json({ ok: false, error: "enlace no válido" });
+  const patient = patientResult.data;
+  const readingsResult = await callSheetsApi({ action: "list", patient_id: patient.id });
+  res.json({ ok: true, data: { patient: { name: patient.name, birthdate: patient.birthdate }, readings: readingsResult.ok ? readingsResult.data : [] } });
+}));
+
+// ================= API con sesión (paciente y/o médico) =================
+
+app.get("/api/readings", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list", patient_id: req.session.patientId }));
+}));
+app.post("/api/readings", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/readings/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/readings/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+app.get("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_comments", patient_id: req.session.patientId }));
+}));
+app.post("/api/comments", requireRole("doctor"), asyncRoute(async (req, res) => {
+  const doctorResult = await callSheetsApi({ action: "get_doctor_by_id", id: req.session.doctorId });
+  const authorName = (doctorResult.ok && doctorResult.data && doctorResult.data.name) || "Médico";
+  res.json(await callSheetsApi(null, { action: "add_comment", patient_id: req.session.patientId, author: authorName, ...req.body }));
+}));
+
+// Perfil público del paciente ligado a la sesión (paciente viendo el suyo, o
+// médico viendo el de su paciente asignado).
+app.get("/api/patient", requireAnyRole, asyncRoute(async (req, res) => {
+  const result = await callSheetsApi({ action: "get_patient_by_id", id: req.session.patientId });
+  res.json(result);
+}));
+
+app.get("/api/account", requireAnyRole, asyncRoute(async (req, res) => {
+  if (req.session.role === "patient") {
+    const result = await callSheetsApi({ action: "get_patient_by_id", id: req.session.patientId });
+    return res.json(result);
+  }
+  const result = await callSheetsApi({ action: "get_doctor_by_id", id: req.session.doctorId });
+  res.json(result);
+}));
+
+app.post("/api/account/profile", requireRole("patient"), asyncRoute(async (req, res) => {
+  const { name, birthdate } = req.body;
+  res.json(await callSheetsApi(null, { action: "update_patient_profile", id: req.session.patientId, name, birthdate }));
+}));
+
+app.post("/api/account/password", requireAnyRole, asyncRoute(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ ok: false, error: "la nueva contraseña debe tener al menos 8 caracteres" });
+
+  if (req.session.role === "patient") {
+    const result = await callSheetsApi({ action: "get_patient_by_email", email: req.session.email });
+    const patient = result.ok ? result.data : null;
+    if (!patient || !(await bcrypt.compare(currentPassword || "", patient.password_hash || ""))) {
+      return res.status(401).json({ ok: false, error: "contraseña actual incorrecta" });
+    }
+    const hash = await bcrypt.hash(newPassword, 10);
+    return res.json(await callSheetsApi(null, { action: "update_patient_password", id: req.session.patientId, password_hash: hash }));
+  }
+
+  const result = await callSheetsApi({ action: "get_doctor_by_email", email: req.session.email });
+  const doctor = result.ok ? result.data : null;
+  if (!doctor || !(await bcrypt.compare(currentPassword || "", doctor.password_hash || ""))) {
+    return res.status(401).json({ ok: false, error: "contraseña actual incorrecta" });
+  }
+  const hash = await bcrypt.hash(newPassword, 10);
+  res.json(await callSheetsApi(null, { action: "update_doctor_password", id: req.session.doctorId, password_hash: hash }));
+}));
+
+app.post("/api/account/invite", requireRole("patient"), asyncRoute(async (req, res) => {
+  const result = await callSheetsApi(null, { action: "generate_doctor_invite", patient_id: req.session.patientId });
+  res.json(result);
+}));
+
+app.post("/api/account/share-token/regenerate", requireRole("patient"), asyncRoute(async (req, res) => {
+  const result = await callSheetsApi(null, { action: "regenerate_share_token", patient_id: req.session.patientId });
+  res.json(result);
+}));
 
 app.listen(PORT, () => {
   console.log(`Reigning Blood Pressure App escuchando en http://localhost:${PORT}`);
