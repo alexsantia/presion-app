@@ -29,6 +29,10 @@
   .card .value { font-size: 21px; font-weight: 650; }
   .card .value.small { font-size: 14px; font-weight: 500; }
   .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .section-streak  { background:#FBF6E9; border-left:4px solid #D8AE5C; }
+  .section-chart   { background:#F3EFFA; border-left:4px solid #9B8AC4; }
+  .section-history { background:#FDF6EF; border-left:4px solid #D9A15F; }
+  .section-ai      { background:#FBEFF5; border-left:4px solid #B0559B; }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .chart-wrap { position: relative; height: 280px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -74,10 +78,10 @@
 <div class="subtitle" id="subtitleText">Vista de solo lectura, compartida por el paciente</div>
 
 <div id="statusBanner"></div>
-<div class="section" id="streakSection"></div>
+<div class="section section-streak" id="streakSection"></div>
 <div class="grid" id="summaryCards"></div>
 
-<div class="section">
+<div class="section section-chart">
   <div class="toolbar">
     <h2 style="flex:1">Tendencia</h2>
     <div class="chart-filter" id="chartFilter" role="group" aria-label="Agrupar gráfica por periodo">
@@ -96,7 +100,7 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section section-history">
   <h2>Historial de lecturas</h2>
   <div id="emptyState" style="display:none; font-size:13px; color:var(--text-muted);">Todavía no hay lecturas registradas.</div>
   <table id="readingsTable">
@@ -120,7 +124,7 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section section-ai">
   <h2>Análisis con IA</h2>
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un texto con estos resultados para pegarlo en ChatGPT, Gemini o cualquier otro asistente de IA y obtener un análisis de apoyo.</p>
   <div class="ai-controls">
@@ -228,7 +232,7 @@ document.getElementById("chartFilter").addEventListener("click", e => {
 });
 
 function renderChart() {
-  const grouped = aggregateReadings(currentData, chartGranularity);
+  const grouped = chartDataForFilter(currentData, chartGranularity);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
@@ -289,10 +293,12 @@ document.getElementById("aiGenerateBtn").addEventListener("click", () => {
   const granularity = document.getElementById("aiPeriod").value;
   const filtered = filterByPeriod(currentData, granularity);
   const age = currentPatient ? calcAge(currentPatient.birthdate) : null;
+  const firstName = currentPatient && currentPatient.name ? currentPatient.name.trim().split(/\s+/)[0] : "";
   const prompt = buildAiAnalysisPrompt(filtered, {
-    patientName: currentPatient ? currentPatient.name : "",
+    firstName,
     ageText: age != null ? age + " años" : "",
     granularity,
+    audience: "family",
   });
   document.getElementById("aiOutput").value = prompt;
   document.getElementById("aiWrap").style.display = "block";

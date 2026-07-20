@@ -28,9 +28,14 @@ function calcAge(birthdate) {
   return age;
 }
 
-// ---- Agregación de lecturas para la gráfica (día / semana / mes / año) ----
+// ---- Agregación de lecturas para la gráfica (hora / día / semana / mes / año) ----
 const MONTH_ABBR_ES_ = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-function periodKeyAndLabel_(dateStr, granularity) {
+function periodKeyAndLabel_(dateStr, granularity, timeStr) {
+  if (granularity === "hour") {
+    const hh = String((timeStr || "00:00").split(":")[0]).padStart(2, "0");
+    const key = `${dateStr} ${hh}`;
+    return { key, label: `${hh}:00` };
+  }
   if (granularity === "week") {
     const d = new Date(dateStr + "T00:00:00");
     const dow = (d.getDay() + 6) % 7; // lunes = 0
@@ -51,11 +56,11 @@ function periodKeyAndLabel_(dateStr, granularity) {
 }
 // Agrupa lecturas por periodo y promedia sys/dia/hr/weight dentro de cada
 // grupo (ignorando valores nulos). Devuelve los grupos ordenados
-// cronológicamente. granularity: "day" | "week" | "month" | "year".
+// cronológicamente. granularity: "hour" | "day" | "week" | "month" | "year".
 function aggregateReadings(data, granularity) {
   const groups = new Map();
   (data || []).forEach(r => {
-    const { key, label } = periodKeyAndLabel_(r.date, granularity || "day");
+    const { key, label } = periodKeyAndLabel_(r.date, granularity || "day", r.time);
     if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [] });
     const g = groups.get(key);
     if (r.sys != null) g.sys.push(r.sys);
@@ -67,6 +72,14 @@ function aggregateReadings(data, granularity) {
   return Array.from(groups.values())
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), count: Math.max(g.sys.length, g.dia.length) }));
+}
+// Para la gráfica de Tendencia: cada botón de filtro (día/semana/mes/año)
+// acorta el rango de fechas mostrado (con filterByPeriod) y define en qué
+// unidad se agrupa el eje X: "día" agrupa por hora, el resto por día.
+const CHART_GROUP_BY_ = { day: "hour", week: "day", month: "day", year: "day" };
+function chartDataForFilter(data, chartPeriod) {
+  const filtered = filterByPeriod(data, chartPeriod);
+  return aggregateReadings(filtered, CHART_GROUP_BY_[chartPeriod] || "day");
 }
 
 // ---- Paginación genérica ----
@@ -98,13 +111,23 @@ function filterByPeriod(data, granularity) {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   return list.filter(r => r.date >= cutoffStr);
 }
-// meta: { patientName, ageText, granularity }
+// meta: { patientName, firstName, ageText, granularity, audience }
+// audience: "doctor" (habla de "el paciente [Nombre completo], de X años") o
+// "family" (habla de "[Primer nombre]"). El prompt completo se redacta en
+// tercera persona, para que quien lo pegue en un chat de IA no tenga que
+// reescribirlo.
 function buildAiAnalysisPrompt(data, meta) {
   meta = meta || {};
   const filtered = data || [];
   const periodLabel = AI_PERIOD_LABELS[meta.granularity] || "el periodo seleccionado";
+  const isDoctor = meta.audience === "doctor";
+  const subject = isDoctor
+    ? `el paciente ${meta.patientName || "sin nombre registrado"}${meta.ageText ? ", de " + meta.ageText : ""}`
+    : `${meta.firstName || meta.patientName || "el paciente"}${meta.ageText ? ", de " + meta.ageText : ""}`;
+  const subjectShort = isDoctor ? "el paciente" : (meta.firstName || "la persona");
+
   if (!filtered.length) {
-    return `No hay lecturas registradas para ${periodLabel}. Elige otro periodo o registra lecturas primero.`;
+    return `No hay lecturas registradas para ${periodLabel} de ${subject}. Elige otro periodo o registra lecturas primero.`;
   }
   const sorted = [...filtered].sort((a, b) => (a.date + "T" + a.time).localeCompare(b.date + "T" + b.time));
   const sysVals = sorted.map(r => r.sys).filter(v => v != null);
@@ -118,8 +141,7 @@ function buildAiAnalysisPrompt(data, meta) {
   sorted.forEach(r => { const k = classify(r.sys, r.dia).key; counts[k] = (counts[k] || 0) + 1; });
   const countsText = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
 
-  let text = "Actúa como un asistente de salud. A continuación te comparto lecturas de presión arterial, frecuencia cardiaca y peso, registradas en Reigning Blood Pressure App.\n\n";
-  if (meta.patientName) text += `Paciente: ${meta.patientName}${meta.ageText ? " (" + meta.ageText + ")" : ""}\n`;
+  let text = `Actúa como un asistente de salud. A continuación se comparten lecturas de presión arterial, frecuencia cardiaca y peso de ${subject}, registradas en Reigning Blood Pressure App.\n\n`;
   text += `Periodo analizado: ${periodLabel}\n`;
   text += `Total de lecturas en este periodo: ${sorted.length}\n\n`;
   text += "Resumen:\n";
@@ -133,7 +155,7 @@ function buildAiAnalysisPrompt(data, meta) {
   sorted.forEach(r => {
     text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.obs ? " — " + r.obs : ""}\n`;
   });
-  text += "\nCon esta información, ayúdame a entender mi tendencia de presión arterial, qué debería vigilar o consultar con mi médico, y qué hábitos podrían ayudarme a mejorar. Aclara que esto no sustituye una consulta médica profesional.";
+  text += `\nCon esta información, ayuda a entender la tendencia de presión arterial de ${subjectShort}, qué se debería vigilar o consultar con un médico, y qué hábitos podrían ayudar a mejorar su salud cardiovascular. Aclara que esto no sustituye una consulta médica profesional.`;
   return text;
 }
 

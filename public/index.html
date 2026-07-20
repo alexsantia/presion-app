@@ -30,6 +30,15 @@
   .card .value { font-size: 21px; font-weight: 650; }
   .card .value.small { font-size: 14px; font-weight: 500; }
   .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .section-streak   { background:#FBF6E9; border-left:4px solid #D8AE5C; }
+  .section-profile  { background:#EEF3F7; border-left:4px solid #3E6FA0; }
+  .section-alerts   { background:#FBF0EE; border-left:4px solid #C97064; }
+  .section-comments { background:#E8F0EC; border-left:4px solid #4F7A6F; }
+  .section-chart    { background:#F3EFFA; border-left:4px solid #9B8AC4; }
+  .section-add      { background:#EAF6F0; border-left:4px solid #6FA98C; }
+  .section-history  { background:#FDF6EF; border-left:4px solid #D9A15F; }
+  .section-share    { background:#E7F6F6; border-left:4px solid #2E9E96; }
+  .section-password { background:#F2F0F7; border-left:4px solid #6B4FA0; }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .section h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 12px; }
   .section h3 { font-size: 13px; margin: 0 0 10px 0; font-weight: 650; }
@@ -118,9 +127,9 @@
 
 <div id="statusBanner"></div>
 
-<div class="section" id="streakSection"></div>
+<div class="section section-streak" id="streakSection"></div>
 
-<div class="section">
+<div class="section section-profile">
   <h2>Datos del paciente</h2>
   <form class="field-row" id="profileForm">
     <div class="field">
@@ -139,17 +148,17 @@
 
 <div class="grid" id="summaryCards"></div>
 
-<div class="section" id="alertsSection">
+<div class="section section-alerts" id="alertsSection">
   <h2>Alertas y notas</h2>
   <div id="alertsContent"></div>
 </div>
 
-<div class="section" id="commentsSection">
+<div class="section section-comments" id="commentsSection">
   <h2>Comentarios del médico <span class="muted">solo el médico puede agregar, aquí los ves</span></h2>
   <div id="commentsContent"></div>
 </div>
 
-<div class="section">
+<div class="section section-chart">
   <div class="toolbar">
     <h2 style="flex:1">Tendencia</h2>
     <div class="chart-filter" id="chartFilter" role="group" aria-label="Agrupar gráfica por periodo">
@@ -168,7 +177,7 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section section-add">
   <h2>Agregar lectura</h2>
   <form class="add-form" id="addForm">
     <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
@@ -189,7 +198,7 @@
   </form>
 </div>
 
-<div class="section">
+<div class="section section-history">
   <div class="toolbar">
     <h2 style="flex:1">Historial de lecturas</h2>
     <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
@@ -225,7 +234,7 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section section-share">
   <h2>Compartir Mediciones</h2>
   <div class="two-col">
     <div>
@@ -249,7 +258,7 @@
   </div>
 </div>
 
-<div class="section">
+<div class="section section-password">
   <h2>Cambiar mi contraseña</h2>
   <form class="pw-form" id="passwordForm">
     <div class="field"><label>Contraseña actual</label><input type="password" id="pw_current" required></div>
@@ -552,7 +561,7 @@ document.getElementById("chartFilter").addEventListener("click", e => {
 
 function renderChart() {
   const data = currentData;
-  const grouped = aggregateReadings(data, chartGranularity);
+  const grouped = chartDataForFilter(data, chartGranularity);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
