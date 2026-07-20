@@ -101,6 +101,7 @@
   .chart-filter-btn { border: none; background: transparent; color: var(--text-muted); font-size: 12px; padding: 5px 11px; border-radius: 6px; cursor: pointer; }
   .chart-filter-btn:hover { background: var(--accent-soft); color: var(--text); }
   .chart-filter-btn.active { background: var(--accent); color: white; }
+  .chart-day-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-family: inherit; color: var(--text); }
   .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
   .pagination-controls { display: flex; align-items: center; gap: 10px; }
   .pagination-controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
@@ -167,6 +168,7 @@
       <button type="button" class="chart-filter-btn" data-granularity="month">Mes</button>
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
     </div>
+    <input type="date" id="chartDayPicker" class="chart-day-picker">
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
   <div class="legend">
@@ -303,7 +305,7 @@ const GREETINGS = [
 ];
 let greetingPhrase = null; // fija por carga de página, no cambia entre re-renders
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+// todayStr() ahora vive en common.js (se comparte con doctor.html/familia.html)
 
 function formatMonitoringDuration(days) {
   if (days <= 0) return "menos de 1 día";
@@ -551,17 +553,26 @@ document.getElementById("nextPageBtn").addEventListener("click", () => { current
 
 // ---- Filtro de la gráfica por periodo ----
 let chartGranularity = "day";
+let chartDay = todayStr();
+const chartDayPickerEl = document.getElementById("chartDayPicker");
+chartDayPickerEl.value = chartDay;
+chartDayPickerEl.max = todayStr();
 document.getElementById("chartFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   chartGranularity = btn.dataset.granularity;
   document.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  chartDayPickerEl.style.display = chartGranularity === "day" ? "inline-block" : "none";
+  renderChart();
+});
+chartDayPickerEl.addEventListener("change", e => {
+  chartDay = e.target.value || todayStr();
   renderChart();
 });
 
 function renderChart() {
   const data = currentData;
-  const grouped = chartDataForFilter(data, chartGranularity);
+  const grouped = chartDataForFilter(data, chartGranularity, chartDay);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();

@@ -17,6 +17,8 @@ function fmtDate(d) {
   return `${day}/${m}`;
 }
 
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
 function calcAge(birthdate) {
   if (!birthdate) return null;
   const b = new Date(birthdate + (String(birthdate).length === 10 ? "T00:00:00" : ""));
@@ -34,7 +36,7 @@ function periodKeyAndLabel_(dateStr, granularity, timeStr) {
   if (granularity === "hour") {
     const hh = String((timeStr || "00:00").split(":")[0]).padStart(2, "0");
     const key = `${dateStr} ${hh}`;
-    return { key, label: `${fmtDate(dateStr)} ${hh}:00` };
+    return { key, label: `${hh}:00` };
   }
   if (granularity === "week") {
     const d = new Date(dateStr + "T00:00:00");
@@ -73,12 +75,33 @@ function aggregateReadings(data, granularity) {
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), count: Math.max(g.sys.length, g.dia.length) }));
 }
-// Para la gráfica de Tendencia: los botones día/semana/mes/año NO acortan el
-// rango, siempre se incluyen todas las mediciones. Solo cambian la unidad en
-// la que se agrupa el eje X: "día" agrupa por hora, el resto por día.
-const CHART_GROUP_BY_ = { day: "hour", week: "day", month: "day", year: "day" };
-function chartDataForFilter(data, chartPeriod) {
-  return aggregateReadings(data, CHART_GROUP_BY_[chartPeriod] || "day");
+// Convierte cada lectura en un punto individual para la gráfica (sin
+// agrupar ni promediar), ordenado cronológicamente y con el eje X mostrando
+// fecha + hora exacta de cada medición.
+function rawSeriesForChart(data) {
+  return [...(data || [])]
+    .sort((a, b) => (a.date + "T" + a.time).localeCompare(b.date + "T" + b.time))
+    .map(r => ({
+      key: r.date + "T" + r.time,
+      label: `${fmtDate(r.date)} ${r.time}`,
+      sys: r.sys ?? null, dia: r.dia ?? null, hr: r.hr ?? null, weight: r.weight ?? null,
+      count: 1,
+    }));
+}
+// Para la gráfica de Tendencia:
+// - "día": pide una fecha concreta (por defecto hoy), se acota a esas 24
+//   horas y el eje X agrupa por hora.
+// - "semana"/"mes"/"año": se acota a los últimos 7/30/365 días desde hoy,
+//   pero el eje X muestra cada medición individual con su fecha y hora
+//   (sin agrupar ni promediar).
+function chartDataForFilter(data, chartPeriod, selectedDay) {
+  if (chartPeriod === "day") {
+    const day = selectedDay || todayStr();
+    const filtered = (data || []).filter(r => r.date === day);
+    return aggregateReadings(filtered, "hour");
+  }
+  const filtered = filterByPeriod(data, chartPeriod);
+  return rawSeriesForChart(filtered);
 }
 
 // ---- Paginación genérica ----
