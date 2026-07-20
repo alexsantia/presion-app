@@ -63,6 +63,25 @@
   .field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
   .field input { width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
   footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .chart-filter { display: flex; gap: 4px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .chart-filter-btn { border: none; background: transparent; color: var(--text-muted); font-size: 12px; padding: 5px 11px; border-radius: 6px; cursor: pointer; }
+  .chart-filter-btn:hover { background: var(--accent-soft); color: var(--text); }
+  .chart-filter-btn.active { background: var(--accent); color: white; }
+  .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
+  .pagination-controls { display: flex; align-items: center; gap: 10px; }
+  .pagination-controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .pagination-controls select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+  .pagination-controls button:disabled { opacity: 0.4; cursor: default; }
+  .btn-mini { padding: 4px 9px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: white; cursor: pointer; color: var(--text); }
+  .btn-mini:hover { background: var(--accent-soft); }
+  .btn-secondary { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text); }
+  .btn-secondary:hover { background: var(--accent-soft); }
+  .ai-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ai-controls select { padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .ai-controls label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  textarea#aiOutput { width: 100%; height: 220px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; }
+  .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -88,7 +107,15 @@
 <div class="grid" id="summaryCards"></div>
 
 <div class="section">
-  <h2>Tendencia</h2>
+  <div class="toolbar">
+    <h2 style="flex:1">Tendencia</h2>
+    <div class="chart-filter" id="chartFilter" role="group" aria-label="Agrupar gráfica por periodo">
+      <button type="button" class="chart-filter-btn active" data-granularity="day">Día</button>
+      <button type="button" class="chart-filter-btn" data-granularity="week">Semana</button>
+      <button type="button" class="chart-filter-btn" data-granularity="month">Mes</button>
+      <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
+    </div>
+  </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
   <div class="legend">
     <span><span class="dot" style="background:#2e6fd9"></span>Sistólica</span>
@@ -105,6 +132,44 @@
     <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th></tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
+  <div class="pagination" id="paginationBar" style="display:none;">
+    <div class="pagination-info" id="paginationInfo"></div>
+    <div class="pagination-controls">
+      <label>Por página
+        <select id="pageSizeSelect">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="30">30</option>
+        </select>
+      </label>
+      <button type="button" class="btn-mini" id="prevPageBtn">‹ Anterior</button>
+      <span id="pageIndicator"></span>
+      <button type="button" class="btn-mini" id="nextPageBtn">Siguiente ›</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Análisis con IA</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un texto con los resultados del paciente para pegarlo en ChatGPT, Gemini o cualquier otro asistente de IA y obtener un análisis de apoyo.</p>
+  <div class="ai-controls">
+    <label>Periodo a analizar
+      <select id="aiPeriod">
+        <option value="day">Día</option>
+        <option value="week">Semana</option>
+        <option value="month" selected>Mes</option>
+        <option value="quarter">Trimestre</option>
+        <option value="year">Año</option>
+        <option value="all">Todo el histórico</option>
+      </select>
+    </label>
+    <button type="button" class="btn-secondary" id="aiGenerateBtn">🤖 Analiza con IA</button>
+  </div>
+  <div id="aiWrap" style="display:none; margin-top:14px;">
+    <textarea id="aiOutput" readonly></textarea>
+    <div class="disclaimer">Copia este texto y pégalo en tu asistente de IA favorito para obtener un análisis. Esto no sustituye una consulta médica.</div>
+    <button type="button" class="btn-secondary" id="aiCopyBtn" style="margin-top:8px;">Copiar texto</button>
+  </div>
 </div>
 
 <div class="section">
@@ -137,6 +202,7 @@
 let chartInstance = null;
 let currentData = [];
 let currentComments = [];
+let currentPatient = null;
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
@@ -159,6 +225,7 @@ async function apiPost(url, body) {
 async function loadPatient() {
   try {
     const profile = await apiGet("/api/patient");
+    currentPatient = profile;
     const age = calcAge(profile.birthdate);
     document.getElementById("profileContent").innerHTML = `
       <div class="profile-line"><strong>${profile.name || "(sin nombre)"}</strong></div>
@@ -212,21 +279,22 @@ function fillReadingSelect() {
   sel.value = current;
 }
 
-function render() {
-  const data = currentData;
-  const emptyState = document.getElementById("emptyState");
-  const table = document.getElementById("readingsTable");
-  if (!data.length) {
-    emptyState.style.display = "block"; table.style.display = "none";
-    document.getElementById("summaryCards").innerHTML = "";
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-    return;
-  }
-  emptyState.style.display = "none"; table.style.display = "table";
+// ---- Paginación de la tabla ----
+let currentPage = 1;
+let pageSize = 20;
 
+function renderTablePage() {
+  const data = currentData;
   const tbody = document.getElementById("readingsBody");
+  const bar = document.getElementById("paginationBar");
+  if (!data.length) { tbody.innerHTML = ""; bar.style.display = "none"; return; }
+
+  const descending = [...data].reverse();
+  const { pageData, page, totalPages } = paginateData(descending, currentPage, pageSize);
+  currentPage = page;
+
   tbody.innerHTML = "";
-  data.forEach(r => {
+  pageData.forEach(r => {
     const cat = classify(r.sys, r.dia);
     const notes = commentsForReading(r.id);
     const tr = document.createElement("tr");
@@ -239,6 +307,71 @@ function render() {
       <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
     tbody.appendChild(tr);
   });
+
+  bar.style.display = "flex";
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, descending.length);
+  document.getElementById("paginationInfo").textContent = `Mostrando ${start}–${end} de ${descending.length} lecturas`;
+  document.getElementById("pageIndicator").textContent = `Página ${page} de ${totalPages}`;
+  document.getElementById("prevPageBtn").disabled = page <= 1;
+  document.getElementById("nextPageBtn").disabled = page >= totalPages;
+}
+
+document.getElementById("pageSizeSelect").addEventListener("change", e => {
+  pageSize = Number(e.target.value);
+  currentPage = 1;
+  renderTablePage();
+});
+document.getElementById("prevPageBtn").addEventListener("click", () => { currentPage--; renderTablePage(); });
+document.getElementById("nextPageBtn").addEventListener("click", () => { currentPage++; renderTablePage(); });
+
+// ---- Filtro de la gráfica por periodo ----
+let chartGranularity = "day";
+document.getElementById("chartFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  chartGranularity = btn.dataset.granularity;
+  document.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  renderChart();
+});
+
+function renderChart() {
+  const grouped = aggregateReadings(currentData, chartGranularity);
+  const ctx = document.getElementById("trendChart").getContext("2d");
+  const labels = grouped.map(g => g.label);
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets: [
+      { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true },
+      { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true },
+      { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
+    ]},
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { position: "left", title: { display: true, text: "mmHg" } },
+        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
+        y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
+      },
+    },
+  });
+}
+
+function render() {
+  const data = currentData;
+  const emptyState = document.getElementById("emptyState");
+  const table = document.getElementById("readingsTable");
+  if (!data.length) {
+    emptyState.style.display = "block"; table.style.display = "none";
+    document.getElementById("paginationBar").style.display = "none";
+    document.getElementById("summaryCards").innerHTML = "";
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    return;
+  }
+  emptyState.style.display = "none"; table.style.display = "table";
+
+  renderTablePage();
 
   const sysVals = data.map(r => r.sys), diaVals = data.map(r => r.dia);
   const hrVals = data.filter(r => r.hr != null).map(r => r.hr);
@@ -254,25 +387,7 @@ function render() {
     <div class="card"><div class="label">Lecturas registradas</div><div class="value">${data.length}</div><div class="value small">${fmtDate(data[0].date)} – ${fmtDate(last.date)}</div></div>
   `;
 
-  const ctx = document.getElementById("trendChart").getContext("2d");
-  const labels = data.map(r => `${fmtDate(r.date)} ${r.time}`);
-  if (chartInstance) chartInstance.destroy();
-  chartInstance = new Chart(ctx, {
-    type: "line",
-    data: { labels, datasets: [
-      { label: "Sistólica", data: data.map(r => r.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y" },
-      { label: "Diastólica", data: data.map(r => r.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y" },
-      { label: "LPM", data: data.map(r => r.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
-      { label: "Peso (kg)", data: data.map(r => r.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
-    ]},
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-      scales: {
-        y: { position: "left", title: { display: true, text: "mmHg" } },
-        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
-        y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
-      },
-    },
-  });
+  renderChart();
 }
 
 document.getElementById("commentForm").addEventListener("submit", async e => {
@@ -303,6 +418,22 @@ document.getElementById("passwordForm").addEventListener("submit", async e => {
     setStatus("success", "Contraseña actualizada.");
     setTimeout(() => setStatus(null), 1500);
   } catch (err) { setStatus("error", err.message); }
+});
+
+document.getElementById("aiGenerateBtn").addEventListener("click", () => {
+  const granularity = document.getElementById("aiPeriod").value;
+  const filtered = filterByPeriod(currentData, granularity);
+  const age = currentPatient ? calcAge(currentPatient.birthdate) : null;
+  const prompt = buildAiAnalysisPrompt(filtered, {
+    patientName: currentPatient ? currentPatient.name : "",
+    ageText: age != null ? age + " años" : "",
+    granularity,
+  });
+  document.getElementById("aiOutput").value = prompt;
+  document.getElementById("aiWrap").style.display = "block";
+});
+document.getElementById("aiCopyBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("aiOutput").value);
 });
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");

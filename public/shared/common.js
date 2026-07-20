@@ -28,6 +28,115 @@ function calcAge(birthdate) {
   return age;
 }
 
+// ---- Agregación de lecturas para la gráfica (día / semana / mes / año) ----
+const MONTH_ABBR_ES_ = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function periodKeyAndLabel_(dateStr, granularity) {
+  if (granularity === "week") {
+    const d = new Date(dateStr + "T00:00:00");
+    const dow = (d.getDay() + 6) % 7; // lunes = 0
+    d.setDate(d.getDate() - dow);
+    const key = d.toISOString().slice(0, 10);
+    return { key, label: fmtDate(key) };
+  }
+  if (granularity === "month") {
+    const key = dateStr.slice(0, 7);
+    const [y, m] = key.split("-");
+    return { key, label: `${MONTH_ABBR_ES_[Number(m) - 1]} ${y}` };
+  }
+  if (granularity === "year") {
+    const key = dateStr.slice(0, 4);
+    return { key, label: key };
+  }
+  return { key: dateStr, label: fmtDate(dateStr) }; // "day" (por defecto)
+}
+// Agrupa lecturas por periodo y promedia sys/dia/hr/weight dentro de cada
+// grupo (ignorando valores nulos). Devuelve los grupos ordenados
+// cronológicamente. granularity: "day" | "week" | "month" | "year".
+function aggregateReadings(data, granularity) {
+  const groups = new Map();
+  (data || []).forEach(r => {
+    const { key, label } = periodKeyAndLabel_(r.date, granularity || "day");
+    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [] });
+    const g = groups.get(key);
+    if (r.sys != null) g.sys.push(r.sys);
+    if (r.dia != null) g.dia.push(r.dia);
+    if (r.hr != null) g.hr.push(r.hr);
+    if (r.weight != null) g.weight.push(r.weight);
+  });
+  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+  return Array.from(groups.values())
+    .sort((a, b) => a.key.localeCompare(b.key))
+    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), count: Math.max(g.sys.length, g.dia.length) }));
+}
+
+// ---- Paginación genérica ----
+function paginateData(data, page, pageSize) {
+  const totalPages = Math.max(1, Math.ceil((data || []).length / pageSize));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * pageSize;
+  return { pageData: (data || []).slice(start, start + pageSize), page: p, totalPages };
+}
+
+// ---- Análisis con IA: filtrar por periodo y armar el prompt a copiar ----
+const AI_PERIOD_LABELS = {
+  day: "el día de hoy",
+  week: "la última semana",
+  month: "el último mes",
+  quarter: "el último trimestre",
+  year: "el último año",
+  all: "todo el historial disponible",
+};
+function filterByPeriod(data, granularity) {
+  const list = data || [];
+  if (granularity === "all" || !granularity) return list.slice();
+  const daysMap = { day: 1, week: 7, month: 30, quarter: 90, year: 365 };
+  const days = daysMap[granularity];
+  if (!days) return list.slice();
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  return list.filter(r => r.date >= cutoffStr);
+}
+// meta: { patientName, ageText, granularity }
+function buildAiAnalysisPrompt(data, meta) {
+  meta = meta || {};
+  const filtered = data || [];
+  const periodLabel = AI_PERIOD_LABELS[meta.granularity] || "el periodo seleccionado";
+  if (!filtered.length) {
+    return `No hay lecturas registradas para ${periodLabel}. Elige otro periodo o registra lecturas primero.`;
+  }
+  const sorted = [...filtered].sort((a, b) => (a.date + "T" + a.time).localeCompare(b.date + "T" + b.time));
+  const sysVals = sorted.map(r => r.sys).filter(v => v != null);
+  const diaVals = sorted.map(r => r.dia).filter(v => v != null);
+  const hrVals = sorted.filter(r => r.hr != null).map(r => r.hr);
+  const withWeight = sorted.filter(r => r.weight != null);
+  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+  const maxSysReading = sorted.reduce((m, r) => (m == null || r.sys > m.sys) ? r : m, null);
+  const minSysReading = sorted.reduce((m, r) => (m == null || r.sys < m.sys) ? r : m, null);
+  const counts = {};
+  sorted.forEach(r => { const k = classify(r.sys, r.dia).key; counts[k] = (counts[k] || 0) + 1; });
+  const countsText = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
+
+  let text = "Actúa como un asistente de salud. A continuación te comparto lecturas de presión arterial, frecuencia cardiaca y peso, registradas en Reigning Blood Pressure App.\n\n";
+  if (meta.patientName) text += `Paciente: ${meta.patientName}${meta.ageText ? " (" + meta.ageText + ")" : ""}\n`;
+  text += `Periodo analizado: ${periodLabel}\n`;
+  text += `Total de lecturas en este periodo: ${sorted.length}\n\n`;
+  text += "Resumen:\n";
+  text += `- Presión arterial promedio: ${avg(sysVals)}/${avg(diaVals)} mmHg\n`;
+  if (maxSysReading) text += `- Lectura más alta: ${maxSysReading.sys}/${maxSysReading.dia} mmHg (${fmtDate(maxSysReading.date)})\n`;
+  if (minSysReading) text += `- Lectura más baja: ${minSysReading.sys}/${minSysReading.dia} mmHg (${fmtDate(minSysReading.date)})\n`;
+  text += `- Frecuencia cardiaca promedio: ${hrVals.length ? avg(hrVals) + " LPM" : "sin datos"}\n`;
+  text += `- Peso: ${withWeight.length ? "promedio " + avg(withWeight.map(r => r.weight)) + " kg, último registrado " + withWeight[withWeight.length - 1].weight + " kg" : "sin datos"}\n`;
+  text += `- Distribución por categoría (guía AHA 2017): ${countsText}\n\n`;
+  text += "Detalle de lecturas:\n";
+  sorted.forEach(r => {
+    text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.obs ? " — " + r.obs : ""}\n`;
+  });
+  text += "\nCon esta información, ayúdame a entender mi tendencia de presión arterial, qué debería vigilar o consultar con mi médico, y qué hábitos podrían ayudarme a mejorar. Aclara que esto no sustituye una consulta médica profesional.";
+  return text;
+}
+
 // ---- Racha de días consecutivos con al menos una lectura ----
 function computeStreak(dateStrings) {
   const unique = [...new Set(dateStrings)].sort();
