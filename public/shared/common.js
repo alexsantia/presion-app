@@ -34,7 +34,7 @@ function periodKeyAndLabel_(dateStr, granularity, timeStr) {
   if (granularity === "hour") {
     const hh = String((timeStr || "00:00").split(":")[0]).padStart(2, "0");
     const key = `${dateStr} ${hh}`;
-    return { key, label: `${hh}:00` };
+    return { key, label: `${fmtDate(dateStr)} ${hh}:00` };
   }
   if (granularity === "week") {
     const d = new Date(dateStr + "T00:00:00");
@@ -73,13 +73,12 @@ function aggregateReadings(data, granularity) {
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), count: Math.max(g.sys.length, g.dia.length) }));
 }
-// Para la gráfica de Tendencia: cada botón de filtro (día/semana/mes/año)
-// acorta el rango de fechas mostrado (con filterByPeriod) y define en qué
-// unidad se agrupa el eje X: "día" agrupa por hora, el resto por día.
+// Para la gráfica de Tendencia: los botones día/semana/mes/año NO acortan el
+// rango, siempre se incluyen todas las mediciones. Solo cambian la unidad en
+// la que se agrupa el eje X: "día" agrupa por hora, el resto por día.
 const CHART_GROUP_BY_ = { day: "hour", week: "day", month: "day", year: "day" };
 function chartDataForFilter(data, chartPeriod) {
-  const filtered = filterByPeriod(data, chartPeriod);
-  return aggregateReadings(filtered, CHART_GROUP_BY_[chartPeriod] || "day");
+  return aggregateReadings(data, CHART_GROUP_BY_[chartPeriod] || "day");
 }
 
 // ---- Paginación genérica ----
