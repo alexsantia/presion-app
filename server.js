@@ -225,6 +225,30 @@ app.post("/api/account/password", requireAnyRole, asyncRoute(async (req, res) =>
   res.json(await callSheetsApi(null, { action: "update_doctor_password", id: req.session.doctorId, password_hash: hash }));
 }));
 
+app.post("/api/account/email", requireRole("patient"), asyncRoute(async (req, res) => {
+  const { currentPassword, newEmail } = req.body;
+  const email = String(newEmail || "").toLowerCase().trim();
+  if (!email) return res.status(400).json({ ok: false, error: "correo inválido" });
+  const result = await callSheetsApi({ action: "get_patient_by_email", email: req.session.email });
+  const patient = result.ok ? result.data : null;
+  if (!patient || !(await bcrypt.compare(currentPassword || "", patient.password_hash || ""))) {
+    return res.status(401).json({ ok: false, error: "contraseña actual incorrecta" });
+  }
+  const updateResult = await callSheetsApi(null, { action: "update_patient_email", id: req.session.patientId, email });
+  if (!updateResult.ok) return res.status(400).json(updateResult);
+  req.session.email = email;
+  res.json({ ok: true, email });
+}));
+
+app.post("/api/account/params", requireRole("patient"), asyncRoute(async (req, res) => {
+  const { last_lab_date, cholesterol, triglycerides, med_brand, med_mg } = req.body;
+  res.json(await callSheetsApi(null, {
+    action: "update_patient_params",
+    id: req.session.patientId,
+    last_lab_date, cholesterol, triglycerides, med_brand, med_mg,
+  }));
+}));
+
 app.post("/api/account/invite", requireRole("patient"), asyncRoute(async (req, res) => {
   const result = await callSheetsApi(null, { action: "generate_doctor_invite", patient_id: req.session.patientId });
   res.json(result);

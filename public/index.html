@@ -56,6 +56,9 @@
     width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit;
   }
   form.add-form .full { grid-column: 1 / -1; }
+  .checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+  .checkbox-label input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+  .medicated-badge { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
   .btn-primary { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; cursor: pointer; }
   .btn-primary:hover { background: var(--accent-hover); }
   .btn-primary:disabled { opacity: 0.75; cursor: default; }
@@ -107,6 +110,25 @@
   .pagination-controls label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .pagination-controls select { padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
   .pagination-controls button:disabled { opacity: 0.4; cursor: default; }
+  .hamburger-wrap { position: relative; }
+  .hamburger-btn { background: none; border: 1px solid var(--border); border-radius: 8px; width: 34px; height: 34px; font-size: 16px; line-height: 1; cursor: pointer; color: var(--text); }
+  .hamburger-btn:hover { background: var(--accent-soft); }
+  .hamburger-menu { position: absolute; right: 0; top: 42px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 60; overflow: hidden; }
+  .hamburger-item { display: block; width: 100%; text-align: left; padding: 11px 14px; background: none; border: none; font-size: 13px; cursor: pointer; color: var(--text); }
+  .hamburger-item:hover { background: var(--accent-soft); }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(30,40,36,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal-card { background: var(--bg-card); border-radius: 14px; max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,0.22); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .modal-header h2 { margin: 0; font-size: 17px; }
+  .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); padding: 4px; line-height: 1; }
+  .modal-close:hover { color: var(--text); }
+  .modal-section-title { font-size: 12px; font-weight: 650; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 18px 0 8px 0; }
+  .modal-section-title:first-child { margin-top: 0; }
+  .modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .modal-form .full { grid-column: 1 / -1; }
+  .modal-form .modal-section-title { grid-column: 1 / -1; }
+  .modal-hint { font-size: 11px; color: var(--text-muted); margin: -6px 0 4px 0; }
+  .settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
@@ -115,6 +137,14 @@
 <div class="topbar">
   <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App</h1>
   <div class="topbar-links">
+    <div class="hamburger-wrap">
+      <button type="button" class="hamburger-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="Menú">☰</button>
+      <div class="hamburger-menu" id="hamburgerMenu" style="display:none;">
+        <button type="button" class="hamburger-item" data-open-modal="accountModal">👤 Cuenta</button>
+        <button type="button" class="hamburger-item" data-open-modal="paramsModal">🧪 Parámetros</button>
+        <button type="button" class="hamburger-item" data-open-modal="settingsModal">⚙️ Ajustes</button>
+      </div>
+    </div>
     <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
     <form method="POST" action="/logout"><button type="submit" class="link-btn">Cerrar sesión</button></form>
   </div>
@@ -129,23 +159,6 @@
 <div id="statusBanner"></div>
 
 <div class="section section-streak" id="streakSection"></div>
-
-<div class="section section-profile">
-  <h2>Datos del paciente</h2>
-  <form class="field-row" id="profileForm">
-    <div class="field">
-      <label>Nombre</label>
-      <input type="text" id="p_name">
-    </div>
-    <div class="field">
-      <label>Fecha de nacimiento <span id="p_age_display" style="font-weight:400;"></span></label>
-      <input type="date" id="p_birthdate">
-    </div>
-    <div>
-      <button type="submit" class="btn-primary">Guardar</button>
-    </div>
-  </form>
-</div>
 
 <div class="grid" id="summaryCards"></div>
 
@@ -189,6 +202,9 @@
     <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
     <div><label>LPM</label><input type="number" id="f_hr" min="30" max="220"></div>
     <div><label>Peso (kg)</label><input type="number" id="f_weight" min="20" max="300" step="0.1"></div>
+    <div class="full checkbox-field">
+      <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por Medicamento (tomé mi antihipertensivo)</label>
+    </div>
     <div class="full">
       <label>Observaciones (contexto, medicamento, síntomas)</label>
       <textarea id="f_obs" rows="2"></textarea>
@@ -260,17 +276,105 @@
   </div>
 </div>
 
-<div class="section section-password">
-  <h2>Cambiar mi contraseña</h2>
-  <form class="pw-form" id="passwordForm">
-    <div class="field"><label>Contraseña actual</label><input type="password" id="pw_current" required></div>
-    <div class="field"><label>Nueva contraseña</label><input type="password" id="pw_new" required minlength="8"></div>
-    <div class="field"><label>Confirmar nueva contraseña</label><input type="password" id="pw_new2" required minlength="8"></div>
-    <button type="submit" class="btn-primary" style="justify-self:start;">Actualizar contraseña</button>
-  </form>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
+
+<!-- ---- Menú hamburguesa: Cuenta ---- -->
+<div class="modal-overlay" id="accountModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>👤 Cuenta</h2><button type="button" class="modal-close" data-close-modal="accountModal">✕</button></div>
+
+    <div class="modal-section-title">Datos personales</div>
+    <form class="modal-form" id="profileForm">
+      <div class="field full">
+        <label>Nombre</label>
+        <input type="text" id="p_name">
+      </div>
+      <div class="field full">
+        <label>Fecha de nacimiento <span id="p_age_display" style="font-weight:400;"></span></label>
+        <input type="date" id="p_birthdate">
+      </div>
+      <div class="full"><button type="submit" class="btn-primary">Guardar</button></div>
+    </form>
+
+    <div class="modal-section-title">Correo electrónico</div>
+    <form class="modal-form" id="emailForm">
+      <div class="field full">
+        <label>Correo actual</label>
+        <input type="email" id="email_current_display" disabled>
+      </div>
+      <div class="field full">
+        <label>Nuevo correo</label>
+        <input type="email" id="email_new" required>
+      </div>
+      <div class="field full">
+        <label>Contraseña actual (para confirmar el cambio)</label>
+        <input type="password" id="email_password" required>
+      </div>
+      <div class="full"><button type="submit" class="btn-primary">Actualizar correo</button></div>
+    </form>
+
+    <div class="modal-section-title">Contraseña</div>
+    <form class="modal-form" id="passwordForm">
+      <div class="field full"><label>Contraseña actual</label><input type="password" id="pw_current" required></div>
+      <div class="field"><label>Nueva contraseña</label><input type="password" id="pw_new" required minlength="8"></div>
+      <div class="field"><label>Confirmar nueva contraseña</label><input type="password" id="pw_new2" required minlength="8"></div>
+      <div class="full"><button type="submit" class="btn-primary">Actualizar contraseña</button></div>
+    </form>
+  </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
+<!-- ---- Menú hamburguesa: Parámetros ---- -->
+<div class="modal-overlay" id="paramsModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>🧪 Parámetros</h2><button type="button" class="modal-close" data-close-modal="paramsModal">✕</button></div>
+
+    <div class="modal-section-title">Estudios de laboratorio</div>
+    <form class="modal-form" id="paramsForm">
+      <div class="field full"><label>Fecha de últimos estudios de laboratorio</label><input type="date" id="param_lab_date"></div>
+      <div class="field"><label>Colesterol (<span id="chol_unit_label">mg/dL</span>)</label><input type="number" id="param_cholesterol" min="0" step="0.1"></div>
+      <div class="field"><label>Triglicéridos (<span id="tri_unit_label">mg/dL</span>)</label><input type="number" id="param_triglycerides" min="0" step="0.1"></div>
+
+      <div class="modal-section-title">Medicación</div>
+      <div class="field"><label>Marca del antihipertensivo</label><input type="text" id="param_med_brand" placeholder="ej. Losartán"></div>
+      <div class="field"><label>Miligramos (mg)</label><input type="number" id="param_med_mg" min="0" step="0.1"></div>
+
+      <div class="full"><button type="submit" class="btn-primary">Guardar parámetros</button></div>
+    </form>
+  </div>
+</div>
+
+<!-- ---- Menú hamburguesa: Ajustes ---- -->
+<div class="modal-overlay" id="settingsModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>⚙️ Ajustes</h2><button type="button" class="modal-close" data-close-modal="settingsModal">✕</button></div>
+
+    <div class="modal-section-title">Unidades</div>
+    <div class="field">
+      <label>Colesterol y triglicéridos</label>
+      <select id="setting_units">
+        <option value="mgdl">mg/dL</option>
+        <option value="mmoll">mmol/L</option>
+      </select>
+    </div>
+    <div class="modal-hint">Afecta cómo se muestran y capturan los valores en Parámetros. Siempre se guardan internamente en mg/dL.</div>
+
+    <div class="modal-section-title">Historial de lecturas</div>
+    <div class="field">
+      <label>Lecturas por página (por defecto)</label>
+      <select id="setting_pagesize">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="30">30</option>
+      </select>
+    </div>
+
+    <div class="modal-section-title">Accesos directos</div>
+    <div class="settings-actions">
+      <button type="button" class="btn-secondary" id="settingsBackupBtn">⬇️ Respaldar historial (CSV)</button>
+      <button type="button" class="btn-secondary" id="settingsRegenFamilyBtn">🔄 Regenerar enlace de familia</button>
+    </div>
+  </div>
+</div>
 
 <script>
 let chartInstance = null;
@@ -387,8 +491,10 @@ async function loadAccount() {
     document.getElementById("p_name").value = currentAccount.name || "";
     document.getElementById("p_birthdate").value = currentAccount.birthdate || "";
     updateAgeDisplay();
+    document.getElementById("email_current_display").value = currentAccount.email || "";
     document.getElementById("familyLink").textContent = window.location.origin + "/familia/" + currentAccount.share_token;
     renderGreeting();
+    fillParamsForm();
   } catch (err) { /* silencioso */ }
 }
 function updateAgeDisplay() {
@@ -424,6 +530,118 @@ document.getElementById("passwordForm").addEventListener("submit", async e => {
   } catch (err) {
     setStatus("error", err.message);
   }
+});
+
+document.getElementById("emailForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    setStatus("loading", "Actualizando correo…");
+    const result = await apiPost("/api/account/email", {
+      newEmail: document.getElementById("email_new").value,
+      currentPassword: document.getElementById("email_password").value,
+    });
+    document.getElementById("email_current_display").value = result.email;
+    document.getElementById("emailForm").reset();
+    if (currentAccount) currentAccount.email = result.email;
+    setStatus("success", "Correo actualizado.");
+    setTimeout(() => setStatus(null), 1500);
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+// ---- Menú hamburguesa y modales (Cuenta / Parámetros / Ajustes) ----
+const menuBtn = document.getElementById("menuBtn");
+const hamburgerMenu = document.getElementById("hamburgerMenu");
+menuBtn.addEventListener("click", e => {
+  e.stopPropagation();
+  const open = hamburgerMenu.style.display !== "none";
+  hamburgerMenu.style.display = open ? "none" : "block";
+  menuBtn.setAttribute("aria-expanded", String(!open));
+});
+document.addEventListener("click", () => { hamburgerMenu.style.display = "none"; });
+
+function openModal(id) {
+  hamburgerMenu.style.display = "none";
+  document.getElementById(id).style.display = "flex";
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = "none";
+}
+document.querySelectorAll("[data-open-modal]").forEach(btn => {
+  btn.addEventListener("click", () => openModal(btn.dataset.openModal));
+});
+document.querySelectorAll("[data-close-modal]").forEach(btn => {
+  btn.addEventListener("click", () => closeModal(btn.dataset.closeModal));
+});
+document.querySelectorAll(".modal-overlay").forEach(overlay => {
+  overlay.addEventListener("click", e => { if (e.target === overlay) closeModal(overlay.id); });
+});
+
+// ---- Parámetros (colesterol, triglicéridos, laboratorio, medicación) ----
+const CHOL_MGDL_PER_MMOLL = 38.67;
+const TRI_MGDL_PER_MMOLL = 88.57;
+function getUnitPref() { return localStorage.getItem("bp_units") || "mgdl"; }
+function fillParamsForm() {
+  if (!currentAccount) return;
+  const unit = getUnitPref();
+  document.getElementById("param_lab_date").value = currentAccount.last_lab_date || "";
+  document.getElementById("param_cholesterol").value = currentAccount.cholesterol != null
+    ? (unit === "mmoll" ? Math.round((currentAccount.cholesterol / CHOL_MGDL_PER_MMOLL) * 100) / 100 : currentAccount.cholesterol) : "";
+  document.getElementById("param_triglycerides").value = currentAccount.triglycerides != null
+    ? (unit === "mmoll" ? Math.round((currentAccount.triglycerides / TRI_MGDL_PER_MMOLL) * 100) / 100 : currentAccount.triglycerides) : "";
+  document.getElementById("param_med_brand").value = currentAccount.med_brand || "";
+  document.getElementById("param_med_mg").value = currentAccount.med_mg != null ? currentAccount.med_mg : "";
+  const unitLabel = unit === "mmoll" ? "mmol/L" : "mg/dL";
+  document.getElementById("chol_unit_label").textContent = unitLabel;
+  document.getElementById("tri_unit_label").textContent = unitLabel;
+}
+document.getElementById("paramsForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const unit = getUnitPref();
+  const cholRaw = document.getElementById("param_cholesterol").value;
+  const triRaw = document.getElementById("param_triglycerides").value;
+  const cholesterol = cholRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(cholRaw) * CHOL_MGDL_PER_MMOLL) : Number(cholRaw));
+  const triglycerides = triRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(triRaw) * TRI_MGDL_PER_MMOLL) : Number(triRaw));
+  try {
+    setStatus("loading", "Guardando parámetros…");
+    await apiPost("/api/account/params", {
+      last_lab_date: document.getElementById("param_lab_date").value,
+      cholesterol, triglycerides,
+      med_brand: document.getElementById("param_med_brand").value,
+      med_mg: document.getElementById("param_med_mg").value === "" ? "" : Number(document.getElementById("param_med_mg").value),
+    });
+    setStatus("success", "Parámetros guardados.");
+    setTimeout(() => setStatus(null), 1500);
+    await loadAccount();
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
+// ---- Ajustes: unidades, tamaño de página por defecto, accesos directos ----
+const settingsUnitsEl = document.getElementById("setting_units");
+const settingsPageSizeEl = document.getElementById("setting_pagesize");
+settingsUnitsEl.value = getUnitPref();
+settingsPageSizeEl.value = localStorage.getItem("bp_page_size") || "20";
+settingsUnitsEl.addEventListener("change", () => {
+  localStorage.setItem("bp_units", settingsUnitsEl.value);
+  fillParamsForm();
+});
+settingsPageSizeEl.addEventListener("change", () => {
+  localStorage.setItem("bp_page_size", settingsPageSizeEl.value);
+  pageSize = Number(settingsPageSizeEl.value);
+  currentPage = 1;
+  document.getElementById("pageSizeSelect").value = settingsPageSizeEl.value;
+  renderTablePage();
+});
+document.getElementById("settingsBackupBtn").addEventListener("click", () => {
+  closeModal("settingsModal");
+  document.getElementById("backupBtn").click();
+});
+document.getElementById("settingsRegenFamilyBtn").addEventListener("click", () => {
+  closeModal("settingsModal");
+  document.getElementById("regenerateFamilyLink").click();
 });
 
 document.getElementById("generateInviteBtn").addEventListener("click", async () => {
@@ -503,7 +721,8 @@ function renderStreak() {
 
 // ---- Paginación de la tabla ----
 let currentPage = 1;
-let pageSize = 20;
+let pageSize = Number(localStorage.getItem("bp_page_size")) || 20;
+document.getElementById("pageSizeSelect").value = String(pageSize);
 
 function renderTablePage() {
   const data = currentData;
@@ -526,7 +745,7 @@ function renderTablePage() {
       <td>${r.hr ?? "—"}</td>
       <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
-      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
+      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${r.medicated ? '<div class="medicated-badge">💊 Medicado</div>' : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
       <td><div class="row-actions">
         <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
         <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
@@ -546,6 +765,9 @@ function renderTablePage() {
 document.getElementById("pageSizeSelect").addEventListener("change", e => {
   pageSize = Number(e.target.value);
   currentPage = 1;
+  localStorage.setItem("bp_page_size", String(pageSize));
+  const settingsSel = document.getElementById("setting_pagesize");
+  if (settingsSel) settingsSel.value = String(pageSize);
   renderTablePage();
 });
 document.getElementById("prevPageBtn").addEventListener("click", () => { currentPage--; renderTablePage(); });
@@ -655,6 +877,7 @@ function startEdit(id) {
   document.getElementById("f_hr").value = r.hr ?? "";
   document.getElementById("f_weight").value = r.weight ?? "";
   document.getElementById("f_obs").value = r.obs || "";
+  document.getElementById("f_medicated").checked = !!r.medicated;
   document.getElementById("submitBtn").textContent = "Guardar cambios";
   document.getElementById("cancelEditBtn").style.display = "inline-block";
   document.getElementById("editingBanner").style.display = "block";
@@ -696,6 +919,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     hr: document.getElementById("f_hr").value ? Number(document.getElementById("f_hr").value) : null,
     weight: document.getElementById("f_weight").value ? Number(document.getElementById("f_weight").value) : null,
     obs: document.getElementById("f_obs").value,
+    medicated: document.getElementById("f_medicated").checked,
     flag: "",
   };
   const submitBtn = document.getElementById("submitBtn");
@@ -767,9 +991,9 @@ document.getElementById("templateBtn").addEventListener("click", () => {
 document.getElementById("backupBtn").addEventListener("click", () => {
   if (!currentData.length) { setStatus("error", "Todavía no tienes lecturas que respaldar."); return; }
   const escapeCsv = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = [["Fecha","Hora","Sistolica","Diastolica","LPM","Peso","Observaciones"]];
+  const rows = [["Fecha","Hora","Sistolica","Diastolica","LPM","Peso","Medicado","Observaciones"]];
   [...currentData].sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time)).forEach(r => {
-    rows.push([r.date, r.time, r.sys, r.dia, r.hr ?? "", r.weight ?? "", r.obs || ""]);
+    rows.push([r.date, r.time, r.sys, r.dia, r.hr ?? "", r.weight ?? "", r.medicated ? "Si" : "No", r.obs || ""]);
   });
   const csv = rows.map(row => row.map(escapeCsv).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

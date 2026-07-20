@@ -162,6 +162,8 @@ function buildAiAnalysisPrompt(data, meta) {
   const counts = {};
   sorted.forEach(r => { const k = classify(r.sys, r.dia).key; counts[k] = (counts[k] || 0) + 1; });
   const countsText = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
+  const medicatedCount = sorted.filter(r => r.medicated).length;
+  const adherencePct = Math.round((medicatedCount / sorted.length) * 100);
 
   let text = `Actúa como un asistente de salud. A continuación se comparten lecturas de presión arterial, frecuencia cardiaca y peso de ${subject}, registradas en Reigning Blood Pressure App.\n\n`;
   text += `Periodo analizado: ${periodLabel}\n`;
@@ -172,10 +174,11 @@ function buildAiAnalysisPrompt(data, meta) {
   if (minSysReading) text += `- Lectura más baja: ${minSysReading.sys}/${minSysReading.dia} mmHg (${fmtDate(minSysReading.date)})\n`;
   text += `- Frecuencia cardiaca promedio: ${hrVals.length ? avg(hrVals) + " LPM" : "sin datos"}\n`;
   text += `- Peso: ${withWeight.length ? "promedio " + avg(withWeight.map(r => r.weight)) + " kg, último registrado " + withWeight[withWeight.length - 1].weight + " kg" : "sin datos"}\n`;
-  text += `- Distribución por categoría (guía AHA 2017): ${countsText}\n\n`;
+  text += `- Distribución por categoría (guía AHA 2017): ${countsText}\n`;
+  text += `- Adherencia al medicamento antihipertensivo: ${medicatedCount}/${sorted.length} lecturas registradas con medicamento tomado (${adherencePct}%)\n\n`;
   text += "Detalle de lecturas:\n";
   sorted.forEach(r => {
-    text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.obs ? " — " + r.obs : ""}\n`;
+    text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.medicated ? ", medicado" : ", sin medicamento registrado"}${r.obs ? " — " + r.obs : ""}\n`;
   });
   text += `\nCon esta información, ayuda a entender la tendencia de presión arterial de ${subjectShort}, qué se debería vigilar o consultar con un médico, y qué hábitos podrían ayudar a mejorar su salud cardiovascular. Aclara que esto no sustituye una consulta médica profesional.`;
   return text;

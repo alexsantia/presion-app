@@ -42,6 +42,7 @@
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .medicated-badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
   .link-btn { font-size: 12px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 0; }
   .link-btn:hover { text-decoration: underline; }
   .status-banner { font-size: 12px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
@@ -106,7 +107,7 @@
   <h2>Historial de lecturas</h2>
   <div id="emptyState" style="display:none; font-size:13px; color:var(--text-muted);">Todavía no hay lecturas registradas.</div>
   <table id="readingsTable">
-    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Medicado</th></tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
   <div class="pagination" id="paginationBar" style="display:none;">
@@ -204,7 +205,8 @@ function renderTablePage() {
       <td><strong>${r.sys}/${r.dia}</strong></td>
       <td>${r.hr ?? "—"}</td>
       <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
-      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>`;
+      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
+      <td>${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>`;
     tbody.appendChild(tr);
   });
 
