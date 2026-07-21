@@ -521,22 +521,35 @@ function renderNotificationListHTML(notifications) {
     </div>`).join("");
 }
 
-// ---- Tooltip publicitario (v20: toggle por click/tap en vez de :hover) ----
-// :hover/:focus por CSS no se cierra de forma confiable en pantallas
-// táctiles (el tooltip se queda "pegado" abierto tapando la gráfica), así
-// que se controla con una clase .show y un solo listener global que cierra
-// cualquier tooltip abierto al tocar fuera de él.
+// ---- Tooltip publicitario (v21) ----
+// En dispositivos con mouse real se abre al pasar el cursor y se cierra al
+// quitarlo (mouseenter/mouseleave), como un tooltip normal — nada de click.
+// En pantallas táctiles no existe "pasar el cursor", así que ahí se abre y
+// cierra con tap (toggle), con un listener global que cierra cualquier
+// tooltip abierto al tocar fuera de él. Se decide con matchMedia en vez de
+// intentar detectar el navegador.
 function wireMedAdBadge(badgeId) {
   const badge = document.getElementById(badgeId);
   if (!badge) return;
   const tooltip = badge.querySelector(".med-ad-tooltip");
   if (!tooltip) return;
-  badge.addEventListener("click", e => {
-    e.stopPropagation();
-    const wasOpen = tooltip.classList.contains("show");
-    document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
-    if (!wasOpen) tooltip.classList.add("show");
-  });
+  const closeAll = () => document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
+  const isTouch = window.matchMedia && window.matchMedia("(hover: none), (pointer: coarse)").matches;
+  if (isTouch) {
+    badge.addEventListener("click", e => {
+      e.stopPropagation();
+      const wasOpen = tooltip.classList.contains("show");
+      closeAll();
+      if (!wasOpen) tooltip.classList.add("show");
+    });
+  } else {
+    const show = () => { closeAll(); tooltip.classList.add("show"); };
+    const hide = () => tooltip.classList.remove("show");
+    badge.addEventListener("mouseenter", show);
+    badge.addEventListener("mouseleave", hide);
+    badge.addEventListener("focus", show); // accesible con teclado (Tab)
+    badge.addEventListener("blur", hide);
+  }
 }
 document.addEventListener("click", () => {
   document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
