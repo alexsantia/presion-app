@@ -12,12 +12,35 @@ function classify(sys, dia) {
 }
 const categoryColors = { normal: "#6FA98C", elevada: "#D8AE5C", etapa1: "#D98E5F", etapa2: "#C97064", crisis: "#A6534B" };
 
+// ---- Nombre del antihipertensivo (marca + mg capturados en Parámetros),
+// usado en el checkbox, la tabla y la leyenda de la gráfica. Si el paciente
+// no ha capturado marca/mg todavía, cae a un nombre genérico. ----
+function medicationName(account) {
+  const brand = account && account.med_brand ? String(account.med_brand).trim() : "";
+  const mg = account && account.med_mg != null && account.med_mg !== "" ? account.med_mg : null;
+  if (!brand) return "medicamento";
+  return mg != null ? `${brand} ${mg}mg` : brand;
+}
+
 function fmtDate(d) {
   const [y, m, day] = d.split("-");
   return `${day}/${m}`;
 }
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+// Fecha en formato YYYY-MM-DD según la hora LOCAL del dispositivo (no UTC).
+// Usar toISOString() aquí sería un error: en husos horarios negativos (como
+// México, UTC-6) puede adelantar o atrasar la fecha un día según la hora,
+// lo que hacía que el filtro "Día" no siempre mostrara el día correcto. No
+// hace falta geolocalizar por IP para esto — el navegador ya conoce el huso
+// horario local del dispositivo, que es más simple, privado y confiable que
+// una consulta de geolocalización por IP (que además falla con VPNs).
+function localDateStr_(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function todayStr() { return localDateStr_(new Date()); }
 
 function calcAge(birthdate) {
   if (!birthdate) return null;
@@ -42,7 +65,7 @@ function periodKeyAndLabel_(dateStr, granularity, timeStr) {
     const d = new Date(dateStr + "T00:00:00");
     const dow = (d.getDay() + 6) % 7; // lunes = 0
     d.setDate(d.getDate() - dow);
-    const key = d.toISOString().slice(0, 10);
+    const key = localDateStr_(d);
     return { key, label: fmtDate(key) };
   }
   if (granularity === "month") {
@@ -63,17 +86,18 @@ function aggregateReadings(data, granularity) {
   const groups = new Map();
   (data || []).forEach(r => {
     const { key, label } = periodKeyAndLabel_(r.date, granularity || "day", r.time);
-    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [] });
+    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [] });
     const g = groups.get(key);
     if (r.sys != null) g.sys.push(r.sys);
     if (r.dia != null) g.dia.push(r.dia);
     if (r.hr != null) g.hr.push(r.hr);
     if (r.weight != null) g.weight.push(r.weight);
+    g.medicated.push(r.medicated ? 1 : 0);
   });
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return Array.from(groups.values())
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), count: Math.max(g.sys.length, g.dia.length) }));
+    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), count: Math.max(g.sys.length, g.dia.length) }));
 }
 // Convierte cada lectura en un punto individual para la gráfica (sin
 // agrupar ni promediar), ordenado cronológicamente y con el eje X mostrando
@@ -85,6 +109,7 @@ function rawSeriesForChart(data) {
       key: r.date + "T" + r.time,
       label: `${fmtDate(r.date)} ${r.time}`,
       sys: r.sys ?? null, dia: r.dia ?? null, hr: r.hr ?? null, weight: r.weight ?? null,
+      medicated: r.medicated ? 1 : 0,
       count: 1,
     }));
 }
@@ -149,7 +174,7 @@ function filterByPeriod(data, granularity) {
   const today = new Date();
   const cutoff = new Date(today);
   cutoff.setDate(cutoff.getDate() - (days - 1));
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = localDateStr_(cutoff);
   return list.filter(r => r.date >= cutoffStr);
 }
 // meta: { patientName, firstName, ageText, granularity, audience }
@@ -223,7 +248,7 @@ function computeStreak(dateStrings) {
     longest = Math.max(longest, run);
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDateStr_(new Date());
   const last = unique[unique.length - 1];
   let current = 0;
   if (dayDiff(last, todayStr) <= 1) {

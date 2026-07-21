@@ -154,7 +154,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   if (!patientResult.ok || !patientResult.data) return res.status(404).json({ ok: false, error: "enlace no válido" });
   const patient = patientResult.data;
   const readingsResult = await callSheetsApi({ action: "list", patient_id: patient.id });
-  res.json({ ok: true, data: { patient: { name: patient.name, birthdate: patient.birthdate }, readings: readingsResult.ok ? readingsResult.data : [] } });
+  res.json({ ok: true, data: { patient: { name: patient.name, birthdate: patient.birthdate, med_brand: patient.med_brand, med_mg: patient.med_mg }, readings: readingsResult.ok ? readingsResult.data : [] } });
 }));
 
 // ================= API con sesión (paciente y/o médico) =================

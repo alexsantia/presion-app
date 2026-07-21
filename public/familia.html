@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reigning Blood Pressure App · Seguimiento</title>
+<title>Reigning Blood Pressure App · Familia y amigos</title>
 <link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
@@ -78,7 +78,7 @@
 <body>
 
 <div class="topbar">
-  <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App <span class="badge-role">Seguimiento</span></h1>
+  <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App <span class="badge-role">Familia y amigos</span></h1>
   <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
 </div>
 <div class="subtitle" id="subtitleText">Vista de solo lectura, compartida por el paciente</div>
@@ -111,6 +111,7 @@
     <button type="button" class="legend-btn active" data-dataset="dia"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
     <button type="button" class="legend-btn active" data-dataset="hr"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
     <button type="button" class="legend-btn active" data-dataset="weight"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
+    <button type="button" class="legend-btn active" data-dataset="medicated"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
   </div>
 </div>
 
@@ -161,7 +162,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v14</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -189,6 +190,8 @@ async function load() {
     const { patient, readings } = json.data;
     currentPatient = patient;
     document.getElementById("subtitleText").textContent = `Seguimiento de ${patient.name || "este paciente"}, compartido en modo de solo lectura`;
+    const medName = medicationName(patient);
+    document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     currentData = readings.slice().sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
     render();
   } catch (err) {
@@ -261,7 +264,7 @@ document.getElementById("chartTimeView").addEventListener("change", e => {
 });
 
 // ---- Mostrar/ocultar líneas de la gráfica (leyenda como botones) ----
-let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false };
+let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false, medicated: false };
 document.getElementById("chartLegend").addEventListener("click", e => {
   const btn = e.target.closest(".legend-btn");
   if (!btn) return;
@@ -283,6 +286,7 @@ function renderChart() {
       { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
       { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
       { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
+      { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
       plugins: { legend: { display: false } },
@@ -290,6 +294,7 @@ function renderChart() {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
         y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
+        y3: { display: false, min: 0, max: 1.1 },
       },
     },
   });
