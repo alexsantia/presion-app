@@ -40,6 +40,7 @@
   .section-history  { background:#FDF6EF; border-left:4px solid #D9A15F; }
   .section-share    { background:#E7F6F6; border-left:4px solid #2E9E96; }
   .section-password { background:#F2F0F7; border-left:4px solid #6B4FA0; }
+  .section-ai       { background:#FBEFF5; border-left:4px solid #B0559B; }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .section h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 12px; }
   .section h3 { font-size: 13px; margin: 0 0 10px 0; font-weight: 650; }
@@ -70,8 +71,15 @@
   .toolbar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
   .btn-secondary { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text); }
   .btn-secondary:hover { background: var(--accent-soft); }
+  .ai-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ai-controls select { padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .ai-controls label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  textarea#aiOutput { width: 100%; height: 220px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; }
+  .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
-  .legend-hint { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
+  .legend-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--accent-hover); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; margin-top: 10px; }
+  .legend-hint-emoji { display: inline-block; animation: legendPulse 1.6s ease-in-out infinite; }
+  @keyframes legendPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .legend-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-family: inherit; color: var(--text-muted); cursor: pointer; }
@@ -189,12 +197,12 @@
   <div class="toolbar">
     <h2 style="flex:1">Tendencia</h2>
     <div class="chart-filter" id="chartFilter" role="group" aria-label="Agrupar gráfica por periodo">
-      <button type="button" class="chart-filter-btn active" data-granularity="day">Día</button>
-      <button type="button" class="chart-filter-btn" data-granularity="week">Semana</button>
+      <button type="button" class="chart-filter-btn" data-granularity="day">Día</button>
+      <button type="button" class="chart-filter-btn active" data-granularity="week">Semana</button>
       <button type="button" class="chart-filter-btn" data-granularity="month">Mes</button>
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
     </div>
-    <input type="date" id="chartDayPicker" class="chart-day-picker">
+    <input type="date" id="chartDayPicker" class="chart-day-picker" style="display:none;">
     <select id="chartTimeView" class="chart-day-picker" aria-label="Vista por horario">
       <option value="regular">Regular</option>
       <option value="manana">Mañanas (5–12h)</option>
@@ -204,13 +212,36 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-  <div class="legend-hint">💡 Toca una línea para mostrarla u ocultarla en la gráfica</div>
+  <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
     <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
     <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
+  </div>
+</div>
+
+<div class="section section-ai">
+  <h2>Análisis con IA</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un texto con tus resultados para pegarlo en ChatGPT, Gemini o cualquier otro asistente de IA y obtener un análisis de apoyo sobre tu propia salud.</p>
+  <div class="ai-controls">
+    <label>Periodo a analizar
+      <select id="aiPeriod">
+        <option value="day">Día</option>
+        <option value="week" selected>Semana</option>
+        <option value="month">Mes</option>
+        <option value="quarter">Trimestre</option>
+        <option value="year">Año</option>
+        <option value="all">Todo el histórico</option>
+      </select>
+    </label>
+    <button type="button" class="btn-secondary" id="aiGenerateBtn">🤖 Analiza con IA</button>
+  </div>
+  <div id="aiWrap" style="display:none; margin-top:14px;">
+    <textarea id="aiOutput" readonly></textarea>
+    <div class="disclaimer">Copia este texto y pégalo en tu asistente de IA favorito para obtener un análisis. Esto no sustituye una consulta médica.</div>
+    <button type="button" class="btn-secondary" id="aiCopyBtn" style="margin-top:8px;">Copiar texto</button>
   </div>
 </div>
 
@@ -301,7 +332,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v16</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v17</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -791,6 +822,24 @@ document.getElementById("regenerateFamilyLink").addEventListener("click", async 
   }
 });
 
+document.getElementById("aiGenerateBtn").addEventListener("click", () => {
+  const granularity = document.getElementById("aiPeriod").value;
+  const filtered = filterByPeriod(currentData, granularity);
+  const age = currentAccount ? calcAge(currentAccount.birthdate) : null;
+  const firstName = currentAccount && currentAccount.name ? currentAccount.name.trim().split(/\s+/)[0] : "";
+  const prompt = buildAiAnalysisPrompt(filtered, {
+    firstName,
+    ageText: age != null ? age + " años" : "",
+    granularity,
+    audience: "patient",
+  });
+  document.getElementById("aiOutput").value = prompt;
+  document.getElementById("aiWrap").style.display = "block";
+});
+document.getElementById("aiCopyBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("aiOutput").value);
+});
+
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 // ---- Comentarios ----
@@ -896,7 +945,7 @@ document.getElementById("prevPageBtn").addEventListener("click", () => { current
 document.getElementById("nextPageBtn").addEventListener("click", () => { currentPage++; renderTablePage(); });
 
 // ---- Filtro de la gráfica por periodo ----
-let chartGranularity = "day";
+let chartGranularity = "week";
 let chartDay = todayStr();
 const chartDayPickerEl = document.getElementById("chartDayPicker");
 chartDayPickerEl.value = chartDay;

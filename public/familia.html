@@ -40,7 +40,9 @@
   th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
   .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
-  .legend-hint { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
+  .legend-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--accent-hover); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; margin-top: 10px; }
+  .legend-hint-emoji { display: inline-block; animation: legendPulse 1.6s ease-in-out infinite; }
+  @keyframes legendPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .medicated-badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
@@ -92,12 +94,12 @@
   <div class="toolbar">
     <h2 style="flex:1">Tendencia</h2>
     <div class="chart-filter" id="chartFilter" role="group" aria-label="Agrupar gráfica por periodo">
-      <button type="button" class="chart-filter-btn active" data-granularity="day">Día</button>
-      <button type="button" class="chart-filter-btn" data-granularity="week">Semana</button>
+      <button type="button" class="chart-filter-btn" data-granularity="day">Día</button>
+      <button type="button" class="chart-filter-btn active" data-granularity="week">Semana</button>
       <button type="button" class="chart-filter-btn" data-granularity="month">Mes</button>
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
     </div>
-    <input type="date" id="chartDayPicker" class="chart-day-picker">
+    <input type="date" id="chartDayPicker" class="chart-day-picker" style="display:none;">
     <select id="chartTimeView" class="chart-day-picker" aria-label="Vista por horario">
       <option value="regular">Regular</option>
       <option value="manana">Mañanas (5–12h)</option>
@@ -107,7 +109,7 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-  <div class="legend-hint">💡 Toca una línea para mostrarla u ocultarla en la gráfica</div>
+  <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
@@ -148,8 +150,8 @@
     <label>Periodo a analizar
       <select id="aiPeriod">
         <option value="day">Día</option>
-        <option value="week">Semana</option>
-        <option value="month" selected>Mes</option>
+        <option value="week" selected>Semana</option>
+        <option value="month">Mes</option>
         <option value="quarter">Trimestre</option>
         <option value="year">Año</option>
         <option value="all">Todo el histórico</option>
@@ -164,7 +166,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v16</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v17</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -173,7 +175,7 @@ let currentData = [];
 let currentPatient = null;
 let currentPage = 1;
 let pageSize = 20;
-let chartGranularity = "day";
+let chartGranularity = "week";
 let chartDay = todayStr();
 
 function setStatus(kind, msg) {

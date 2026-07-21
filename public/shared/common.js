@@ -208,22 +208,29 @@ function filterByPeriod(data, granularity) {
   return list.filter(r => r.date >= cutoffStr);
 }
 // meta: { patientName, firstName, ageText, granularity, audience }
-// audience: "doctor" (habla de "el paciente [Nombre completo], de X años") o
-// "family" (habla de "[Primer nombre]"). El prompt completo se redacta en
-// tercera persona, para que quien lo pegue en un chat de IA no tenga que
-// reescribirlo.
+// audience: "doctor" (habla de "el paciente [Nombre completo], de X años"),
+// "family" (habla de "[Primer nombre]") o "patient" (le habla de tú
+// directamente al propio paciente). El prompt completo se redacta en
+// tercera persona (salvo "patient", que es en segunda persona), para que
+// quien lo pegue en un chat de IA no tenga que reescribirlo.
 function buildAiAnalysisPrompt(data, meta) {
   meta = meta || {};
   const filtered = data || [];
   const periodLabel = AI_PERIOD_LABELS[meta.granularity] || "el periodo seleccionado";
   const isDoctor = meta.audience === "doctor";
+  const isPatient = meta.audience === "patient";
+  const firstName = meta.firstName || meta.patientName || "";
   const subject = isDoctor
     ? `el paciente ${meta.patientName || "sin nombre registrado"}${meta.ageText ? ", de " + meta.ageText : ""}`
-    : `${meta.firstName || meta.patientName || "el paciente"}${meta.ageText ? ", de " + meta.ageText : ""}`;
+    : isPatient
+      ? `ti${meta.ageText ? " (" + meta.ageText + ")" : ""}`
+      : `${firstName || "el paciente"}${meta.ageText ? ", de " + meta.ageText : ""}`;
   const subjectShort = isDoctor ? "el paciente" : (meta.firstName || "la persona");
 
   if (!filtered.length) {
-    return `No hay lecturas registradas para ${periodLabel} de ${subject}. Elige otro periodo o registra lecturas primero.`;
+    return isPatient
+      ? `No tienes lecturas registradas para ${periodLabel}. Elige otro periodo o registra una lectura primero.`
+      : `No hay lecturas registradas para ${periodLabel} de ${subject}. Elige otro periodo o registra lecturas primero.`;
   }
   const sorted = [...filtered].sort((a, b) => (a.date + "T" + a.time).localeCompare(b.date + "T" + b.time));
   const sysVals = sorted.map(r => r.sys).filter(v => v != null);
@@ -239,9 +246,12 @@ function buildAiAnalysisPrompt(data, meta) {
   const medicatedCount = sorted.filter(r => r.medicated).length;
   const adherencePct = Math.round((medicatedCount / sorted.length) * 100);
 
-  let text = isDoctor
+  let text = "Este texto es un prompt preparado para que lo interprete un asistente de inteligencia artificial (como ChatGPT, Gemini u otro) y entregue un resumen útil a partir de datos reales de presión arterial. Pégalo tal cual en tu chat de IA de preferencia.\n\n";
+  text += isDoctor
     ? `Actúa como si estuvieras preparando, para un médico, un resumen clínico breve y en lenguaje formal (español) sobre ${subject}. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`
-    : `Actúa como si le estuvieras explicando a un familiar o amigo sin conocimientos médicos cómo va la salud de ${subject}, con palabras sencillas y cotidianas. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`;
+    : isPatient
+      ? `Actúa como si le estuvieras explicando directamente a ${firstName || "la persona que registró estos datos"} (hablándole de tú, en segunda persona) cómo ha estado su propia salud, con calidez y lenguaje sencillo y cotidiano. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`
+      : `Actúa como si le estuvieras explicando a un familiar o amigo sin conocimientos médicos cómo va la salud de ${subject}, con palabras sencillas y cotidianas. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`;
   text += `Periodo analizado: ${periodLabel}\n`;
   text += `Total de lecturas en este periodo: ${sorted.length}\n\n`;
   text += "Resumen:\n";
@@ -258,9 +268,11 @@ function buildAiAnalysisPrompt(data, meta) {
   });
 
   if (isDoctor) {
-    text += `\nCon esta información, redacta un RESUMEN CLÍNICO que el médico pueda leer en menos de 40 segundos (aproximadamente 80 a 110 palabras). Debe incluir: clasificación de la presión arterial según la guía AHA 2017, tendencia general (mejora, estable o empeora), frecuencia cardiaca y peso si son relevantes, adherencia al tratamiento antihipertensivo, y una sola línea de alerta si hay lecturas en etapa 2 o crisis hipertensiva. Usa terminología médica apropiada, tono formal y directo, sin rodeos ni frases de cortesía. Cierra con una línea breve invitando a revisar el detalle completo de las lecturas incluido arriba si se desea profundizar. Aclara que esto no sustituye la valoración clínica directa del paciente.`;
+    text += `\nCon esta información, redacta un RESUMEN CLÍNICO que el médico pueda leer en menos de 40 segundos (aproximadamente 80 a 110 palabras). Debe incluir: clasificación de la presión arterial según la guía AHA 2017, tendencia general (mejora, estable o empeora), frecuencia cardiaca y peso si son relevantes, adherencia al tratamiento antihipertensivo, y una sola línea de alerta si hay lecturas en etapa 2 o crisis hipertensiva. Usa terminología médica apropiada, tono formal y directo, sin rodeos ni frases de cortesía. Cierra con una línea breve invitando a revisar el detalle completo de las lecturas incluido arriba si se desea profundizar. Aclara que esto no sustituye la valoración clínica directa del paciente. Termina tu respuesta preguntando si el lector desea profundizar en algún punto del análisis o tiene alguna duda específica sobre el resumen brindado.`;
+  } else if (isPatient) {
+    text += `\nCon esta información, escribe un resumen breve y cálido dirigido directamente a ${firstName || "la persona"}, hablándole de tú en todo momento (segunda persona), que resalte los datos más importantes (cómo ha estado su presión, si se ha estado cuidando con su medicamento, y cómo va su peso), y que aclare con claridad qué tan bien o mal va todo. Empieza tu respuesta con un saludo breve y personal, por ejemplo "Hola ${firstName || "[nombre]"}, aquí tienes tu análisis:", seguido del resumen. Usa lenguaje cotidiano y cercano; si necesitas mencionar algún término médico, explícalo en palabras simples entre paréntesis. Aclara al final que esto no sustituye una consulta médica profesional. Termina tu respuesta preguntando si quiere profundizar en algún punto del análisis o si tiene alguna duda específica sobre el resumen brindado.`;
   } else {
-    text += `\nCon esta información, escribe un resumen breve, cálido y fácil de entender para alguien sin conocimientos médicos, que resalte los datos más importantes (cómo ha estado la presión, si ${subjectShort === "el paciente" ? "el paciente" : subjectShort} se ha estado cuidando con su medicamento, y cómo va su peso), y que aclare con claridad qué tan bien o mal va todo. Usa lenguaje cotidiano y cercano; si necesitas mencionar algún término médico, explícalo en palabras simples entre paréntesis. Aclara al final que esto no sustituye una consulta médica profesional.`;
+    text += `\nCon esta información, escribe un resumen breve, cálido y fácil de entender para alguien sin conocimientos médicos, que resalte los datos más importantes (cómo ha estado la presión, si ${subjectShort === "el paciente" ? "el paciente" : subjectShort} se ha estado cuidando con su medicamento, y cómo va su peso), y que aclare con claridad qué tan bien o mal va todo. Usa lenguaje cotidiano y cercano; si necesitas mencionar algún término médico, explícalo en palabras simples entre paréntesis. Aclara al final que esto no sustituye una consulta médica profesional. Termina tu respuesta preguntando si el lector desea profundizar en algún punto del análisis o tiene alguna duda específica sobre el resumen brindado.`;
   }
   return text;
 }
