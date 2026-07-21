@@ -40,6 +40,7 @@
   th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
   .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend-hint { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .medicated-badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
@@ -106,12 +107,13 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend-hint">💡 Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
-    <button type="button" class="legend-btn active" data-dataset="sys"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
-    <button type="button" class="legend-btn active" data-dataset="dia"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
-    <button type="button" class="legend-btn active" data-dataset="hr"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
-    <button type="button" class="legend-btn active" data-dataset="weight"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
-    <button type="button" class="legend-btn active" data-dataset="medicated"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
+    <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
+    <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
+    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
   </div>
 </div>
 
@@ -162,7 +164,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v14</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v15</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -289,7 +291,7 @@ function renderChart() {
       { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: chartTooltipCallbacks(grouped) } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },

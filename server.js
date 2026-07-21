@@ -66,16 +66,51 @@ function asyncRoute(fn) {
 }
 
 // ---- Middlewares de autenticación ----
+// Para el rol de médico, además de revisar la sesión, se vuelve a confirmar
+// en cada request que la cuenta de médico siga existiendo en Medicos: así,
+// si el paciente le quita el acceso a un médico (ver /api/account/doctors),
+// la próxima vez que ese médico cargue una página o llame a la API pierde el
+// acceso de inmediato, en vez de seguir entrando con la sesión vieja hasta
+// que expire sola.
+async function doctorStillLinked_(doctorId) {
+  try {
+    const result = await callSheetsApi({ action: "get_doctor_by_id", id: doctorId });
+    return !!(result.ok && result.data);
+  } catch (err) {
+    return null; // no se pudo verificar (problema de red) — se trata distinto de "no existe"
+  }
+}
 function requireRole(role) {
-  return (req, res, next) => {
-    if (req.session && req.session.role === role) return next();
-    if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "no autenticado" });
-    return res.redirect(role === "doctor" ? "/doctor/login" : "/login");
+  return async (req, res, next) => {
+    if (!(req.session && req.session.role === role)) {
+      if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "no autenticado" });
+      return res.redirect(role === "doctor" ? "/doctor/login" : "/login");
+    }
+    if (role === "doctor") {
+      const linked = await doctorStillLinked_(req.session.doctorId);
+      if (linked === false) {
+        req.session = null;
+        if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "tu acceso de médico fue revocado" });
+        return res.redirect("/doctor/login");
+      }
+      if (linked === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+    }
+    next();
   };
 }
-function requireAnyRole(req, res, next) {
-  if (req.session && (req.session.role === "patient" || req.session.role === "doctor")) return next();
-  return res.status(401).json({ ok: false, error: "no autenticado" });
+async function requireAnyRole(req, res, next) {
+  if (!(req.session && (req.session.role === "patient" || req.session.role === "doctor"))) {
+    return res.status(401).json({ ok: false, error: "no autenticado" });
+  }
+  if (req.session.role === "doctor") {
+    const linked = await doctorStillLinked_(req.session.doctorId);
+    if (linked === false) {
+      req.session = null;
+      return res.status(401).json({ ok: false, error: "tu acceso de médico fue revocado" });
+    }
+    if (linked === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+  }
+  next();
 }
 
 app.post("/logout", (req, res) => {
@@ -252,6 +287,19 @@ app.post("/api/account/params", requireRole("patient"), asyncRoute(async (req, r
 app.post("/api/account/invite", requireRole("patient"), asyncRoute(async (req, res) => {
   const result = await callSheetsApi(null, { action: "generate_doctor_invite", patient_id: req.session.patientId });
   res.json(result);
+}));
+
+app.get("/api/account/doctors", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_doctors", patient_id: req.session.patientId }));
+}));
+app.get("/api/account/invites", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_doctor_invites", patient_id: req.session.patientId }));
+}));
+app.post("/api/account/invites/:id/cancel", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "cancel_doctor_invite", id: req.params.id, patient_id: req.session.patientId }));
+}));
+app.post("/api/account/doctors/:id/remove", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "remove_doctor", id: req.params.id, patient_id: req.session.patientId }));
 }));
 
 app.post("/api/account/share-token/regenerate", requireRole("patient"), asyncRoute(async (req, res) => {

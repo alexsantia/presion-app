@@ -71,6 +71,7 @@
   .btn-secondary { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text); }
   .btn-secondary:hover { background: var(--accent-soft); }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend-hint { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .legend-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-family: inherit; color: var(--text-muted); cursor: pointer; }
@@ -101,6 +102,13 @@
   .share-box:last-child { margin-bottom: 0; }
   .share-box code { background: white; padding: 2px 6px; border-radius: 5px; font-size: 12px; word-break: break-all; }
   .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .doctor-list-title { font-size: 11px; color: var(--text-muted); font-weight: 650; text-transform: uppercase; letter-spacing: 0.03em; margin: 12px 0 4px; }
+  .doctor-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .doctor-row:last-child { border-bottom: none; }
+  .doctor-row .doctor-info { flex: 1; min-width: 0; }
+  .doctor-row .doctor-info strong { display: block; }
+  .doctor-row .doctor-info span, .doctor-row .doctor-info code { color: var(--text-muted); font-size: 11px; word-break: break-all; }
+  .doctor-row .doctor-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .pw-form { display: grid; gap: 10px; max-width: 320px; }
   footer { text-align: center; color: var(--text-muted); font-size: 12px; margin-top: 28px; padding-top: 18px; }
   .greeting-name { font-weight: 750; font-size: 19px; }
@@ -196,12 +204,13 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend-hint">💡 Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
-    <button type="button" class="legend-btn active" data-dataset="sys"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
-    <button type="button" class="legend-btn active" data-dataset="dia"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
-    <button type="button" class="legend-btn active" data-dataset="hr"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
-    <button type="button" class="legend-btn active" data-dataset="weight"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
-    <button type="button" class="legend-btn active" data-dataset="medicated"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
+    <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
+    <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
+    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
   </div>
 </div>
 
@@ -270,12 +279,15 @@
   <div class="two-col">
     <div>
       <h3>Invitar a tu médico</h3>
-      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura.</p>
-      <button class="btn-secondary" id="generateInviteBtn">Generar enlace para mi médico</button>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Puedes vincular hasta 5 médicos.</p>
+      <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
+      <button class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
       <div class="share-box" id="inviteBox" style="display:none; margin-top:12px;">
         <code id="inviteLink"></code>
         <button class="btn-secondary" id="copyInviteLink" style="margin-left:8px;">Copiar</button>
       </div>
+      <div id="pendingInvitesWrap"></div>
+      <div id="doctorsListWrap"></div>
     </div>
     <div>
       <h3>Compartir con familia y amigos</h3>
@@ -289,7 +301,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v14</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v15</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -396,6 +408,7 @@ let currentData = [];
 let currentComments = [];
 let currentAccount = null;
 let lastWeight = null;
+let lastMedicated = null;
 
 // ---- Saludo con el nombre del paciente ----
 const GREETINGS = [
@@ -464,6 +477,16 @@ function applyDefaultWeight() {
   const el = document.getElementById("f_weight");
   if (el && !editingId && lastWeight != null && !el.value) {
     el.value = lastWeight;
+  }
+}
+
+// ---- Medicado: el checkbox de "nueva lectura" precarga siempre el último
+// estado registrado (Sí o No), en vez de reiniciarse a desmarcado cada vez,
+// hasta que el paciente lo cambie con un nuevo input. ----
+function applyDefaultMedicated() {
+  const el = document.getElementById("f_medicated");
+  if (el && !editingId && lastMedicated != null) {
+    el.checked = lastMedicated;
   }
 }
 
@@ -660,6 +683,85 @@ document.getElementById("settingsRegenFamilyBtn").addEventListener("click", () =
   document.getElementById("regenerateFamilyLink").click();
 });
 
+// ---- Médicos vinculados e invitaciones pendientes (hasta 5 en total) ----
+const MAX_DOCTORS = 5;
+async function loadDoctorsAndInvites() {
+  try {
+    const [doctors, invites] = await Promise.all([
+      apiGet("/api/account/doctors"),
+      apiGet("/api/account/invites"),
+    ]);
+    renderDoctorsAndInvites(doctors, invites);
+  } catch (err) {
+    // No bloquea el resto de la página si esto falla (p. ej. sin conexión).
+  }
+}
+function renderDoctorsAndInvites(doctors, invites) {
+  const used = doctors.length + invites.length;
+  const capInfo = document.getElementById("doctorCapInfo");
+  capInfo.textContent = `${doctors.length} de ${MAX_DOCTORS} médicos vinculados` +
+    (invites.length ? ` · ${invites.length} invitación${invites.length === 1 ? "" : "es"} pendiente${invites.length === 1 ? "" : "s"}` : "");
+  const generateBtn = document.getElementById("generateInviteBtn");
+  generateBtn.disabled = used >= MAX_DOCTORS;
+  generateBtn.title = used >= MAX_DOCTORS ? `Ya llegaste al máximo de ${MAX_DOCTORS} médicos vinculados` : "";
+
+  const doctorsWrap = document.getElementById("doctorsListWrap");
+  doctorsWrap.innerHTML = doctors.length
+    ? `<div class="doctor-list-title">Médicos vinculados</div>` + doctors.map(d => `
+        <div class="doctor-row">
+          <div class="doctor-info"><strong>${d.name || "(sin nombre)"}</strong><span>${d.email}</span></div>
+          <div class="doctor-actions"><button type="button" class="btn-mini danger remove-doctor-btn" data-id="${d.id}">Quitar acceso</button></div>
+        </div>`).join("")
+    : "";
+
+  const invitesWrap = document.getElementById("pendingInvitesWrap");
+  invitesWrap.innerHTML = invites.length
+    ? `<div class="doctor-list-title">Invitaciones pendientes</div>` + invites.map(i => `
+        <div class="doctor-row">
+          <div class="doctor-info"><code>${window.location.origin}/doctor/invite/${i.token}</code></div>
+          <div class="doctor-actions">
+            <button type="button" class="btn-mini copy-invite-btn" data-token="${i.token}">Copiar</button>
+            <button type="button" class="btn-mini danger cancel-invite-btn" data-id="${i.id}">Cancelar</button>
+          </div>
+        </div>`).join("")
+    : "";
+}
+document.getElementById("doctorsListWrap").addEventListener("click", async e => {
+  const btn = e.target.closest(".remove-doctor-btn");
+  if (!btn) return;
+  if (!confirm("¿Quitar el acceso de este médico? Ya no podrá ver tus datos.")) return;
+  try {
+    setStatus("loading", "Quitando acceso…");
+    await apiPost("/api/account/doctors/" + encodeURIComponent(btn.dataset.id) + "/remove", {});
+    setStatus("success", "Acceso quitado.");
+    setTimeout(() => setStatus(null), 1500);
+    await loadDoctorsAndInvites();
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+document.getElementById("pendingInvitesWrap").addEventListener("click", async e => {
+  const copyBtn = e.target.closest(".copy-invite-btn");
+  if (copyBtn) {
+    navigator.clipboard.writeText(window.location.origin + "/doctor/invite/" + copyBtn.dataset.token);
+    setStatus("success", "Enlace copiado.");
+    setTimeout(() => setStatus(null), 1200);
+    return;
+  }
+  const cancelBtn = e.target.closest(".cancel-invite-btn");
+  if (cancelBtn) {
+    try {
+      setStatus("loading", "Cancelando invitación…");
+      await apiPost("/api/account/invites/" + encodeURIComponent(cancelBtn.dataset.id) + "/cancel", {});
+      setStatus("success", "Invitación cancelada.");
+      setTimeout(() => setStatus(null), 1500);
+      await loadDoctorsAndInvites();
+    } catch (err) {
+      setStatus("error", err.message);
+    }
+  }
+});
+
 document.getElementById("generateInviteBtn").addEventListener("click", async () => {
   try {
     setStatus("loading", "Generando enlace…");
@@ -668,6 +770,7 @@ document.getElementById("generateInviteBtn").addEventListener("click", async () 
     document.getElementById("inviteLink").textContent = link;
     document.getElementById("inviteBox").style.display = "block";
     setStatus(null);
+    await loadDoctorsAndInvites();
   } catch (err) {
     setStatus("error", err.message);
   }
@@ -719,12 +822,14 @@ async function loadAndRender() {
     currentData.sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
     const withWeight = currentData.filter(r => r.weight != null);
     if (withWeight.length) lastWeight = withWeight[withWeight.length - 1].weight;
+    if (currentData.length) lastMedicated = !!currentData[currentData.length - 1].medicated;
     setStatus(null);
     render();
     renderComments();
     renderStreak();
     renderGreeting();
     applyDefaultWeight();
+    applyDefaultMedicated();
   } catch (err) {
     setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
   }
@@ -841,7 +946,7 @@ function renderChart() {
       { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: chartTooltipCallbacks(grouped) } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
@@ -925,6 +1030,8 @@ function cancelEdit() {
   document.getElementById("submitBtn").textContent = "Agregar";
   document.getElementById("cancelEditBtn").style.display = "none";
   document.getElementById("editingBanner").style.display = "none";
+  applyDefaultWeight();
+  applyDefaultMedicated();
 }
 document.getElementById("cancelEditBtn").addEventListener("click", cancelEdit);
 
@@ -1057,6 +1164,7 @@ document.getElementById("shareBtn").addEventListener("click", () => {
 
 loadAccount();
 loadAndRender();
+loadDoctorsAndInvites();
 </script>
 </body>
 </html>

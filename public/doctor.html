@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reigning Blood Pressure App · Vista del médico</title>
+<title>Reigning Blood Pressure App · Médico</title>
 <link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
@@ -49,6 +49,7 @@
   .medicated-badge { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
   .doctor-note { color: var(--accent); font-size: 11px; font-weight: 500; margin-top: 3px; background: var(--accent-soft); padding: 3px 7px; border-radius: 6px; display: inline-block; }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend-hint { font-size: 11px; color: var(--text-muted); margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
   .legend-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-family: inherit; color: var(--text-muted); cursor: pointer; }
@@ -101,7 +102,7 @@
 <body>
 
 <div class="topbar">
-  <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App <span class="badge-role">Vista del médico</span></h1>
+  <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App <span class="badge-role">Médico</span></h1>
   <div class="topbar-links">
     <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
     <form method="POST" action="/logout"><button type="submit" class="link-btn">Cerrar sesión</button></form>
@@ -139,11 +140,13 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend-hint">💡 Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
-    <button type="button" class="legend-btn active" data-dataset="sys"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
-    <button type="button" class="legend-btn active" data-dataset="dia"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
-    <button type="button" class="legend-btn active" data-dataset="hr"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
-    <button type="button" class="legend-btn active" data-dataset="weight"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
+    <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
+    <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
+    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
   </div>
 </div>
 
@@ -151,7 +154,7 @@
   <h2>Historial de lecturas</h2>
   <div id="emptyState" style="display:none;">El paciente todavía no ha registrado lecturas.</div>
   <table id="readingsTable">
-    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th>Observaciones</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th id="medicatedColHeader">Medicado</th><th>Observaciones</th></tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
   <div class="pagination" id="paginationBar" style="display:none;">
@@ -218,7 +221,7 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v15</footer>
 
 <script>
 let chartInstance = null;
@@ -253,6 +256,8 @@ async function loadPatient() {
       <div class="profile-line"><strong>${profile.name || "(sin nombre)"}</strong></div>
       <div class="profile-line" style="color:var(--text-muted);">${age != null ? age + " años" : "edad no registrada"}</div>
     `;
+    const medName = medicationName(profile);
+    document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
   } catch (err) {
     document.getElementById("profileContent").innerHTML = `<div class="profile-line" style="color:var(--crisis);">No se pudo cargar el perfil.</div>`;
   }
@@ -326,7 +331,8 @@ function renderTablePage() {
       <td>${r.hr ?? "—"}</td>
       <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
-      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${r.medicated ? '<div class="medicated-badge">💊 Medicado</div>' : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
+      <td>${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
+      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
     tbody.appendChild(tr);
   });
 
@@ -372,7 +378,7 @@ document.getElementById("chartTimeView").addEventListener("change", e => {
 });
 
 // ---- Mostrar/ocultar líneas de la gráfica (leyenda como botones) ----
-let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false };
+let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false, medicated: false };
 document.getElementById("chartLegend").addEventListener("click", e => {
   const btn = e.target.closest(".legend-btn");
   if (!btn) return;
@@ -394,13 +400,15 @@ function renderChart() {
       { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
       { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
       { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
+      { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: chartTooltipCallbacks(grouped) } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
         y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
+        y3: { display: false, min: 0, max: 1.1 },
       },
     },
   });

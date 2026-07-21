@@ -86,18 +86,19 @@ function aggregateReadings(data, granularity) {
   const groups = new Map();
   (data || []).forEach(r => {
     const { key, label } = periodKeyAndLabel_(r.date, granularity || "day", r.time);
-    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [] });
+    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [], obs: [] });
     const g = groups.get(key);
     if (r.sys != null) g.sys.push(r.sys);
     if (r.dia != null) g.dia.push(r.dia);
     if (r.hr != null) g.hr.push(r.hr);
     if (r.weight != null) g.weight.push(r.weight);
     g.medicated.push(r.medicated ? 1 : 0);
+    if (r.obs && String(r.obs).trim()) g.obs.push(String(r.obs).trim());
   });
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return Array.from(groups.values())
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), count: Math.max(g.sys.length, g.dia.length) }));
+    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), obs: g.obs.join(" · "), count: Math.max(g.sys.length, g.dia.length) }));
 }
 // Convierte cada lectura en un punto individual para la gráfica (sin
 // agrupar ni promediar), ordenado cronológicamente y con el eje X mostrando
@@ -110,6 +111,7 @@ function rawSeriesForChart(data) {
       label: `${fmtDate(r.date)} ${r.time}`,
       sys: r.sys ?? null, dia: r.dia ?? null, hr: r.hr ?? null, weight: r.weight ?? null,
       medicated: r.medicated ? 1 : 0,
+      obs: r.obs ? String(r.obs).trim() : "",
       count: 1,
     }));
 }
@@ -146,6 +148,34 @@ function chartDataForFilter(data, chartPeriod, selectedDay, timeView) {
   let filtered = filterByPeriod(data, chartPeriod);
   filtered = filterByTimeView(filtered, timeView);
   return rawSeriesForChart(filtered);
+}
+
+// Callbacks del tooltip de Chart.js para la gráfica de Tendencia, compartidos
+// por las 3 vistas. Dos ajustes sobre el tooltip por default: (1) la línea
+// de "Medicado" muestra Sí/No (o el % de adherencia si el punto es un
+// promedio de varias lecturas agrupadas) en vez del 1/0 crudo que Chart.js
+// mostraría por default; (2) se agregan las observaciones de esa fecha/hora
+// al pie del tooltip, para poder contextualizar la medición de un vistazo
+// sin tener que ir a buscarla en la tabla.
+function chartTooltipCallbacks(grouped) {
+  return {
+    label(context) {
+      const dsLabel = context.dataset.label || "";
+      const v = context.parsed.y;
+      if (context.dataset.yAxisID === "y3") {
+        if (v == null) return `${dsLabel}: sin dato`;
+        if (v >= 0.995) return `${dsLabel}: Sí`;
+        if (v <= 0.005) return `${dsLabel}: No`;
+        return `${dsLabel}: ${Math.round(v * 100)}% de las lecturas`;
+      }
+      return `${dsLabel}: ${v == null ? "sin dato" : v}`;
+    },
+    footer(tooltipItems) {
+      if (!tooltipItems || !tooltipItems.length) return [];
+      const point = grouped[tooltipItems[0].dataIndex];
+      return point && point.obs ? ["📝 " + point.obs] : [];
+    },
+  };
 }
 
 // ---- Paginación genérica ----
