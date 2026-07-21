@@ -88,19 +88,38 @@ function rawSeriesForChart(data) {
       count: 1,
     }));
 }
+// Vista por horario del día, independiente del filtro de periodo: acota las
+// lecturas a la franja de horas elegida antes de agregarlas/graficarlas.
+// "noche" cruza la medianoche (19:01 a 01:00), por eso usa OR en vez de AND.
+function filterByTimeView(data, timeView) {
+  const list = data || [];
+  if (!timeView || timeView === "regular") return list.slice();
+  return list.filter(r => {
+    const t = r.time || "00:00";
+    if (timeView === "manana") return t >= "05:00" && t <= "12:00";
+    if (timeView === "tarde") return t > "12:00" && t <= "19:00";
+    if (timeView === "noche") return t > "19:00" || t <= "01:00";
+    if (timeView === "madrugada") return t > "01:00" && t <= "04:59";
+    return true;
+  });
+}
 // Para la gráfica de Tendencia:
 // - "día": pide una fecha concreta (por defecto hoy), se acota a esas 24
 //   horas y el eje X agrupa por hora.
 // - "semana"/"mes"/"año": se acota a los últimos 7/30/365 días desde hoy,
 //   pero el eje X muestra cada medición individual con su fecha y hora
 //   (sin agrupar ni promediar).
-function chartDataForFilter(data, chartPeriod, selectedDay) {
+// timeView (opcional): "regular" | "manana" | "tarde" | "noche" | "madrugada"
+// — filtra además por franja horaria, combinable con cualquier chartPeriod.
+function chartDataForFilter(data, chartPeriod, selectedDay, timeView) {
   if (chartPeriod === "day") {
     const day = selectedDay || todayStr();
-    const filtered = (data || []).filter(r => r.date === day);
+    let filtered = (data || []).filter(r => r.date === day);
+    filtered = filterByTimeView(filtered, timeView);
     return aggregateReadings(filtered, "hour");
   }
-  const filtered = filterByPeriod(data, chartPeriod);
+  let filtered = filterByPeriod(data, chartPeriod);
+  filtered = filterByTimeView(filtered, timeView);
   return rawSeriesForChart(filtered);
 }
 
@@ -165,7 +184,9 @@ function buildAiAnalysisPrompt(data, meta) {
   const medicatedCount = sorted.filter(r => r.medicated).length;
   const adherencePct = Math.round((medicatedCount / sorted.length) * 100);
 
-  let text = `Actúa como un asistente de salud. A continuación se comparten lecturas de presión arterial, frecuencia cardiaca y peso de ${subject}, registradas en Reigning Blood Pressure App.\n\n`;
+  let text = isDoctor
+    ? `Actúa como si estuvieras preparando, para un médico, un resumen clínico breve y en lenguaje formal (español) sobre ${subject}. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`
+    : `Actúa como si le estuvieras explicando a un familiar o amigo sin conocimientos médicos cómo va la salud de ${subject}, con palabras sencillas y cotidianas. Los siguientes datos de presión arterial, frecuencia cardiaca y peso fueron registrados en Reigning Blood Pressure App.\n\n`;
   text += `Periodo analizado: ${periodLabel}\n`;
   text += `Total de lecturas en este periodo: ${sorted.length}\n\n`;
   text += "Resumen:\n";
@@ -180,7 +201,12 @@ function buildAiAnalysisPrompt(data, meta) {
   sorted.forEach(r => {
     text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.medicated ? ", medicado" : ", sin medicamento registrado"}${r.obs ? " — " + r.obs : ""}\n`;
   });
-  text += `\nCon esta información, ayuda a entender la tendencia de presión arterial de ${subjectShort}, qué se debería vigilar o consultar con un médico, y qué hábitos podrían ayudar a mejorar su salud cardiovascular. Aclara que esto no sustituye una consulta médica profesional.`;
+
+  if (isDoctor) {
+    text += `\nCon esta información, redacta un RESUMEN CLÍNICO que el médico pueda leer en menos de 40 segundos (aproximadamente 80 a 110 palabras). Debe incluir: clasificación de la presión arterial según la guía AHA 2017, tendencia general (mejora, estable o empeora), frecuencia cardiaca y peso si son relevantes, adherencia al tratamiento antihipertensivo, y una sola línea de alerta si hay lecturas en etapa 2 o crisis hipertensiva. Usa terminología médica apropiada, tono formal y directo, sin rodeos ni frases de cortesía. Cierra con una línea breve invitando a revisar el detalle completo de las lecturas incluido arriba si se desea profundizar. Aclara que esto no sustituye la valoración clínica directa del paciente.`;
+  } else {
+    text += `\nCon esta información, escribe un resumen breve, cálido y fácil de entender para alguien sin conocimientos médicos, que resalte los datos más importantes (cómo ha estado la presión, si ${subjectShort === "el paciente" ? "el paciente" : subjectShort} se ha estado cuidando con su medicamento, y cómo va su peso), y que aclare con claridad qué tan bien o mal va todo. Usa lenguaje cotidiano y cercano; si necesitas mencionar algún término médico, explícalo en palabras simples entre paréntesis. Aclara al final que esto no sustituye una consulta médica profesional.`;
+  }
   return text;
 }
 

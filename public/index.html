@@ -21,8 +21,8 @@
   body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
   .topbar-links { display: flex; gap: 14px; align-items: center; }
-  h1 { font-size: 22px; margin: 0; font-weight: 650; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
-  h1 .brand-icon { width: 26px; height: 26px; display: block; }
+  h1 { font-size: 32px; margin: 0; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; }
+  h1 .brand-icon { width: 44px; height: 44px; display: block; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
@@ -69,9 +69,13 @@
   .toolbar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
   .btn-secondary { background: white; border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; font-size: 12px; cursor: pointer; color: var(--text); }
   .btn-secondary:hover { background: var(--accent-soft); }
-  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
+  .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .legend-btn { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 9px; font-size: 12px; font-family: inherit; color: var(--text-muted); cursor: pointer; }
+  .legend-btn:hover { background: var(--accent-soft); }
+  .legend-btn.active { color: var(--text); }
+  .legend-btn:not(.active) { opacity: 0.45; text-decoration: line-through; }
   .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   textarea#shareOutput { width: 100%; height: 150px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
   .row-actions { display: flex; gap: 6px; white-space: nowrap; }
@@ -182,13 +186,20 @@
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
     </div>
     <input type="date" id="chartDayPicker" class="chart-day-picker">
+    <select id="chartTimeView" class="chart-day-picker" aria-label="Vista por horario">
+      <option value="regular">Regular</option>
+      <option value="manana">Mañanas (5–12h)</option>
+      <option value="tarde">Tardes (12–19h)</option>
+      <option value="noche">Noches (19–1h)</option>
+      <option value="madrugada">Madrugadas (1–5h)</option>
+    </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-  <div class="legend">
-    <span><span class="dot" style="background:#2e6fd9"></span>Sistólica</span>
-    <span><span class="dot" style="background:#5ba7d9"></span>Diastólica</span>
-    <span><span class="dot" style="background:#8a8a8a"></span>LPM</span>
-    <span><span class="dot" style="background:var(--weight)"></span>Peso (kg)</span>
+  <div class="legend" id="chartLegend">
+    <button type="button" class="legend-btn active" data-dataset="sys"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
+    <button type="button" class="legend-btn active" data-dataset="dia"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
+    <button type="button" class="legend-btn active" data-dataset="hr"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="weight"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
   </div>
 </div>
 
@@ -791,22 +802,39 @@ chartDayPickerEl.addEventListener("change", e => {
   chartDay = e.target.value || todayStr();
   renderChart();
 });
+let chartTimeView = "regular";
+document.getElementById("chartTimeView").addEventListener("change", e => {
+  chartTimeView = e.target.value;
+  renderChart();
+});
+
+// ---- Mostrar/ocultar líneas de la gráfica (leyenda como botones) ----
+let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false };
+document.getElementById("chartLegend").addEventListener("click", e => {
+  const btn = e.target.closest(".legend-btn");
+  if (!btn) return;
+  const key = btn.dataset.dataset;
+  hiddenDatasets[key] = !hiddenDatasets[key];
+  btn.classList.toggle("active", !hiddenDatasets[key]);
+  renderChart();
+});
 
 function renderChart() {
   const data = currentData;
-  const grouped = chartDataForFilter(data, chartGranularity, chartDay);
+  const grouped = chartDataForFilter(data, chartGranularity, chartDay, chartTimeView);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(ctx, {
     type: "line",
     data: { labels, datasets: [
-      { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true },
-      { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true },
-      { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true },
-      { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true },
+      { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.sys },
+      { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
+      { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
+      { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
     ]},
     options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: false } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
         y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
