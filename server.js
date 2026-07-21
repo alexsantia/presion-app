@@ -44,7 +44,21 @@ app.use(
 // lógica de sesión). Las páginas HTML se sirven una por una más abajo con
 // sendFile, cada una detrás de su propio control de acceso, para que nadie
 // pueda pedir /index.html o /doctor.html directo sin pasar por ahí.
-app.use("/shared", express.static(path.join(__dirname, "public", "shared")));
+app.use("/shared", express.static(path.join(__dirname, "public", "shared"), {
+  setHeaders: res => res.set("Cache-Control", "no-cache, no-store, must-revalidate"),
+}));
+
+// Las páginas HTML (con su CSS y JS embebidos) nunca deben quedarse en el
+// caché del navegador: cada vez que se despliega una versión nueva, el
+// usuario tiene que recibirla en la siguiente visita sin necesidad de
+// borrar caché a mano. Por default, sendFile deja que el navegador
+// revalide con ETag/Last-Modified, lo cual en la práctica a veces se
+// queda sirviendo una copia vieja (sobre todo detrás de algún proxy/CDN
+// del dominio propio). Forzamos no-cache explícito para evitarlo.
+function sendPage_(res, filename) {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.sendFile(path.join(__dirname, "public", filename));
+}
 
 // ---- Proxy hacia el Apps Script Web App ----
 async function callSheetsApi(params, body) {
@@ -137,9 +151,9 @@ app.get("/api/reset-token/:token", asyncRoute(async (req, res) => {
 
 // ================= PACIENTE =================
 
-app.get("/signup", (req, res) => res.sendFile(path.join(__dirname, "public", "signup.html")));
-app.get("/login", (req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
-app.get("/", requireRole("patient"), (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("/signup", (req, res) => sendPage_(res, "signup.html"));
+app.get("/login", (req, res) => sendPage_(res, "login.html"));
+app.get("/", requireRole("patient"), (req, res) => sendPage_(res, "index.html"));
 
 app.post("/signup", asyncRoute(async (req, res) => {
   const { name, email, password, birthdate } = req.body;
@@ -163,7 +177,7 @@ app.post("/login", asyncRoute(async (req, res) => {
   res.json({ ok: true, redirect: "/" });
 }));
 
-app.get("/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "forgot-password.html")));
+app.get("/forgot-password", (req, res) => sendPage_(res, "forgot-password.html"));
 app.post("/forgot-password", asyncRoute(async (req, res) => {
   const email = String(req.body.email || "").toLowerCase().trim();
   const result = await callSheetsApi(null, { action: "request_password_reset", account_type: "patient", email, origin: requestOrigin_(req) });
@@ -172,7 +186,7 @@ app.post("/forgot-password", asyncRoute(async (req, res) => {
   // la página, sin depender del correo.
   res.json({ ok: true, reset_url: result.ok ? result.reset_url : undefined });
 }));
-app.get("/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "reset-password.html")));
+app.get("/reset-password/:token", (req, res) => sendPage_(res, "reset-password.html"));
 app.post("/reset-password/:token", asyncRoute(async (req, res) => {
   const { newPassword } = req.body;
   if (!newPassword || newPassword.length < 8) return res.status(400).json({ ok: false, error: "la nueva contraseña debe tener al menos 8 caracteres" });
@@ -183,9 +197,9 @@ app.post("/reset-password/:token", asyncRoute(async (req, res) => {
 
 // ================= MEDICO =================
 
-app.get("/doctor/invite/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-invite.html")));
-app.get("/doctor/login", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-login.html")));
-app.get("/doctor", requireRole("doctor"), (req, res) => res.sendFile(path.join(__dirname, "public", "doctor.html")));
+app.get("/doctor/invite/:token", (req, res) => sendPage_(res, "doctor-invite.html"));
+app.get("/doctor/login", (req, res) => sendPage_(res, "doctor-login.html"));
+app.get("/doctor", requireRole("doctor"), (req, res) => sendPage_(res, "doctor.html"));
 
 app.get("/api/invite/:token", asyncRoute(async (req, res) => {
   const result = await callSheetsApi({ action: "get_patient_by_invite_token", token_value: req.params.token });
@@ -214,13 +228,13 @@ app.post("/doctor/login", asyncRoute(async (req, res) => {
   res.json({ ok: true, redirect: "/doctor" });
 }));
 
-app.get("/doctor/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-forgot-password.html")));
+app.get("/doctor/forgot-password", (req, res) => sendPage_(res, "doctor-forgot-password.html"));
 app.post("/doctor/forgot-password", asyncRoute(async (req, res) => {
   const email = String(req.body.email || "").toLowerCase().trim();
   const result = await callSheetsApi(null, { action: "request_password_reset", account_type: "doctor", email, origin: requestOrigin_(req) });
   res.json({ ok: true, reset_url: result.ok ? result.reset_url : undefined });
 }));
-app.get("/doctor/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-reset-password.html")));
+app.get("/doctor/reset-password/:token", (req, res) => sendPage_(res, "doctor-reset-password.html"));
 app.post("/doctor/reset-password/:token", asyncRoute(async (req, res) => {
   const { newPassword } = req.body;
   if (!newPassword || newPassword.length < 8) return res.status(400).json({ ok: false, error: "la nueva contraseña debe tener al menos 8 caracteres" });
@@ -231,7 +245,7 @@ app.post("/doctor/reset-password/:token", asyncRoute(async (req, res) => {
 
 // ================= FAMILIA (público, solo lectura) =================
 
-app.get("/familia/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "familia.html")));
+app.get("/familia/:token", (req, res) => sendPage_(res, "familia.html"));
 
 app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const patientResult = await callSheetsApi({ action: "get_patient_by_share_token", token_value: req.params.token });
