@@ -166,10 +166,11 @@ app.post("/login", asyncRoute(async (req, res) => {
 app.get("/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "forgot-password.html")));
 app.post("/forgot-password", asyncRoute(async (req, res) => {
   const email = String(req.body.email || "").toLowerCase().trim();
-  // Siempre responde ok:true, exista o no esa cuenta, para no revelar por
-  // este medio si un correo está registrado.
-  await callSheetsApi(null, { action: "request_password_reset", account_type: "patient", email, origin: requestOrigin_(req) });
-  res.json({ ok: true });
+  const result = await callSheetsApi(null, { action: "request_password_reset", account_type: "patient", email, origin: requestOrigin_(req) });
+  // El correo de MailApp no siempre llega (permisos/cuota de Google), así
+  // que el enlace también se regresa aquí para poder usarlo directo desde
+  // la página, sin depender del correo.
+  res.json({ ok: true, reset_url: result.ok ? result.reset_url : undefined });
 }));
 app.get("/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "reset-password.html")));
 app.post("/reset-password/:token", asyncRoute(async (req, res) => {
@@ -216,8 +217,8 @@ app.post("/doctor/login", asyncRoute(async (req, res) => {
 app.get("/doctor/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-forgot-password.html")));
 app.post("/doctor/forgot-password", asyncRoute(async (req, res) => {
   const email = String(req.body.email || "").toLowerCase().trim();
-  await callSheetsApi(null, { action: "request_password_reset", account_type: "doctor", email, origin: requestOrigin_(req) });
-  res.json({ ok: true });
+  const result = await callSheetsApi(null, { action: "request_password_reset", account_type: "doctor", email, origin: requestOrigin_(req) });
+  res.json({ ok: true, reset_url: result.ok ? result.reset_url : undefined });
 }));
 app.get("/doctor/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-reset-password.html")));
 app.post("/doctor/reset-password/:token", asyncRoute(async (req, res) => {
@@ -258,10 +259,40 @@ app.delete("/api/readings/:id", requireRole("patient"), asyncRoute(async (req, r
 app.get("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_comments", patient_id: req.session.patientId }));
 }));
-app.post("/api/comments", requireRole("doctor"), asyncRoute(async (req, res) => {
-  const doctorResult = await callSheetsApi({ action: "get_doctor_by_id", id: req.session.doctorId });
-  const authorName = (doctorResult.ok && doctorResult.data && doctorResult.data.name) || "Médico";
-  res.json(await callSheetsApi(null, { action: "add_comment", patient_id: req.session.patientId, author: authorName, ...req.body }));
+// El médico puede dejar comentarios nuevos o responder a cualquiera. El
+// paciente solo puede responder a un comentario existente (necesita
+// parent_id) — nunca abrir uno nuevo por su cuenta.
+app.post("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
+  const { reading_id, parent_id, text } = req.body;
+  if (req.session.role === "doctor") {
+    res.json(await callSheetsApi(null, {
+      action: "add_comment", patient_id: req.session.patientId, reading_id, parent_id, text,
+      author_role: "doctor", author_id: req.session.doctorId,
+    }));
+    return;
+  }
+  if (!parent_id) {
+    return res.status(400).json({ ok: false, error: "solo puedes responder a un comentario existente" });
+  }
+  res.json(await callSheetsApi(null, {
+    action: "add_comment", patient_id: req.session.patientId, reading_id, parent_id, text,
+    author_role: "patient", author_id: req.session.patientId,
+  }));
+}));
+
+app.get("/api/notifications", requireAnyRole, asyncRoute(async (req, res) => {
+  const recipientType = req.session.role;
+  const recipientId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+  res.json(await callSheetsApi({ action: "list_notifications", recipient_type: recipientType, recipient_id: recipientId }));
+}));
+app.post("/api/notifications/read", requireAnyRole, asyncRoute(async (req, res) => {
+  const recipientType = req.session.role;
+  const recipientId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+  res.json(await callSheetsApi(null, { action: "mark_notifications_read", recipient_type: recipientType, recipient_id: recipientId, ids: req.body.ids }));
+}));
+
+app.post("/api/account/doctor-title", requireRole("doctor"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_doctor_title", id: req.session.doctorId, title: req.body.title }));
 }));
 
 // Perfil público del paciente ligado a la sesión (paciente viendo el suyo, o

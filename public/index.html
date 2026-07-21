@@ -151,6 +151,41 @@
   .modal-hint { font-size: 11px; color: var(--text-muted); margin: -6px 0 4px 0; }
   .settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
+
+  /* Feed de comentarios por día (v18) */
+  .comment-daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .comment-daynav input[type="date"] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .comment-daynav-label { font-size: 12px; color: var(--text-muted); }
+  .comment-node { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: white; }
+  .comment-node.comment-role-doctor { border-left: 3px solid var(--accent); }
+  .comment-node.comment-role-patient { border-left: 3px solid var(--weight); }
+  .comment-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .comment-text { font-size: 13px; white-space: pre-wrap; }
+  .comment-actions { margin-top: 6px; }
+  .comment-replies { margin-top: 10px; margin-left: 18px; padding-left: 12px; border-left: 2px solid var(--border); }
+  .comment-reply-box { margin-top: 8px; }
+  .comment-reply-input { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+  .comment-reply-actions { margin-top: 6px; display: flex; gap: 8px; }
+  .comment-empty-day { color: var(--text-muted); font-size: 13px; padding: 6px 0; }
+
+  /* Campana de notificaciones (v18) */
+  .notif-bell-wrap { position: relative; }
+  .notif-bell-btn { background: none; border: none; font-size: 20px; cursor: pointer; position: relative; padding: 4px 6px; line-height: 1; }
+  .notif-badge { position: absolute; top: -2px; right: -2px; background: var(--etapa2); color: white; font-size: 10px; font-weight: 700; border-radius: 20px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: absolute; right: 0; top: 32px; width: 300px; max-height: 360px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 50; padding: 6px; }
+  .notif-item { display: flex; gap: 8px; padding: 9px 8px; border-radius: 8px; }
+  .notif-item.notif-unread { background: var(--accent-soft); }
+  .notif-icon { font-size: 15px; }
+  .notif-body { flex: 1; }
+  .notif-message { font-size: 12px; }
+  .notif-when { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+  .notif-empty { font-size: 12px; color: var(--text-muted); padding: 14px 8px; text-align: center; }
+
+  /* Tooltip publicitario en el checkbox de medicamento (v18) */
+  .med-ad-badge { position: relative; display: none; margin-left: 6px; cursor: help; font-size: 13px; vertical-align: middle; }
+  .med-ad-tooltip { display: none; position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: var(--text); color: white; padding: 10px 12px; border-radius: 8px; font-size: 11px; font-weight: 400; line-height: 1.4; width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); z-index: 40; }
+  .med-ad-tooltip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text); }
+  .med-ad-badge:hover .med-ad-tooltip, .med-ad-badge:focus .med-ad-tooltip, .med-ad-badge:focus-within .med-ad-tooltip { display: block; }
 </style>
 </head>
 <body>
@@ -158,6 +193,10 @@
 <div class="topbar">
   <h1><img src="/shared/logos/icon.png" alt="" class="brand-icon">Reigning Blood Pressure App <span class="badge-role">Paciente</span></h1>
   <div class="topbar-links">
+    <div class="notif-bell-wrap">
+      <button type="button" class="notif-bell-btn" id="notifBellBtn" aria-label="Notificaciones">🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span></button>
+      <div class="notif-panel" id="notifPanel" style="display:none;"></div>
+    </div>
     <div class="hamburger-wrap">
       <button type="button" class="hamburger-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="Menú">☰</button>
       <div class="hamburger-menu" id="hamburgerMenu" style="display:none;">
@@ -189,7 +228,13 @@
 </div>
 
 <div class="section section-comments" id="commentsSection">
-  <h2>Comentarios del médico <span class="muted">solo el médico puede agregar, aquí los ves</span></h2>
+  <h2>Comentarios <span class="muted">tu médico comenta y tú puedes responder</span></h2>
+  <div class="comment-daynav">
+    <button type="button" class="btn-mini" id="commentPrevDay">‹</button>
+    <input type="date" id="commentDayPicker">
+    <button type="button" class="btn-mini" id="commentNextDay">›</button>
+    <span class="comment-daynav-label" id="commentDayLabel"></span>
+  </div>
   <div id="commentsContent"></div>
 </div>
 
@@ -256,7 +301,7 @@
     <div><label>LPM</label><input type="number" id="f_hr" min="30" max="220"></div>
     <div><label>Peso (kg)</label><input type="number" id="f_weight" min="20" max="300" step="0.1"></div>
     <div class="full checkbox-field">
-      <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por <span id="medNameLabel">medicamento</span> (tomé mi antihipertensivo)</label>
+      <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por <span id="medNameLabel">medicamento</span> (tomé mi antihipertensivo)</label><span class="med-ad-badge" id="medAdBadge" tabindex="0">💊<span class="med-ad-tooltip" id="medAdTooltip"></span></span>
     </div>
     <div class="full">
       <label>Observaciones (contexto, medicamento, síntomas)</label>
@@ -332,7 +377,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v17</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v18</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -440,6 +485,9 @@ let currentComments = [];
 let currentAccount = null;
 let lastWeight = null;
 let lastMedicated = null;
+let commentDay = todayStr();
+let commentDayInitialized = false;
+let notifications = [];
 
 // ---- Saludo con el nombre del paciente ----
 const GREETINGS = [
@@ -565,7 +613,20 @@ async function loadAccount() {
     const medName = medicationName(currentAccount);
     document.getElementById("medNameLabel").textContent = medName;
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
+    updateMedAdBadge();
   } catch (err) { /* silencioso */ }
+}
+// Tooltip publicitario: solo aparece cuando el paciente ya capturó una marca
+// de medicamento en Parámetros (no tiene sentido promocionar una marca que
+// no existe todavía).
+function updateMedAdBadge() {
+  const badge = document.getElementById("medAdBadge");
+  const brand = currentAccount && currentAccount.med_brand ? String(currentAccount.med_brand).trim() : "";
+  if (!brand) { badge.style.display = "none"; return; }
+  const firstName = (currentAccount.name || "").trim().split(/\s+/)[0] || "Este paciente";
+  document.getElementById("medAdTooltip").textContent =
+    `${firstName} está protegiendo su corazón con ${brand}. ${firstName} está manteniendo su presión bajo control y disfrutando de cada momento con la tranquilidad que merece. La fórmula eficaz que cuida su bienestar cardiovascular día con día.`;
+  badge.style.display = "inline-flex";
 }
 function updateAgeDisplay() {
   const bd = document.getElementById("p_birthdate").value;
@@ -845,23 +906,100 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 // ---- Comentarios ----
 async function loadComments() {
   try { currentComments = await apiGet("/api/comments"); } catch (err) { currentComments = []; }
+  if (!commentDayInitialized) { commentDay = mostRecentCommentDay(currentComments); commentDayInitialized = true; }
   renderComments();
 }
 function renderComments() {
+  document.getElementById("commentDayPicker").value = commentDay;
+  document.getElementById("commentDayLabel").textContent = fmtDate(commentDay);
+  const thread = threadCommentsForDay(currentComments, commentDay);
   const el = document.getElementById("commentsContent");
-  if (!currentComments.length) {
-    el.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Tu médico todavía no ha dejado comentarios aquí.</div>`;
+  if (!thread.length) {
+    el.innerHTML = `<div class="comment-empty-day">Tu médico todavía no ha dejado comentarios este día.</div>`;
     return;
   }
-  const sorted = [...currentComments].sort((a,b) => (b.created_at||"").localeCompare(a.created_at||""));
-  el.innerHTML = sorted.map(c => {
-    const reading = c.reading_id ? currentData.find(r => r.id === c.reading_id) : null;
-    const readingLabel = reading ? ` · sobre la lectura del ${fmtDate(reading.date)} ${reading.time}` : " · comentario general";
-    const when = c.created_at ? new Date(c.created_at).toLocaleString("es-MX") : "";
-    return `<div class="comment-item"><div class="comment-meta">${c.author || "Médico"} · ${when}${readingLabel}</div>${c.text}</div>`;
-  }).join("");
+  el.innerHTML = renderCommentThreadHTML(thread, {
+    viewerRole: "patient",
+    viewerId: currentAccount ? currentAccount.id : null,
+    canReply: c => c.author_role === "doctor", // solo puedes responder a comentarios del médico
+  });
 }
 function commentsForReading(id) { return currentComments.filter(c => c.reading_id === id); }
+document.getElementById("commentDayPicker").addEventListener("change", e => {
+  commentDay = e.target.value || todayStr();
+  renderComments();
+});
+document.getElementById("commentPrevDay").addEventListener("click", () => {
+  const d = new Date(commentDay + "T00:00:00"); d.setDate(d.getDate() - 1); commentDay = localDateStr_(d); renderComments();
+});
+document.getElementById("commentNextDay").addEventListener("click", () => {
+  const d = new Date(commentDay + "T00:00:00"); d.setDate(d.getDate() + 1); commentDay = localDateStr_(d); renderComments();
+});
+document.getElementById("commentsContent").addEventListener("click", async e => {
+  const replyBtn = e.target.closest(".comment-reply-btn");
+  if (replyBtn) {
+    const box = document.getElementById("replyBox_" + replyBtn.dataset.replyTo);
+    box.innerHTML = replyBoxHTML(replyBtn.dataset.replyTo);
+    box.style.display = "block";
+    return;
+  }
+  const cancelBtn = e.target.closest(".comment-reply-cancel");
+  if (cancelBtn) {
+    const box = document.getElementById("replyBox_" + cancelBtn.dataset.parentId);
+    box.style.display = "none"; box.innerHTML = "";
+    return;
+  }
+  const sendBtn = e.target.closest(".comment-reply-send");
+  if (sendBtn) {
+    const parentId = sendBtn.dataset.parentId;
+    const box = document.getElementById("replyBox_" + parentId);
+    const text = box.querySelector(".comment-reply-input").value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    try {
+      await apiPost("/api/comments", { parent_id: parentId, text });
+      await loadComments();
+    } catch (err) { setStatus("error", err.message); }
+    sendBtn.disabled = false;
+  }
+});
+
+// ---- Notificaciones ----
+async function loadNotifications() {
+  try { notifications = await apiGet("/api/notifications"); } catch (err) { notifications = []; }
+  renderNotifBadge();
+}
+function renderNotifBadge() {
+  const unread = notifications.filter(n => !n.read_at).length;
+  const badge = document.getElementById("notifBadge");
+  if (unread > 0) { badge.textContent = unread > 9 ? "9+" : String(unread); badge.style.display = "flex"; }
+  else { badge.style.display = "none"; }
+}
+async function openNotifPanel() {
+  const panel = document.getElementById("notifPanel");
+  panel.innerHTML = renderNotificationListHTML(notifications);
+  panel.style.display = "block";
+  const unreadIds = notifications.filter(n => !n.read_at).map(n => n.id);
+  if (unreadIds.length) {
+    try {
+      await apiPost("/api/notifications/read", { ids: unreadIds });
+      const readAt = new Date().toISOString();
+      notifications.forEach(n => { if (unreadIds.indexOf(n.id) !== -1) n.read_at = readAt; });
+      renderNotifBadge();
+    } catch (err) { /* silencioso */ }
+  }
+}
+document.getElementById("notifBellBtn").addEventListener("click", e => {
+  e.stopPropagation();
+  const panel = document.getElementById("notifPanel");
+  if (panel.style.display === "block") { panel.style.display = "none"; return; }
+  openNotifPanel();
+});
+document.addEventListener("click", e => {
+  const wrap = document.querySelector(".notif-bell-wrap");
+  if (wrap && !wrap.contains(e.target)) document.getElementById("notifPanel").style.display = "none";
+});
+setInterval(loadNotifications, 45000);
 
 // ---- Lecturas ----
 async function loadAndRender() {
@@ -1213,6 +1351,8 @@ document.getElementById("shareBtn").addEventListener("click", () => {
 
 loadAccount();
 loadAndRender();
+loadComments();
+loadNotifications();
 loadDoctorsAndInvites();
 </script>
 </body>

@@ -418,6 +418,109 @@ function streakLevelHTML(streak) {
     </div>`;
 }
 
+// ---- Utilidades varias ----
+function escapeHtml_(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function fmtTimeOnly(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+}
+function fmtRelativeShort(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+  if (diffMin < 1) return "ahora";
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `hace ${diffHr} h`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `hace ${diffDay} d`;
+  return fmtDate(localDateStr_(d));
+}
+
+// ---- Feed de comentarios por día (v18) ----
+// Los comentarios (de médico o de paciente) se agrupan por día local y se
+// arman en hilos: cada comentario de nivel superior con sus respuestas
+// anidadas debajo, en orden cronológico. Se usa tanto en doctor.html como
+// en index.html.
+function commentDateStr(comment) {
+  const d = comment && comment.created_at ? new Date(comment.created_at) : null;
+  return d && !isNaN(d) ? localDateStr_(d) : "";
+}
+function commentDaysWithActivity(comments) {
+  return [...new Set((comments || []).map(commentDateStr))].filter(Boolean).sort();
+}
+// El día más reciente con comentarios, o hoy si todavía no hay ninguno.
+function mostRecentCommentDay(comments) {
+  const days = commentDaysWithActivity(comments);
+  return days.length ? days[days.length - 1] : todayStr();
+}
+function threadCommentsForDay(comments, dateStr) {
+  const dayComments = (comments || []).filter(c => commentDateStr(c) === dateStr);
+  const byId = {};
+  dayComments.forEach(c => { byId[c.id] = Object.assign({}, c, { replies: [] }); });
+  const topLevel = [];
+  dayComments.forEach(c => {
+    const node = byId[c.id];
+    if (c.parent_id && byId[c.parent_id]) byId[c.parent_id].replies.push(node);
+    else topLevel.push(node);
+  });
+  topLevel.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  const sortReplies = list => {
+    list.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    list.forEach(n => sortReplies(n.replies));
+  };
+  topLevel.forEach(t => sortReplies(t.replies));
+  return topLevel;
+}
+// opts: { viewerRole, viewerId, canReply(comment) => bool }
+function renderCommentThreadHTML(nodes, opts) {
+  opts = opts || {};
+  return (nodes || []).map(c => {
+    const isSelf = opts.viewerRole && c.author_role === opts.viewerRole && String(c.author_id) === String(opts.viewerId);
+    const authorLabel = isSelf ? "Tú" : (c.author || (c.author_role === "doctor" ? "Médico" : "Paciente"));
+    const roleClass = c.author_role === "doctor" ? "comment-role-doctor" : "comment-role-patient";
+    const canReply = typeof opts.canReply === "function" ? !!opts.canReply(c) : false;
+    const replyBtn = canReply ? `<button type="button" class="btn-mini comment-reply-btn" data-reply-to="${c.id}">Responder</button>` : "";
+    const childrenHtml = c.replies && c.replies.length ? `<div class="comment-replies">${renderCommentThreadHTML(c.replies, opts)}</div>` : "";
+    return `
+      <div class="comment-node ${roleClass}" data-comment-id="${c.id}">
+        <div class="comment-meta"><strong>${escapeHtml_(authorLabel)}</strong> · ${fmtTimeOnly(c.created_at)}</div>
+        <div class="comment-text">${escapeHtml_(c.text)}</div>
+        <div class="comment-actions">${replyBtn}</div>
+        <div class="comment-reply-box" id="replyBox_${c.id}" style="display:none;"></div>
+        ${childrenHtml}
+      </div>`;
+  }).join("");
+}
+function replyBoxHTML(parentId) {
+  return `<textarea class="comment-reply-input" rows="2" placeholder="Escribe tu respuesta…"></textarea>
+    <div class="comment-reply-actions">
+      <button type="button" class="btn-mini comment-reply-send" data-parent-id="${parentId}">Enviar</button>
+      <button type="button" class="btn-mini comment-reply-cancel" data-parent-id="${parentId}">Cancelar</button>
+    </div>`;
+}
+
+// ---- Notificaciones (v18) ----
+const NOTIFICATION_ICONS = { new_comment: "💬", new_reply: "↩️", stage_alert: "⚠️" };
+function renderNotificationListHTML(notifications) {
+  if (!notifications || !notifications.length) {
+    return `<div class="notif-empty">No tienes notificaciones.</div>`;
+  }
+  return notifications.map(n => `
+    <div class="notif-item ${n.read_at ? "" : "notif-unread"}">
+      <div class="notif-icon">${NOTIFICATION_ICONS[n.type] || "🔔"}</div>
+      <div class="notif-body">
+        <div class="notif-message">${escapeHtml_(n.message)}</div>
+        <div class="notif-when">${fmtRelativeShort(n.created_at)}</div>
+      </div>
+    </div>`).join("");
+}
+
 // ---- "Recomienda esta app" ----
 function wireRecommendLink(elementId, appName) {
   const el = document.getElementById(elementId);
