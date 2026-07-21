@@ -128,6 +128,12 @@
   .notif-message { font-size: 12px; }
   .notif-when { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
   .notif-empty { font-size: 12px; color: var(--text-muted); padding: 14px 8px; text-align: center; }
+
+  /* Tooltip publicitario donde aparece el nombre del medicamento (v19) */
+  .med-ad-badge { position: relative; display: none; margin-left: 6px; cursor: help; font-size: 13px; vertical-align: middle; }
+  .med-ad-tooltip { display: none; position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: var(--text); color: white; padding: 10px 12px; border-radius: 8px; font-size: 11px; font-weight: 400; line-height: 1.4; width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); z-index: 40; }
+  .med-ad-tooltip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text); }
+  .med-ad-badge:hover .med-ad-tooltip, .med-ad-badge:focus .med-ad-tooltip, .med-ad-badge:focus-within .med-ad-tooltip { display: block; }
 </style>
 </head>
 <body>
@@ -181,7 +187,7 @@
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
     <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
-    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><span class="med-ad-badge" id="medAdBadgeLegend" tabindex="0">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></span>
   </div>
 </div>
 
@@ -276,7 +282,7 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v18</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v19</footer>
 
 <script>
 let chartInstance = null;
@@ -317,9 +323,21 @@ async function loadPatient() {
     `;
     const medName = medicationName(profile);
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
+    updateMedAdBadge(profile);
   } catch (err) {
     document.getElementById("profileContent").innerHTML = `<div class="profile-line" style="color:var(--crisis);">No se pudo cargar el perfil.</div>`;
   }
+}
+// Tooltip publicitario donde aparece el nombre del medicamento (solo cuando
+// el paciente ya capturó una marca en Parámetros).
+function updateMedAdBadge(profile) {
+  const badge = document.getElementById("medAdBadgeLegend");
+  const brand = profile && profile.med_brand ? String(profile.med_brand).trim() : "";
+  if (!brand) { badge.style.display = "none"; return; }
+  const firstName = (profile.name || "").trim().split(/\s+/)[0] || "Este paciente";
+  document.getElementById("medAdTooltipLegend").textContent =
+    `${firstName} está protegiendo su corazón con ${brand}. ${firstName} está manteniendo su presión bajo control y disfrutando de cada momento con la tranquilidad que merece. La fórmula eficaz que cuida su bienestar cardiovascular día con día.`;
+  badge.style.display = "inline-flex";
 }
 
 function commentsForReading(id) { return currentComments.filter(c => c.reading_id === id); }

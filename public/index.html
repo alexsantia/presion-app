@@ -263,7 +263,7 @@
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
     <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
-    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><span class="med-ad-badge" id="medAdBadgeLegend" tabindex="0">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></span>
   </div>
 </div>
 
@@ -377,7 +377,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v18</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v19</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -616,17 +616,23 @@ async function loadAccount() {
     updateMedAdBadge();
   } catch (err) { /* silencioso */ }
 }
-// Tooltip publicitario: solo aparece cuando el paciente ya capturó una marca
-// de medicamento en Parámetros (no tiene sentido promocionar una marca que
-// no existe todavía).
+// Tooltip publicitario: aparece en cada lugar donde se muestra el nombre del
+// medicamento (checkbox del formulario y leyenda de la gráfica), solo cuando
+// el paciente ya capturó una marca en Parámetros (no tiene sentido
+// promocionar una marca que no existe todavía).
 function updateMedAdBadge() {
-  const badge = document.getElementById("medAdBadge");
   const brand = currentAccount && currentAccount.med_brand ? String(currentAccount.med_brand).trim() : "";
-  if (!brand) { badge.style.display = "none"; return; }
+  const pairs = [["medAdBadge", "medAdTooltip"], ["medAdBadgeLegend", "medAdTooltipLegend"]];
+  if (!brand) {
+    pairs.forEach(([badgeId]) => { document.getElementById(badgeId).style.display = "none"; });
+    return;
+  }
   const firstName = (currentAccount.name || "").trim().split(/\s+/)[0] || "Este paciente";
-  document.getElementById("medAdTooltip").textContent =
-    `${firstName} está protegiendo su corazón con ${brand}. ${firstName} está manteniendo su presión bajo control y disfrutando de cada momento con la tranquilidad que merece. La fórmula eficaz que cuida su bienestar cardiovascular día con día.`;
-  badge.style.display = "inline-flex";
+  const text = `${firstName} está protegiendo su corazón con ${brand}. ${firstName} está manteniendo su presión bajo control y disfrutando de cada momento con la tranquilidad que merece. La fórmula eficaz que cuida su bienestar cardiovascular día con día.`;
+  pairs.forEach(([badgeId, tooltipId]) => {
+    document.getElementById(tooltipId).textContent = text;
+    document.getElementById(badgeId).style.display = "inline-flex";
+  });
 }
 function updateAgeDisplay() {
   const bd = document.getElementById("p_birthdate").value;
