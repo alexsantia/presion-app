@@ -521,6 +521,27 @@ function renderNotificationListHTML(notifications) {
     </div>`).join("");
 }
 
+// ---- Tooltip publicitario (v20: toggle por click/tap en vez de :hover) ----
+// :hover/:focus por CSS no se cierra de forma confiable en pantallas
+// táctiles (el tooltip se queda "pegado" abierto tapando la gráfica), así
+// que se controla con una clase .show y un solo listener global que cierra
+// cualquier tooltip abierto al tocar fuera de él.
+function wireMedAdBadge(badgeId) {
+  const badge = document.getElementById(badgeId);
+  if (!badge) return;
+  const tooltip = badge.querySelector(".med-ad-tooltip");
+  if (!tooltip) return;
+  badge.addEventListener("click", e => {
+    e.stopPropagation();
+    const wasOpen = tooltip.classList.contains("show");
+    document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
+    if (!wasOpen) tooltip.classList.add("show");
+  });
+}
+document.addEventListener("click", () => {
+  document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
+});
+
 // ---- "Recomienda esta app" ----
 function wireRecommendLink(elementId, appName) {
   const el = document.getElementById(elementId);

@@ -77,11 +77,13 @@
   textarea#aiOutput { width: 100%; height: 220px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; }
   .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
-  /* Tooltip publicitario donde aparece el nombre del medicamento (v19) */
-  .med-ad-badge { position: relative; display: none; margin-left: 6px; cursor: help; font-size: 13px; vertical-align: middle; }
-  .med-ad-tooltip { display: none; position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%); background: var(--text); color: white; padding: 10px 12px; border-radius: 8px; font-size: 11px; font-weight: 400; line-height: 1.4; width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); z-index: 40; }
-  .med-ad-tooltip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--text); }
-  .med-ad-badge:hover .med-ad-tooltip, .med-ad-badge:focus .med-ad-tooltip, .med-ad-badge:focus-within .med-ad-tooltip { display: block; }
+  /* Tooltip publicitario donde aparece el nombre del medicamento (v20: se
+     abre/cierra con click o tap, no con :hover, para que no se quede fijo
+     tapando la gráfica en pantallas táctiles) */
+  .med-ad-badge { position: relative; display: none; margin-left: 6px; cursor: pointer; font-size: 13px; vertical-align: middle; background: none; border: none; padding: 0; font-family: inherit; }
+  .med-ad-tooltip { display: none; position: absolute; top: 130%; left: 50%; transform: translateX(-50%); background: var(--text); color: white; padding: 10px 12px; border-radius: 8px; font-size: 11px; font-weight: 400; line-height: 1.4; width: 240px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); z-index: 40; text-align: left; }
+  .med-ad-tooltip::after { content: ""; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-bottom-color: var(--text); }
+  .med-ad-tooltip.show { display: block; }
 </style>
 </head>
 <body>
@@ -121,7 +123,7 @@
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
     <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
-    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><span class="med-ad-badge" id="medAdBadgeLegend" tabindex="0">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></span>
+    <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><button type="button" class="med-ad-badge" id="medAdBadgeLegend">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></button>
   </div>
 </div>
 
@@ -172,7 +174,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v19</footer>
+<footer>Reigning Blood Pressure App · hecho por Alex Santiago · v20</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -376,6 +378,7 @@ document.getElementById("aiCopyBtn").addEventListener("click", () => {
 });
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+wireMedAdBadge("medAdBadgeLegend");
 load();
 </script>
 </body>
