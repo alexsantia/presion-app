@@ -119,6 +119,22 @@ app.post("/logout", (req, res) => {
   res.redirect(wasDoctor ? "/doctor/login" : "/login");
 });
 
+// El origen (esquema + host) de la request actual, para armar el enlace que
+// va dentro del correo de "Olvidé mi contraseña". Como "trust proxy" ya está
+// activado, esto respeta el dominio real que el usuario está usando (por
+// ejemplo rbp.alexsantia.com), no una URL fija de onrender.com.
+function requestOrigin_(req) {
+  return `${req.protocol}://${req.get("host")}`;
+}
+
+// Verifica si un enlace de "Olvidé mi contraseña" sigue siendo válido, antes
+// de mostrarle el formulario de nueva contraseña al usuario. type=patient|doctor.
+app.get("/api/reset-token/:token", asyncRoute(async (req, res) => {
+  const accountType = req.query.type === "doctor" ? "doctor" : "patient";
+  const result = await callSheetsApi({ action: "verify_reset_token", token_value: req.params.token, account_type: accountType });
+  res.json(result);
+}));
+
 // ================= PACIENTE =================
 
 app.get("/signup", (req, res) => res.sendFile(path.join(__dirname, "public", "signup.html")));
@@ -145,6 +161,23 @@ app.post("/login", asyncRoute(async (req, res) => {
   }
   req.session = { role: "patient", patientId: patient.id, email: patient.email };
   res.json({ ok: true, redirect: "/" });
+}));
+
+app.get("/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "forgot-password.html")));
+app.post("/forgot-password", asyncRoute(async (req, res) => {
+  const email = String(req.body.email || "").toLowerCase().trim();
+  // Siempre responde ok:true, exista o no esa cuenta, para no revelar por
+  // este medio si un correo está registrado.
+  await callSheetsApi(null, { action: "request_password_reset", account_type: "patient", email, origin: requestOrigin_(req) });
+  res.json({ ok: true });
+}));
+app.get("/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "reset-password.html")));
+app.post("/reset-password/:token", asyncRoute(async (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ ok: false, error: "la nueva contraseña debe tener al menos 8 caracteres" });
+  const hash = await bcrypt.hash(newPassword, 10);
+  const result = await callSheetsApi(null, { action: "reset_password_with_token", account_type: "patient", reset_token: req.params.token, password_hash: hash });
+  res.json(result);
 }));
 
 // ================= MEDICO =================
@@ -178,6 +211,21 @@ app.post("/doctor/login", asyncRoute(async (req, res) => {
   }
   req.session = { role: "doctor", doctorId: doctor.id, patientId: doctor.patient_id, email: doctor.email };
   res.json({ ok: true, redirect: "/doctor" });
+}));
+
+app.get("/doctor/forgot-password", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-forgot-password.html")));
+app.post("/doctor/forgot-password", asyncRoute(async (req, res) => {
+  const email = String(req.body.email || "").toLowerCase().trim();
+  await callSheetsApi(null, { action: "request_password_reset", account_type: "doctor", email, origin: requestOrigin_(req) });
+  res.json({ ok: true });
+}));
+app.get("/doctor/reset-password/:token", (req, res) => res.sendFile(path.join(__dirname, "public", "doctor-reset-password.html")));
+app.post("/doctor/reset-password/:token", asyncRoute(async (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ ok: false, error: "la nueva contraseña debe tener al menos 8 caracteres" });
+  const hash = await bcrypt.hash(newPassword, 10);
+  const result = await callSheetsApi(null, { action: "reset_password_with_token", account_type: "doctor", reset_token: req.params.token, password_hash: hash });
+  res.json(result);
 }));
 
 // ================= FAMILIA (público, solo lectura) =================
