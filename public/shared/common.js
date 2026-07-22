@@ -521,13 +521,26 @@ function renderNotificationListHTML(notifications) {
     </div>`).join("");
 }
 
-// ---- Tooltip publicitario (v21) ----
+// ---- Tooltip publicitario (v21, reforzado en v23) ----
 // En dispositivos con mouse real se abre al pasar el cursor y se cierra al
 // quitarlo (mouseenter/mouseleave), como un tooltip normal — nada de click.
 // En pantallas táctiles no existe "pasar el cursor", así que ahí se abre y
 // cierra con tap (toggle), con un listener global que cierra cualquier
 // tooltip abierto al tocar fuera de él. Se decide con matchMedia en vez de
 // intentar detectar el navegador.
+//
+// v23: se reportó que en Mac (verificado en dos equipos distintos) el
+// tooltip a veces se queda abierto de forma permanente aunque el cursor ya
+// no esté encima. mouseenter/mouseleave dependen de que el navegador
+// detecte correctamente cuándo el puntero entra/sale del árbol DOM del
+// botón — con un elemento posicionado en "absolute" que se dibuja fuera de
+// su caja visual (el tooltip cae debajo del ícono, superponiéndose a otro
+// contenido), algunos navegadores pueden perder ese evento en casos límite.
+// Para que esto ya NUNCA se quede fijo pase lo que pase, se añade una red de
+// seguridad independiente: un vigilante global que en cada movimiento real
+// del mouse verifica, usando las coordenadas exactas del cursor, si sigue
+// dentro del área visible del botón o del tooltip — si no, lo cierra. Esto
+// no depende de que mouseenter/mouseleave se disparen correctamente.
 function wireMedAdBadge(badgeId) {
   const badge = document.getElementById(badgeId);
   if (!badge) return;
@@ -550,10 +563,35 @@ function wireMedAdBadge(badgeId) {
     badge.addEventListener("focus", show); // accesible con teclado (Tab)
     badge.addEventListener("blur", hide);
   }
+  wireMedAdWatchdog_();
 }
 document.addEventListener("click", () => {
   document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
 });
+// Vigilante global (una sola vez): cierra cualquier tooltip abierto en
+// cuanto el cursor real ya no está sobre su botón ni sobre el propio
+// tooltip, y también al hacer scroll o redimensionar la ventana. Es
+// independiente de mouseenter/mouseleave, así que funciona aunque esos
+// eventos fallen por cualquier motivo.
+function wireMedAdWatchdog_() {
+  if (wireMedAdWatchdog_._wired) return;
+  wireMedAdWatchdog_._wired = true;
+  const margin = 6; // px de tolerancia para no cerrarlo por un pixel de más
+  const closeIfCursorOutside = (x, y) => {
+    document.querySelectorAll(".med-ad-tooltip.show").forEach(tooltip => {
+      const badge = tooltip.closest(".med-ad-badge");
+      const boxes = [tooltip.getBoundingClientRect()];
+      if (badge) boxes.push(badge.getBoundingClientRect());
+      const inside = boxes.some(r =>
+        x >= r.left - margin && x <= r.right + margin && y >= r.top - margin && y <= r.bottom + margin);
+      if (!inside) tooltip.classList.remove("show");
+    });
+  };
+  document.addEventListener("mousemove", e => closeIfCursorOutside(e.clientX, e.clientY));
+  const closeAllNow = () => document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
+  document.addEventListener("scroll", closeAllNow, true);
+  window.addEventListener("resize", closeAllNow);
+}
 
 // ---- "Recomienda esta app" ----
 function wireRecommendLink(elementId, appName) {
