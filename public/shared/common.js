@@ -258,13 +258,13 @@ function buildAiAnalysisPrompt(data, meta) {
   text += `- Presión arterial promedio: ${avg(sysVals)}/${avg(diaVals)} mmHg\n`;
   if (maxSysReading) text += `- Lectura más alta: ${maxSysReading.sys}/${maxSysReading.dia} mmHg (${fmtDate(maxSysReading.date)})\n`;
   if (minSysReading) text += `- Lectura más baja: ${minSysReading.sys}/${minSysReading.dia} mmHg (${fmtDate(minSysReading.date)})\n`;
-  text += `- Frecuencia cardiaca promedio: ${hrVals.length ? avg(hrVals) + " LPM" : "sin datos"}\n`;
+  text += `- Frecuencia cardiaca promedio: ${hrVals.length ? avg(hrVals) + " FC" : "sin datos"}\n`;
   text += `- Peso: ${withWeight.length ? "promedio " + avg(withWeight.map(r => r.weight)) + " kg, último registrado " + withWeight[withWeight.length - 1].weight + " kg" : "sin datos"}\n`;
   text += `- Distribución por categoría (guía AHA 2017): ${countsText}\n`;
   text += `- Adherencia al medicamento antihipertensivo: ${medicatedCount}/${sorted.length} lecturas registradas con medicamento tomado (${adherencePct}%)\n\n`;
   text += "Detalle de lecturas:\n";
   sorted.forEach(r => {
-    text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " LPM" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.medicated ? ", medicado" : ", sin medicamento registrado"}${r.obs ? " — " + r.obs : ""}\n`;
+    text += `${fmtDate(r.date)} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr != null ? ", " + r.hr + " FC" : ""}${r.weight != null ? ", " + r.weight + " kg" : ""}${r.medicated ? ", medicado" : ", sin medicamento registrado"}${r.obs ? " — " + r.obs : ""}\n`;
   });
 
   if (isDoctor) {
@@ -591,6 +591,34 @@ function wireMedAdWatchdog_() {
   const closeAllNow = () => document.querySelectorAll(".med-ad-tooltip.show").forEach(t => t.classList.remove("show"));
   document.addEventListener("scroll", closeAllNow, true);
   window.addEventListener("resize", closeAllNow);
+}
+
+// ---- Enlaces directos a ChatGPT/Gemini desde el prompt de Análisis con IA
+// (v25). ChatGPT sí soporta precargar el prompt en su cuadro de texto vía
+// "?q=" (solo falta que el usuario presione Enter para enviarlo; no existe
+// forma de autoenviarlo desde fuera de chatgpt.com por las restricciones de
+// seguridad del navegador). Gemini no tiene ese soporte nativo, así que ahí
+// se copia el prompt al portapapeles y se abre Gemini para pegarlo. ----
+function wireAiDeepLinks(opts) {
+  opts = opts || {};
+  const chatGptBtn = document.getElementById(opts.chatGptBtnId);
+  const geminiBtn = document.getElementById(opts.geminiBtnId);
+  const getPrompt = () => { const el = document.getElementById(opts.outputId); return el ? el.value : ""; };
+  if (chatGptBtn) {
+    chatGptBtn.addEventListener("click", () => {
+      const prompt = getPrompt();
+      if (!prompt) return;
+      window.open("https://chatgpt.com/?q=" + encodeURIComponent(prompt), "_blank", "noopener");
+    });
+  }
+  if (geminiBtn) {
+    geminiBtn.addEventListener("click", async () => {
+      const prompt = getPrompt();
+      if (!prompt) return;
+      try { await navigator.clipboard.writeText(prompt); } catch (err) { /* silencioso */ }
+      window.open("https://gemini.google.com/app", "_blank", "noopener");
+    });
+  }
 }
 
 // ---- "Recomienda esta app" ----

@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=24"></script>
+<script src="/shared/common.js?v=25"></script>
 <style>
   :root {
     color-scheme: light;
@@ -142,6 +142,11 @@
      mayor especificidad, garantizan que nuestro estado (oculto/mostrado) mande. */
   .med-ad-badge .med-ad-tooltip { display: none; }
   .med-ad-badge .med-ad-tooltip.show { display: block; }
+
+  /* v25: mostrar/ocultar columnas del Historial de lecturas */
+  .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
+  .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
+  .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -193,17 +198,28 @@
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
-    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span><span title="Frecuencia cardíaca (pulsaciones por minuto)">FC</span></button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
     <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><button type="button" class="med-ad-badge" id="medAdBadgeLegend">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></button>
   </div>
 </div>
 
 <div class="section section-history">
-  <h2>Historial de lecturas</h2>
+  <div class="toolbar">
+    <h2 style="flex:1">Historial de lecturas</h2>
+    <div class="col-toggle-wrap" style="position:relative;">
+      <button class="btn-secondary" id="colToggleBtn" type="button">Columnas ▾</button>
+      <div class="col-toggle-menu" id="colToggleMenu" style="display:none;"></div>
+    </div>
+  </div>
   <div id="emptyState" style="display:none;">El paciente todavía no ha registrado lecturas.</div>
   <table id="readingsTable">
-    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th id="medicatedColHeader">Medicado</th><th>Observaciones</th></tr></thead>
+    <thead><tr>
+      <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
+      <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
+      <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
+      <th data-col="obs">Observaciones</th>
+    </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
   <div class="pagination" id="paginationBar" style="display:none;">
@@ -242,7 +258,12 @@
   <div id="aiWrap" style="display:none; margin-top:14px;">
     <textarea id="aiOutput" readonly></textarea>
     <div class="disclaimer">Copia este texto y pégalo en tu asistente de IA favorito para obtener un análisis. Esto no sustituye una consulta médica.</div>
-    <button type="button" class="btn-secondary" id="aiCopyBtn" style="margin-top:8px;">Copiar texto</button>
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="button" class="btn-secondary" id="aiCopyBtn">Copiar texto</button>
+      <button type="button" class="btn-secondary" id="aiChatGptBtn">🤖 Abrir en ChatGPT</button>
+      <button type="button" class="btn-secondary" id="aiGeminiBtn">✨ Abrir en Gemini</button>
+    </div>
+    <div class="disclaimer" style="margin-top:6px;">ChatGPT abre con el texto ya escrito, solo falta que presiones Enter. Gemini no permite precargar el texto, así que se copia al portapapeles: pégalo (Cmd+V) en cuanto se abra.</div>
   </div>
 </div>
 
@@ -290,7 +311,7 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v24</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v25</footer>
 
 <script>
 let chartInstance = null;
@@ -489,6 +510,53 @@ function fillReadingSelect() {
 let currentPage = 1;
 let pageSize = 20;
 
+// ---- Mostrar/ocultar columnas del Historial de lecturas (v25) ----
+const TOGGLABLE_COLUMNS = [
+  { key: "time", label: "Hora" },
+  { key: "pressure", label: "Presión" },
+  { key: "hr", label: "FC" },
+  { key: "weight", label: "Peso" },
+  { key: "category", label: "Categoría" },
+  { key: "medicated", label: "Medicado" },
+  { key: "obs", label: "Observaciones" },
+];
+function getHiddenColumns() {
+  try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols_doctor") || "[]")); } catch (e) { return new Set(); }
+}
+let hiddenColumns = getHiddenColumns();
+function applyColumnVisibility() {
+  const table = document.getElementById("readingsTable");
+  TOGGLABLE_COLUMNS.forEach(col => {
+    const hide = hiddenColumns.has(col.key);
+    table.querySelectorAll(`[data-col="${col.key}"]`).forEach(cell => { cell.style.display = hide ? "none" : ""; });
+  });
+}
+function renderColToggleMenu() {
+  const menu = document.getElementById("colToggleMenu");
+  menu.innerHTML = TOGGLABLE_COLUMNS.map(col => `
+    <label class="col-toggle-item">
+      <input type="checkbox" data-col-key="${col.key}" ${hiddenColumns.has(col.key) ? "" : "checked"}>
+      ${col.label}
+    </label>`).join("");
+}
+renderColToggleMenu();
+document.getElementById("colToggleBtn").addEventListener("click", e => {
+  e.stopPropagation();
+  const menu = document.getElementById("colToggleMenu");
+  menu.style.display = menu.style.display === "none" ? "block" : "none";
+});
+document.getElementById("colToggleMenu").addEventListener("change", e => {
+  const key = e.target.dataset.colKey;
+  if (!key) return;
+  if (e.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key);
+  localStorage.setItem("bp_hidden_cols_doctor", JSON.stringify([...hiddenColumns]));
+  applyColumnVisibility();
+});
+document.addEventListener("click", e => {
+  const wrap = document.querySelector(".col-toggle-wrap");
+  if (wrap && !wrap.contains(e.target)) document.getElementById("colToggleMenu").style.display = "none";
+});
+
 function renderTablePage() {
   const data = currentData;
   const tbody = document.getElementById("readingsBody");
@@ -505,15 +573,16 @@ function renderTablePage() {
     const notes = commentsForReading(r.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${fmtDate(r.date)}</td><td>${r.time}</td>
-      <td><strong>${r.sys}/${r.dia}</strong></td>
-      <td>${r.hr ?? "—"}</td>
-      <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
-      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
-      <td>${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
+      <td data-col="date">${fmtDate(r.date)}</td><td data-col="time">${r.time}</td>
+      <td data-col="pressure"><strong>${r.sys}/${r.dia}</strong></td>
+      <td data-col="hr">${r.hr ?? "—"}</td>
+      <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
+      <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
+      <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>`;
     tbody.appendChild(tr);
   });
+  applyColumnVisibility();
 
   bar.style.display = "flex";
   const start = (page - 1) * pageSize + 1;
@@ -577,7 +646,7 @@ function renderChart() {
     data: { labels, datasets: [
       { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.sys },
       { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
-      { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
+      { label: "FC", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
       { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
       { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
@@ -585,7 +654,7 @@ function renderChart() {
       plugins: { legend: { display: false }, tooltip: { callbacks: chartTooltipCallbacks(grouped) } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
-        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
+        y1: { position: "right", title: { display: true, text: "FC" }, grid: { drawOnChartArea: false } },
         y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
         y3: { display: false, min: 0, max: 1.1 },
       },
@@ -617,7 +686,7 @@ function render() {
 
   document.getElementById("summaryCards").innerHTML = `
     <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div></div>
-    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div></div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div></div>
     <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div></div>
     <div class="card"><div class="label">Lecturas registradas</div><div class="value">${data.length}</div><div class="value small">${fmtDate(data[0].date)} – ${fmtDate(last.date)}</div></div>
   `;
@@ -672,6 +741,7 @@ document.getElementById("aiGenerateBtn").addEventListener("click", () => {
 document.getElementById("aiCopyBtn").addEventListener("click", () => {
   navigator.clipboard.writeText(document.getElementById("aiOutput").value);
 });
+wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outputId: "aiOutput" });
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 

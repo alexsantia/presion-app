@@ -369,11 +369,11 @@ app.post("/api/account/email", requireRole("patient"), asyncRoute(async (req, re
 }));
 
 app.post("/api/account/params", requireRole("patient"), asyncRoute(async (req, res) => {
-  const { last_lab_date, cholesterol, triglycerides, med_brand, med_mg } = req.body;
+  const { last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist } = req.body;
   res.json(await callSheetsApi(null, {
     action: "update_patient_params",
     id: req.session.patientId,
-    last_lab_date, cholesterol, triglycerides, med_brand, med_mg,
+    last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist,
   }));
 }));
 

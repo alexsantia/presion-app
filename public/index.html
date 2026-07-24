@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=24"></script>
+<script src="/shared/common.js?v=25"></script>
 <style>
   :root {
     color-scheme: light;
@@ -194,6 +194,17 @@
      mayor especificidad, garantizan que nuestro estado (oculto/mostrado) mande. */
   .med-ad-badge .med-ad-tooltip { display: none; }
   .med-ad-badge .med-ad-tooltip.show { display: block; }
+
+  /* v25: previsualizar el panel como lo ve el médico o la familia */
+  .view-as-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .view-as-label { font-size: 12px; color: var(--text-muted); }
+  .view-as-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .view-as-banner { font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; background: var(--accent-soft); color: var(--accent-hover); }
+
+  /* v25: mostrar/ocultar columnas del Historial de lecturas */
+  .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
+  .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
+  .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -219,6 +230,13 @@
 </div>
 <div class="subtitle">Monitoreo de presión arterial, frecuencia cardiaca y peso · categorías según guía AHA (2017)</div>
 
+<div class="view-as-toolbar">
+  <span class="view-as-label">Ver mi panel como:</span>
+  <button type="button" class="btn-mini view-as-btn" id="viewAsDoctorBtn">🩺 Vista Médico</button>
+  <button type="button" class="btn-mini view-as-btn" id="viewAsFamilyBtn">👪 Vista amigos y familia</button>
+</div>
+<div class="view-as-banner" id="viewAsBanner" style="display:none;"></div>
+
 <div id="greetingSection" style="margin-bottom: 16px;">
   <div class="greeting-name" id="greetingText"></div>
   <div class="monitoring-since" id="monitoringSince"></div>
@@ -235,15 +253,27 @@
   <div id="alertsContent"></div>
 </div>
 
-<div class="section section-comments" id="commentsSection">
-  <h2>Comentarios <span class="muted">tu médico comenta y tú puedes responder</span></h2>
-  <div class="comment-daynav">
-    <button type="button" class="btn-mini" id="commentPrevDay">‹</button>
-    <input type="date" id="commentDayPicker">
-    <button type="button" class="btn-mini" id="commentNextDay">›</button>
-    <span class="comment-daynav-label" id="commentDayLabel"></span>
-  </div>
-  <div id="commentsContent"></div>
+<div class="section section-add">
+  <h2>Agregar lectura</h2>
+  <form class="add-form" id="addForm">
+    <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
+    <div><label>Fecha</label><input type="date" id="f_date" required></div>
+    <div><label>Hora</label><input type="time" id="f_time" required></div>
+    <div><label>Sistólica</label><input type="number" id="f_sys" required min="50" max="260"></div>
+    <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
+    <div><label title="Frecuencia cardíaca (pulsaciones por minuto)">FC</label><input type="number" id="f_hr" min="30" max="220"></div>
+    <div class="full checkbox-field">
+      <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por <span id="medNameLabel">medicamento</span> (tomé mi antihipertensivo)</label><button type="button" class="med-ad-badge" id="medAdBadge">💊<span class="med-ad-tooltip" id="medAdTooltip"></span></button>
+    </div>
+    <div class="full">
+      <label>Observaciones (contexto, medicamento, síntomas)</label>
+      <textarea id="f_obs" rows="2"></textarea>
+    </div>
+    <div class="row-actions">
+      <button type="submit" id="submitBtn" class="btn-primary">Agregar</button>
+      <button type="button" id="cancelEditBtn" class="btn-mini" style="display:none;">Cancelar</button>
+    </div>
+  </form>
 </div>
 
 <div class="section section-chart">
@@ -269,9 +299,65 @@
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
-    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span>LPM</button>
+    <button type="button" class="legend-btn active" data-dataset="hr" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#8a8a8a"></span><span title="Frecuencia cardíaca (pulsaciones por minuto)">FC</span></button>
     <button type="button" class="legend-btn active" data-dataset="weight" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:var(--weight)"></span>Peso (kg)</button>
     <button type="button" class="legend-btn active" data-dataset="medicated" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#4F9E8C"></span><span id="medLegendLabel">Medicado</span></button><button type="button" class="med-ad-badge" id="medAdBadgeLegend">💊<span class="med-ad-tooltip" id="medAdTooltipLegend"></span></button>
+  </div>
+</div>
+
+<div class="section section-comments" id="commentsSection">
+  <h2>Comentarios <span class="muted">tu médico comenta y tú puedes responder</span></h2>
+  <div class="comment-daynav">
+    <button type="button" class="btn-mini" id="commentPrevDay">‹</button>
+    <input type="date" id="commentDayPicker">
+    <button type="button" class="btn-mini" id="commentNextDay">›</button>
+    <span class="comment-daynav-label" id="commentDayLabel"></span>
+  </div>
+  <div id="commentsContent"></div>
+</div>
+
+<div class="section section-history">
+  <div class="toolbar">
+    <h2 style="flex:1">Historial de lecturas</h2>
+    <div class="col-toggle-wrap" style="position:relative;">
+      <button class="btn-secondary" id="colToggleBtn" type="button">Columnas ▾</button>
+      <div class="col-toggle-menu" id="colToggleMenu" style="display:none;"></div>
+    </div>
+    <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
+    <button class="btn-secondary" id="importBtn">Importar desde archivo</button>
+    <button class="btn-secondary" id="templateBtn">Descargar plantilla</button>
+    <button class="btn-secondary" id="backupBtn">Respaldar historial</button>
+    <button class="btn-secondary" id="shareBtn">Generar resumen para compartir</button>
+    <button class="btn-secondary" id="printBtn">Imprimir / PDF</button>
+  </div>
+  <div id="shareWrap" style="display:none; margin-bottom:14px;">
+    <textarea id="shareOutput" readonly></textarea>
+    <div class="disclaimer">Selecciona el texto y cópialo para enviarlo por WhatsApp o correo.</div>
+  </div>
+  <div id="emptyState" style="display:none;">Todavía no hay lecturas registradas. Usa el formulario de arriba o importa un archivo.</div>
+  <table id="readingsTable">
+    <thead><tr>
+      <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
+      <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
+      <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
+      <th data-col="obs">Observaciones</th><th data-col="actions">Acciones</th>
+    </tr></thead>
+    <tbody id="readingsBody"></tbody>
+  </table>
+  <div class="pagination" id="paginationBar" style="display:none;">
+    <div class="pagination-info" id="paginationInfo"></div>
+    <div class="pagination-controls">
+      <label>Por página
+        <select id="pageSizeSelect">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="30">30</option>
+        </select>
+      </label>
+      <button type="button" class="btn-mini" id="prevPageBtn">‹ Anterior</button>
+      <span id="pageIndicator"></span>
+      <button type="button" class="btn-mini" id="nextPageBtn">Siguiente ›</button>
+    </div>
   </div>
 </div>
 
@@ -294,67 +380,12 @@
   <div id="aiWrap" style="display:none; margin-top:14px;">
     <textarea id="aiOutput" readonly></textarea>
     <div class="disclaimer">Copia este texto y pégalo en tu asistente de IA favorito para obtener un análisis. Esto no sustituye una consulta médica.</div>
-    <button type="button" class="btn-secondary" id="aiCopyBtn" style="margin-top:8px;">Copiar texto</button>
-  </div>
-</div>
-
-<div class="section section-add">
-  <h2>Agregar lectura</h2>
-  <form class="add-form" id="addForm">
-    <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
-    <div><label>Fecha</label><input type="date" id="f_date" required></div>
-    <div><label>Hora</label><input type="time" id="f_time" required></div>
-    <div><label>Sistólica</label><input type="number" id="f_sys" required min="50" max="260"></div>
-    <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
-    <div><label>LPM</label><input type="number" id="f_hr" min="30" max="220"></div>
-    <div><label>Peso (kg)</label><input type="number" id="f_weight" min="20" max="300" step="0.1"></div>
-    <div class="full checkbox-field">
-      <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por <span id="medNameLabel">medicamento</span> (tomé mi antihipertensivo)</label><button type="button" class="med-ad-badge" id="medAdBadge">💊<span class="med-ad-tooltip" id="medAdTooltip"></span></button>
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button type="button" class="btn-secondary" id="aiCopyBtn">Copiar texto</button>
+      <button type="button" class="btn-secondary" id="aiChatGptBtn">🤖 Abrir en ChatGPT</button>
+      <button type="button" class="btn-secondary" id="aiGeminiBtn">✨ Abrir en Gemini</button>
     </div>
-    <div class="full">
-      <label>Observaciones (contexto, medicamento, síntomas)</label>
-      <textarea id="f_obs" rows="2"></textarea>
-    </div>
-    <div class="row-actions">
-      <button type="submit" id="submitBtn" class="btn-primary">Agregar</button>
-      <button type="button" id="cancelEditBtn" class="btn-mini" style="display:none;">Cancelar</button>
-    </div>
-  </form>
-</div>
-
-<div class="section section-history">
-  <div class="toolbar">
-    <h2 style="flex:1">Historial de lecturas</h2>
-    <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display:none;">
-    <button class="btn-secondary" id="importBtn">Importar desde archivo</button>
-    <button class="btn-secondary" id="templateBtn">Descargar plantilla</button>
-    <button class="btn-secondary" id="backupBtn">Respaldar historial</button>
-    <button class="btn-secondary" id="shareBtn">Generar resumen para compartir</button>
-    <button class="btn-secondary" id="printBtn">Imprimir / PDF</button>
-  </div>
-  <div id="shareWrap" style="display:none; margin-bottom:14px;">
-    <textarea id="shareOutput" readonly></textarea>
-    <div class="disclaimer">Selecciona el texto y cópialo para enviarlo por WhatsApp o correo.</div>
-  </div>
-  <div id="emptyState" style="display:none;">Todavía no hay lecturas registradas. Usa el formulario de arriba o importa un archivo.</div>
-  <table id="readingsTable">
-    <thead><tr><th>Fecha</th><th>Hora</th><th>Presión</th><th>LPM</th><th>Peso</th><th>Categoría</th><th id="medicatedColHeader">Medicado</th><th>Observaciones</th><th>Acciones</th></tr></thead>
-    <tbody id="readingsBody"></tbody>
-  </table>
-  <div class="pagination" id="paginationBar" style="display:none;">
-    <div class="pagination-info" id="paginationInfo"></div>
-    <div class="pagination-controls">
-      <label>Por página
-        <select id="pageSizeSelect">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
-          <option value="30">30</option>
-        </select>
-      </label>
-      <button type="button" class="btn-mini" id="prevPageBtn">‹ Anterior</button>
-      <span id="pageIndicator"></span>
-      <button type="button" class="btn-mini" id="nextPageBtn">Siguiente ›</button>
-    </div>
+    <div class="disclaimer" id="aiLinkHint" style="margin-top:6px;">ChatGPT abre con el texto ya escrito, solo falta que presiones Enter. Gemini no permite precargar el texto, así que se copia al portapapeles: pégalo (Cmd+V) en cuanto se abra.</div>
   </div>
 </div>
 
@@ -385,7 +416,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v24</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v25</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -437,8 +468,20 @@
   <div class="modal-card">
     <div class="modal-header"><h2>🧪 Parámetros</h2><button type="button" class="modal-close" data-close-modal="paramsModal">✕</button></div>
 
-    <div class="modal-section-title">Estudios de laboratorio</div>
+    <div class="modal-section-title">Datos físicos</div>
     <form class="modal-form" id="paramsForm">
+      <div class="field"><label>Género</label>
+        <select id="param_gender">
+          <option value="">Sin especificar</option>
+          <option value="masculino">Masculino</option>
+          <option value="femenino">Femenino</option>
+        </select>
+      </div>
+      <div class="field"><label>Peso (kg)</label><input type="number" id="param_weight" min="20" max="300" step="0.1"></div>
+      <div class="field"><label>Perímetro abdominal (cm)</label><input type="number" id="param_waist" min="30" max="250" step="0.1"></div>
+      <div class="modal-hint">El peso que pongas aquí se guarda automáticamente junto con cada lectura nueva que registres, hasta que lo actualices de nuevo.</div>
+
+      <div class="modal-section-title">Estudios de laboratorio</div>
       <div class="field full"><label>Fecha de últimos estudios de laboratorio</label><input type="date" id="param_lab_date"></div>
       <div class="field"><label>Colesterol (<span id="chol_unit_label">mg/dL</span>)</label><input type="number" id="param_cholesterol" min="0" step="0.1"></div>
       <div class="field"><label>Triglicéridos (<span id="tri_unit_label">mg/dL</span>)</label><input type="number" id="param_triglycerides" min="0" step="0.1"></div>
@@ -491,7 +534,6 @@ let editingId = null;
 let currentData = [];
 let currentComments = [];
 let currentAccount = null;
-let lastWeight = null;
 let lastMedicated = null;
 let commentDay = todayStr();
 let commentDayInitialized = false;
@@ -559,13 +601,9 @@ function renderGreeting() {
   }
 }
 
-// ---- Peso: siempre precargar el último registrado, hasta que se cambie ----
-function applyDefaultWeight() {
-  const el = document.getElementById("f_weight");
-  if (el && !editingId && lastWeight != null && !el.value) {
-    el.value = lastWeight;
-  }
-}
+// ---- Peso (v25): ya no se captura por lectura en este formulario — vive en
+// Parámetros (currentAccount.weight) y cada lectura nueva usa ese valor
+// vigente automáticamente. Ver addForm submit más abajo.
 
 // ---- Medicado: el checkbox de "nueva lectura" precarga siempre el último
 // estado registrado (Sí o No), en vez de reiniciarse a desmarcado cada vez,
@@ -730,6 +768,9 @@ function getUnitPref() { return localStorage.getItem("bp_units") || "mgdl"; }
 function fillParamsForm() {
   if (!currentAccount) return;
   const unit = getUnitPref();
+  document.getElementById("param_gender").value = currentAccount.gender || "";
+  document.getElementById("param_weight").value = currentAccount.weight != null ? currentAccount.weight : "";
+  document.getElementById("param_waist").value = currentAccount.waist != null ? currentAccount.waist : "";
   document.getElementById("param_lab_date").value = currentAccount.last_lab_date || "";
   document.getElementById("param_cholesterol").value = currentAccount.cholesterol != null
     ? (unit === "mmoll" ? Math.round((currentAccount.cholesterol / CHOL_MGDL_PER_MMOLL) * 100) / 100 : currentAccount.cholesterol) : "";
@@ -748,9 +789,14 @@ document.getElementById("paramsForm").addEventListener("submit", async e => {
   const triRaw = document.getElementById("param_triglycerides").value;
   const cholesterol = cholRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(cholRaw) * CHOL_MGDL_PER_MMOLL) : Number(cholRaw));
   const triglycerides = triRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(triRaw) * TRI_MGDL_PER_MMOLL) : Number(triRaw));
+  const weightRaw = document.getElementById("param_weight").value;
+  const waistRaw = document.getElementById("param_waist").value;
   try {
     setStatus("loading", "Guardando parámetros…");
     await apiPost("/api/account/params", {
+      gender: document.getElementById("param_gender").value,
+      weight: weightRaw === "" ? "" : Number(weightRaw),
+      waist: waistRaw === "" ? "" : Number(waistRaw),
       last_lab_date: document.getElementById("param_lab_date").value,
       cholesterol, triglycerides,
       med_brand: document.getElementById("param_med_brand").value,
@@ -914,8 +960,37 @@ document.getElementById("aiGenerateBtn").addEventListener("click", () => {
 document.getElementById("aiCopyBtn").addEventListener("click", () => {
   navigator.clipboard.writeText(document.getElementById("aiOutput").value);
 });
+wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outputId: "aiOutput" });
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+
+// ---- Previsualizar el panel como lo ve el médico o la familia (v25) ----
+// No es una réplica exacta de doctor.html/familia.html — es el mismo panel
+// del paciente ocultando las secciones que esos roles no ven, para dar una
+// idea rápida sin tener que abrir otra sesión.
+let previewMode = null; // null | "doctor" | "family"
+const PREVIEW_HIDE = {
+  doctor: ["#alertsSection", ".section-add", ".section-share", ".hamburger-wrap"],
+  family: ["#alertsSection", ".section-add", ".section-share", "#commentsSection", ".hamburger-wrap"],
+};
+function setPreviewMode(mode) {
+  previewMode = previewMode === mode ? null : mode;
+  document.getElementById("viewAsDoctorBtn").classList.toggle("active", previewMode === "doctor");
+  document.getElementById("viewAsFamilyBtn").classList.toggle("active", previewMode === "family");
+  document.querySelectorAll(".section").forEach(s => { s.style.display = ""; });
+  document.querySelector(".hamburger-wrap").style.display = "";
+  const banner = document.getElementById("viewAsBanner");
+  if (!previewMode) { banner.style.display = "none"; return; }
+  (PREVIEW_HIDE[previewMode] || []).forEach(sel => {
+    document.querySelectorAll(sel).forEach(el => { el.style.display = "none"; });
+  });
+  banner.textContent = previewMode === "doctor"
+    ? "Estás viendo el panel como lo ve tu médico."
+    : "Estás viendo el panel como lo ven tus amigos y familia.";
+  banner.style.display = "block";
+}
+document.getElementById("viewAsDoctorBtn").addEventListener("click", () => setPreviewMode("doctor"));
+document.getElementById("viewAsFamilyBtn").addEventListener("click", () => setPreviewMode("family"));
 
 // ---- Comentarios ----
 async function loadComments() {
@@ -1021,15 +1096,12 @@ async function loadAndRender() {
   try {
     currentData = await apiGet("/api/readings");
     currentData.sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
-    const withWeight = currentData.filter(r => r.weight != null);
-    if (withWeight.length) lastWeight = withWeight[withWeight.length - 1].weight;
     if (currentData.length) lastMedicated = !!currentData[currentData.length - 1].medicated;
     setStatus(null);
     render();
     renderComments();
     renderStreak();
     renderGreeting();
-    applyDefaultWeight();
     applyDefaultMedicated();
   } catch (err) {
     setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
@@ -1045,6 +1117,57 @@ function renderStreak() {
 let currentPage = 1;
 let pageSize = Number(localStorage.getItem("bp_page_size")) || 20;
 document.getElementById("pageSizeSelect").value = String(pageSize);
+
+// ---- Mostrar/ocultar columnas del Historial de lecturas (v25) ----
+// Fecha y Acciones siempre se muestran; el resto es opcional. La
+// preferencia se guarda en este navegador, por eso vive en localStorage.
+const TOGGLABLE_COLUMNS = [
+  { key: "time", label: "Hora" },
+  { key: "pressure", label: "Presión" },
+  { key: "hr", label: "FC" },
+  { key: "weight", label: "Peso" },
+  { key: "category", label: "Categoría" },
+  { key: "medicated", label: "Medicado" },
+  { key: "obs", label: "Observaciones" },
+];
+function getHiddenColumns() {
+  try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols") || "[]")); } catch (e) { return new Set(); }
+}
+let hiddenColumns = getHiddenColumns();
+function applyColumnVisibility() {
+  const table = document.getElementById("readingsTable");
+  TOGGLABLE_COLUMNS.forEach(col => {
+    const hide = hiddenColumns.has(col.key);
+    table.querySelectorAll(`[data-col="${col.key}"]`).forEach(cell => {
+      cell.style.display = hide ? "none" : "";
+    });
+  });
+}
+function renderColToggleMenu() {
+  const menu = document.getElementById("colToggleMenu");
+  menu.innerHTML = TOGGLABLE_COLUMNS.map(col => `
+    <label class="col-toggle-item">
+      <input type="checkbox" data-col-key="${col.key}" ${hiddenColumns.has(col.key) ? "" : "checked"}>
+      ${col.label}
+    </label>`).join("");
+}
+renderColToggleMenu();
+document.getElementById("colToggleBtn").addEventListener("click", e => {
+  e.stopPropagation();
+  const menu = document.getElementById("colToggleMenu");
+  menu.style.display = menu.style.display === "none" ? "block" : "none";
+});
+document.getElementById("colToggleMenu").addEventListener("change", e => {
+  const key = e.target.dataset.colKey;
+  if (!key) return;
+  if (e.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key);
+  localStorage.setItem("bp_hidden_cols", JSON.stringify([...hiddenColumns]));
+  applyColumnVisibility();
+});
+document.addEventListener("click", e => {
+  const wrap = document.querySelector(".col-toggle-wrap");
+  if (wrap && !wrap.contains(e.target)) document.getElementById("colToggleMenu").style.display = "none";
+});
 
 function renderTablePage() {
   const data = currentData;
@@ -1062,19 +1185,20 @@ function renderTablePage() {
     const notes = commentsForReading(r.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${fmtDate(r.date)}</td><td>${r.time}</td>
-      <td><strong>${r.sys}/${r.dia}</strong></td>
-      <td>${r.hr ?? "—"}</td>
-      <td>${r.weight != null ? r.weight + " kg" : "—"}</td>
-      <td><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
-      <td>${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
-      <td><div class="row-actions">
+      <td data-col="date">${fmtDate(r.date)}</td><td data-col="time">${r.time}</td>
+      <td data-col="pressure"><strong>${r.sys}/${r.dia}</strong></td>
+      <td data-col="hr">${r.hr ?? "—"}</td>
+      <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
+      <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
+      <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
+      <td data-col="actions"><div class="row-actions">
         <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
         <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
       </div></td>`;
     tbody.appendChild(tr);
   });
+  applyColumnVisibility();
 
   bar.style.display = "flex";
   const start = (page - 1) * pageSize + 1;
@@ -1142,7 +1266,7 @@ function renderChart() {
     data: { labels, datasets: [
       { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.sys },
       { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
-      { label: "LPM", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
+      { label: "FC", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
       { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
       { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
     ]},
@@ -1150,7 +1274,7 @@ function renderChart() {
       plugins: { legend: { display: false }, tooltip: { callbacks: chartTooltipCallbacks(grouped) } },
       scales: {
         y: { position: "left", title: { display: true, text: "mmHg" } },
-        y1: { position: "right", title: { display: true, text: "LPM" }, grid: { drawOnChartArea: false } },
+        y1: { position: "right", title: { display: true, text: "FC" }, grid: { drawOnChartArea: false } },
         y2: { position: "right", title: { display: true, text: "kg" }, grid: { drawOnChartArea: false }, offset: true },
         y3: { display: false, min: 0, max: 1.1 },
       },
@@ -1188,7 +1312,7 @@ function render() {
 
   document.getElementById("summaryCards").innerHTML = `
     <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div></div>
-    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " LPM prom." : "sin LPM"}</div></div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div></div>
     <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "prom. " + avg(weightVals) + " kg" : "sin registrar"}</div></div>
     <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(" · ")}</div></div>
   `;
@@ -1208,16 +1332,20 @@ function render() {
   renderChart();
 }
 
+// El peso ya no se captura en este formulario (vive en Parámetros), pero al
+// editar una lectura existente hay que conservar el peso que esa lectura ya
+// tenía guardado, en vez de sobrescribirlo con el valor actual de Parámetros.
+let editingWeight = null;
 function startEdit(id) {
   const r = currentData.find(e => e.id === id);
   if (!r) return;
   editingId = id;
+  editingWeight = r.weight ?? null;
   document.getElementById("f_date").value = r.date;
   document.getElementById("f_time").value = r.time;
   document.getElementById("f_sys").value = r.sys;
   document.getElementById("f_dia").value = r.dia;
   document.getElementById("f_hr").value = r.hr ?? "";
-  document.getElementById("f_weight").value = r.weight ?? "";
   document.getElementById("f_obs").value = r.obs || "";
   document.getElementById("f_medicated").checked = !!r.medicated;
   document.getElementById("submitBtn").textContent = "Guardar cambios";
@@ -1227,11 +1355,11 @@ function startEdit(id) {
 }
 function cancelEdit() {
   editingId = null;
+  editingWeight = null;
   document.getElementById("addForm").reset();
   document.getElementById("submitBtn").textContent = "Agregar";
   document.getElementById("cancelEditBtn").style.display = "none";
   document.getElementById("editingBanner").style.display = "none";
-  applyDefaultWeight();
   applyDefaultMedicated();
 }
 document.getElementById("cancelEditBtn").addEventListener("click", cancelEdit);
@@ -1261,7 +1389,10 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     sys: Number(document.getElementById("f_sys").value),
     dia: Number(document.getElementById("f_dia").value),
     hr: document.getElementById("f_hr").value ? Number(document.getElementById("f_hr").value) : null,
-    weight: document.getElementById("f_weight").value ? Number(document.getElementById("f_weight").value) : null,
+    // El peso viene de Parámetros (currentAccount.weight), no de este
+    // formulario. Al editar una lectura vieja se conserva el peso que ya
+    // tenía (editingWeight); al agregar una nueva se usa el vigente.
+    weight: editingId ? editingWeight : (currentAccount && currentAccount.weight != null ? currentAccount.weight : null),
     obs: document.getElementById("f_obs").value,
     medicated: document.getElementById("f_medicated").checked,
     flag: "",
@@ -1274,9 +1405,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     if (editingId) { await apiPut("/api/readings/" + encodeURIComponent(editingId), values); cancelEdit(); }
     else {
       await apiPost("/api/readings", values);
-      if (values.weight != null) lastWeight = values.weight;
       e.target.reset();
-      applyDefaultWeight();
     }
     await loadAndRender();
   } catch (err) {
@@ -1292,7 +1421,7 @@ function normalizeHeader(h) { return String(h || "").toLowerCase().normalize("NF
 const HEADER_MAP = {
   date: ["fecha", "date"], time: ["hora", "time"],
   sys: ["sistolica", "sys", "systolic"], dia: ["diastolica", "dia", "diastolic"],
-  hr: ["lpm", "hr", "pulso", "frecuencia cardiaca", "bpm"],
+  hr: ["fc", "lpm", "hr", "pulso", "frecuencia cardiaca", "bpm"],
   weight: ["peso", "weight", "kg"], obs: ["observaciones", "obs", "notas", "notes"],
 };
 function mapRow(rawRow) {
@@ -1327,7 +1456,7 @@ document.getElementById("importFile").addEventListener("change", async e => {
   e.target.value = "";
 });
 document.getElementById("templateBtn").addEventListener("click", () => {
-  const csv = "Fecha,Hora,Sistolica,Diastolica,LPM,Peso,Observaciones\n2026-07-14,17:00,120,80,70,75,Ejemplo de observación\n";
+  const csv = "Fecha,Hora,Sistolica,Diastolica,FC,Peso,Observaciones\n2026-07-14,17:00,120,80,70,75,Ejemplo de observación\n";
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = "plantilla-lecturas.csv"; a.click();
@@ -1335,7 +1464,7 @@ document.getElementById("templateBtn").addEventListener("click", () => {
 document.getElementById("backupBtn").addEventListener("click", () => {
   if (!currentData.length) { setStatus("error", "Todavía no tienes lecturas que respaldar."); return; }
   const escapeCsv = v => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = [["Fecha","Hora","Sistolica","Diastolica","LPM","Peso","Medicado","Observaciones"]];
+  const rows = [["Fecha","Hora","Sistolica","Diastolica","FC","Peso","Medicado","Observaciones"]];
   [...currentData].sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time)).forEach(r => {
     rows.push([r.date, r.time, r.sys, r.dia, r.hr ?? "", r.weight ?? "", r.medicated ? "Si" : "No", r.obs || ""]);
   });
@@ -1353,7 +1482,7 @@ document.getElementById("shareBtn").addEventListener("click", () => {
   let text = `Resumen de presión arterial, frecuencia cardiaca y peso\n\n`;
   last5.forEach(r => {
     const cat = classify(r.sys, r.dia);
-    text += `${r.date.split("-").reverse().join("/")} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr ? `, ${r.hr} LPM` : ""}${r.weight ? `, ${r.weight} kg` : ""} (${cat.label})\n`;
+    text += `${r.date.split("-").reverse().join("/")} ${r.time} — ${r.sys}/${r.dia} mmHg${r.hr ? `, ${r.hr} FC` : ""}${r.weight ? `, ${r.weight} kg` : ""} (${cat.label})\n`;
     if (r.obs) text += `  ${r.obs}\n`;
   });
   const sysVals = data.map(r => r.sys), diaVals = data.map(r => r.dia);
