@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=25"></script>
+<script src="/shared/common.js?v=26"></script>
 <style>
   :root {
     color-scheme: light;
@@ -153,6 +153,7 @@
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
       <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated">Medicado</th><th data-col="obs">Observaciones</th>
+      <th data-col="reacciones">Reacciones</th>
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
@@ -201,7 +202,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v25</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v26</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -212,6 +213,8 @@ let currentPage = 1;
 let pageSize = 20;
 let chartGranularity = "week";
 let chartDay = todayStr();
+let currentReactions = [];
+let reactionsGrouped = {};
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
@@ -244,6 +247,8 @@ async function load() {
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     updateMedAdBadge(patient);
     currentData = readings.slice().sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
+    currentReactions = json.data.reactions || [];
+    reactionsGrouped = groupReactionsByTarget(currentReactions);
     render();
   } catch (err) {
     setStatus("error", "No se pudo cargar esta página: " + err.message);
@@ -259,6 +264,7 @@ const TOGGLABLE_COLUMNS = [
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
   { key: "obs", label: "Observaciones" },
+  { key: "reacciones", label: "Reacciones" },
 ];
 function getHiddenColumns() {
   try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols_familia") || "[]")); } catch (e) { return new Set(); }
@@ -297,6 +303,28 @@ document.addEventListener("click", e => {
   if (wrap && !wrap.contains(e.target)) document.getElementById("colToggleMenu").style.display = "none";
 });
 
+// Reacciones (v26): la familia/amigos no tiene cuenta, así que se identifica
+// con un id anónimo por dispositivo (getFamilyReactorId, ver common.js) y
+// manda su reacción por un endpoint público propio que resuelve el
+// patient_id a partir del token del enlace (nunca del body).
+async function toggleReaction(targetType, targetId, reaction) {
+  try {
+    const res = await fetch("/api/familia/" + encodeURIComponent(token) + "/react", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_type: targetType, target_id: targetId, reaction, reactor_id: getFamilyReactorId() }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || "no se pudo guardar la reacción");
+    const reactRes = await fetch("/api/familia/" + encodeURIComponent(token));
+    const reactJson = await reactRes.json();
+    if (reactJson.ok) {
+      currentReactions = reactJson.data.reactions || [];
+      reactionsGrouped = groupReactionsByTarget(currentReactions);
+      renderTablePage();
+    }
+  } catch (err) { setStatus("error", err.message); }
+}
+
 // ---- Paginación de la tabla ----
 function renderTablePage() {
   const data = currentData;
@@ -319,7 +347,8 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}</td>`;
+      <td data-col="obs" class="obs">${r.obs || ""}</td>
+      <td data-col="reacciones">${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "family", viewerId: getFamilyReactorId() })}</td>`;
     tbody.appendChild(tr);
   });
   applyColumnVisibility();
@@ -456,6 +485,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
+wireReactionBars(document.getElementById("readingsBody"), { onReact: toggleReaction });
 load();
 </script>
 </body>

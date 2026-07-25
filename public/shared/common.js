@@ -477,7 +477,9 @@ function threadCommentsForDay(comments, dateStr) {
   topLevel.forEach(t => sortReplies(t.replies));
   return topLevel;
 }
-// opts: { viewerRole, viewerId, canReply(comment) => bool }
+// opts: { viewerRole, viewerId, canReply(comment) => bool, reactionsGrouped
+// (ver groupReactionsByTarget) } — si se pasa reactionsGrouped, cada
+// comentario incluye su barra de reacciones (v26).
 function renderCommentThreadHTML(nodes, opts) {
   opts = opts || {};
   return (nodes || []).map(c => {
@@ -486,11 +488,15 @@ function renderCommentThreadHTML(nodes, opts) {
     const roleClass = c.author_role === "doctor" ? "comment-role-doctor" : "comment-role-patient";
     const canReply = typeof opts.canReply === "function" ? !!opts.canReply(c) : false;
     const replyBtn = canReply ? `<button type="button" class="btn-mini comment-reply-btn" data-reply-to="${c.id}">Responder</button>` : "";
+    const reactionBar = opts.reactionsGrouped
+      ? renderReactionBarHTML("comment", c.id, reactionsForTarget(opts.reactionsGrouped, "comment", c.id), { viewerRole: opts.viewerRole, viewerId: opts.viewerId })
+      : "";
     const childrenHtml = c.replies && c.replies.length ? `<div class="comment-replies">${renderCommentThreadHTML(c.replies, opts)}</div>` : "";
     return `
       <div class="comment-node ${roleClass}" data-comment-id="${c.id}">
         <div class="comment-meta"><strong>${escapeHtml_(authorLabel)}</strong> · ${fmtTimeOnly(c.created_at)}</div>
         <div class="comment-text">${escapeHtml_(c.text)}</div>
+        ${reactionBar}
         <div class="comment-actions">${replyBtn}</div>
         <div class="comment-reply-box" id="replyBox_${c.id}" style="display:none;"></div>
         ${childrenHtml}
@@ -618,6 +624,159 @@ function wireAiDeepLinks(opts) {
       try { await navigator.clipboard.writeText(prompt); } catch (err) { /* silencioso */ }
       window.open("https://gemini.google.com/app", "_blank", "noopener");
     });
+  }
+}
+
+// ---- Reacciones estilo Facebook (v26) ----
+// target_type: "comment" | "reading". reactor_role: "patient" | "doctor" o
+// "family" (familia/amigos, sin cuenta — se identifican con un id anónimo
+// por dispositivo, ver wireFamilyReactorId más abajo).
+//
+// Diseño deliberadamente SOLO con click/tap, nunca con hover: la saga de
+// v20-v24 fue justo por depender de mouseenter/mouseleave en un elemento
+// posicionado "absolute" que en algunos casos perdía el evento de salida y
+// se quedaba fijo. Para no repetir esa clase de bug, el selector de
+// reacciones aquí se abre y cierra siempre con click, sin ningún :hover.
+const REACTIONS = [
+  { key: "like", emoji: "👍", label: "Me gusta" },
+  { key: "love", emoji: "❤️", label: "Me encanta" },
+  { key: "haha", emoji: "😆", label: "Me divierte" },
+  { key: "wow", emoji: "😮", label: "Me asombra" },
+  { key: "sad", emoji: "😢", label: "Me entristece" },
+  { key: "angry", emoji: "😡", label: "Me enoja" },
+];
+const REACTION_BY_KEY_ = {};
+REACTIONS.forEach(r => { REACTION_BY_KEY_[r.key] = r; });
+
+// Agrupa todas las reacciones de un paciente (comentarios + lecturas) por
+// target, para poder pedirlas todas juntas una sola vez por página.
+function groupReactionsByTarget(reactions) {
+  const map = {};
+  (reactions || []).forEach(r => {
+    const k = `${r.target_type}:${r.target_id}`;
+    if (!map[k]) map[k] = [];
+    map[k].push(r);
+  });
+  return map;
+}
+function reactionsForTarget(grouped, targetType, targetId) {
+  return (grouped && grouped[`${targetType}:${targetId}`]) || [];
+}
+// counts por tipo (solo los que tienen al menos 1), total, y cuál es "mía"
+// (la del propio viewerRole/viewerId), si tiene alguna.
+function summarizeReactions(list, viewerRole, viewerId) {
+  const counts = {};
+  let mine = null;
+  (list || []).forEach(r => {
+    counts[r.reaction] = (counts[r.reaction] || 0) + 1;
+    if (viewerRole && r.reactor_role === viewerRole && String(r.reactor_id) === String(viewerId)) mine = r.reaction;
+  });
+  return { counts, total: (list || []).length, mine };
+}
+
+function ensureReactionStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-reaction-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-reaction-styles";
+  style.textContent = `
+    .reaction-bar { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; position:relative; }
+    .reaction-summary { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted); }
+    .reaction-summary .rs-emoji { font-size:13px; }
+    .reaction-add-btn { border:1px solid #ddd; background:#fff; border-radius:14px; padding:2px 10px;
+      font-size:12px; cursor:pointer; color:var(--text-muted); }
+    .reaction-add-btn.mine { border-color:transparent; background:#EAF3EC; color:#4F7A6F; font-weight:600; }
+    .reaction-picker { display:none; position:absolute; bottom:calc(100% + 6px); left:0; background:#fff; border-radius:20px;
+      box-shadow:0 4px 14px rgba(0,0,0,0.18); padding:4px 6px; gap:2px; z-index:30; }
+    .reaction-picker.open { display:flex; }
+    .reaction-picker button { border:none; background:transparent; font-size:19px; cursor:pointer; padding:4px 5px; border-radius:50%; line-height:1; }
+    .reaction-picker button:hover, .reaction-picker button:focus-visible { background:#F0F0F0; outline:none; }
+  `;
+  document.head.appendChild(style);
+}
+
+// Arma el HTML de la barra de reacciones para un target (comentario o
+// lectura). list: reacciones ya filtradas para ese target (reactionsForTarget).
+// opts: { viewerRole, viewerId }.
+function renderReactionBarHTML(targetType, targetId, list, opts) {
+  ensureReactionStyles_();
+  opts = opts || {};
+  const { counts, total, mine } = summarizeReactions(list, opts.viewerRole, opts.viewerId);
+  const summaryHtml = total
+    ? `<span class="reaction-summary">${REACTIONS.filter(r => counts[r.key]).map(r => `<span class="rs-emoji">${r.emoji}</span>`).join("")} ${total}</span>`
+    : "";
+  const mineDef = mine ? REACTION_BY_KEY_[mine] : null;
+  const btnLabel = mineDef ? `${mineDef.emoji} ${mineDef.label}` : "Reaccionar";
+  const pickerButtons = REACTIONS.map(r =>
+    `<button type="button" class="reaction-pick" data-reaction="${r.key}" title="${r.label}" aria-label="${r.label}">${r.emoji}</button>`).join("");
+  return `
+    <div class="reaction-bar" data-target-type="${targetType}" data-target-id="${targetId}">
+      <button type="button" class="reaction-add-btn ${mine ? "mine" : ""}" data-reaction-toggle-btn>${btnLabel}</button>
+      <div class="reaction-picker">${pickerButtons}</div>
+      ${summaryHtml}
+    </div>`;
+}
+
+// Delega los clicks de todas las .reaction-bar dentro de "root" (una sola
+// vez). Solo click/tap, nunca hover — ver comentario al inicio de esta
+// sección. opts: { onReact(targetType, targetId, reactionKey) } — quien
+// llama decide cómo mandarlo al backend y cómo re-renderizar después.
+function wireReactionBars(root, opts) {
+  root = root || document;
+  opts = opts || {};
+  if (root._reactionBarsWired) return;
+  root._reactionBarsWired = true;
+  root.addEventListener("click", e => {
+    const toggleBtn = e.target.closest("[data-reaction-toggle-btn]");
+    const pickBtn = e.target.closest(".reaction-pick");
+    const bar = e.target.closest(".reaction-bar");
+    root.querySelectorAll(".reaction-picker.open").forEach(p => {
+      if (!bar || p !== bar.querySelector(".reaction-picker")) p.classList.remove("open");
+    });
+    if (toggleBtn && bar) {
+      e.stopPropagation();
+      const picker = bar.querySelector(".reaction-picker");
+      if (picker) picker.classList.toggle("open");
+      return;
+    }
+    if (pickBtn && bar) {
+      e.stopPropagation();
+      const picker = bar.querySelector(".reaction-picker");
+      if (picker) picker.classList.remove("open");
+      const targetType = bar.getAttribute("data-target-type");
+      const targetId = bar.getAttribute("data-target-id");
+      const reaction = pickBtn.getAttribute("data-reaction");
+      if (typeof opts.onReact === "function") opts.onReact(targetType, targetId, reaction);
+    }
+  });
+  ensureReactionOutsideClickCloser_();
+}
+// Cierra cualquier picker de reacciones abierto al hacer click fuera de toda
+// barra de reacciones (por ejemplo, en otra sección de la página). Un solo
+// listener global, independiente de cuántas veces se llame wireReactionBars
+// en la página (una vez para comentarios, otra para el Historial, etc.).
+function ensureReactionOutsideClickCloser_() {
+  if (typeof document === "undefined" || ensureReactionOutsideClickCloser_._wired) return;
+  ensureReactionOutsideClickCloser_._wired = true;
+  document.addEventListener("click", e => {
+    if (e.target.closest(".reaction-bar")) return;
+    document.querySelectorAll(".reaction-picker.open").forEach(p => p.classList.remove("open"));
+  });
+}
+
+// Id anónimo por dispositivo para la vista de familia/amigos (sin cuenta):
+// se genera una sola vez y se guarda en localStorage, para poder togglear su
+// propia reacción de la misma forma que un paciente o médico logueado.
+function getFamilyReactorId() {
+  const KEY = "bp_family_reactor_id";
+  try {
+    let id = localStorage.getItem(KEY);
+    if (!id) {
+      id = "fam_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch (err) {
+    return "fam_" + Math.random().toString(36).slice(2); // sin localStorage: funciona la sesión actual, sin persistir
   }
 }
 

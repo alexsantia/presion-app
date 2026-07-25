@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=25"></script>
+<script src="/shared/common.js?v=26"></script>
 <style>
   :root {
     color-scheme: light;
@@ -340,7 +340,7 @@
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
       <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
-      <th data-col="obs">Observaciones</th><th data-col="actions">Acciones</th>
+      <th data-col="obs">Observaciones</th><th data-col="reacciones">Reacciones</th><th data-col="actions">Acciones</th>
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
@@ -416,7 +416,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v25</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v26</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -538,6 +538,8 @@ let lastMedicated = null;
 let commentDay = todayStr();
 let commentDayInitialized = false;
 let notifications = [];
+let currentReactions = [];
+let reactionsGrouped = {};
 
 // ---- Saludo con el nombre del paciente ----
 const GREETINGS = [
@@ -998,6 +1000,21 @@ async function loadComments() {
   if (!commentDayInitialized) { commentDay = mostRecentCommentDay(currentComments); commentDayInitialized = true; }
   renderComments();
 }
+// Reacciones (v26): se cargan todas las del paciente de una sola vez y se
+// agrupan por target (comentario o lectura) para no tener que pedirlas una
+// por una.
+async function loadReactions() {
+  try { currentReactions = await apiGet("/api/reactions"); } catch (err) { currentReactions = []; }
+  reactionsGrouped = groupReactionsByTarget(currentReactions);
+}
+async function toggleReaction(targetType, targetId, reaction) {
+  try {
+    await apiPost("/api/reactions/toggle", { target_type: targetType, target_id: targetId, reaction });
+    await loadReactions();
+    renderComments();
+    if (typeof renderTablePage === "function") renderTablePage();
+  } catch (err) { setStatus("error", err.message); }
+}
 function renderComments() {
   document.getElementById("commentDayPicker").value = commentDay;
   document.getElementById("commentDayLabel").textContent = fmtDate(commentDay);
@@ -1011,8 +1028,11 @@ function renderComments() {
     viewerRole: "patient",
     viewerId: currentAccount ? currentAccount.id : null,
     canReply: c => c.author_role === "doctor", // solo puedes responder a comentarios del médico
+    reactionsGrouped,
   });
 }
+wireReactionBars(document.getElementById("commentsContent"), { onReact: toggleReaction });
+wireReactionBars(document.getElementById("readingsBody"), { onReact: toggleReaction });
 function commentsForReading(id) { return currentComments.filter(c => c.reading_id === id); }
 document.getElementById("commentDayPicker").addEventListener("change", e => {
   commentDay = e.target.value || todayStr();
@@ -1129,6 +1149,7 @@ const TOGGLABLE_COLUMNS = [
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
   { key: "obs", label: "Observaciones" },
+  { key: "reacciones", label: "Reacciones" },
 ];
 function getHiddenColumns() {
   try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols") || "[]")); } catch (e) { return new Set(); }
@@ -1192,6 +1213,7 @@ function renderTablePage() {
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
       <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
+      <td data-col="reacciones">${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "patient", viewerId: currentAccount ? currentAccount.id : null })}</td>
       <td data-col="actions"><div class="row-actions">
         <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
         <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
@@ -1499,6 +1521,13 @@ loadAccount();
 loadAndRender();
 loadComments();
 loadNotifications();
+// Las reacciones se piden aparte y, cuando llegan, se vuelve a renderizar lo
+// que ya esté en pantalla (comentarios y tabla) para que aparezcan sin
+// esperar a un refresh manual.
+loadReactions().then(() => {
+  renderComments();
+  if (typeof renderTablePage === "function") renderTablePage();
+});
 loadDoctorsAndInvites();
 </script>
 </body>

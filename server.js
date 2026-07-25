@@ -252,7 +252,33 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   if (!patientResult.ok || !patientResult.data) return res.status(404).json({ ok: false, error: "enlace no válido" });
   const patient = patientResult.data;
   const readingsResult = await callSheetsApi({ action: "list", patient_id: patient.id });
-  res.json({ ok: true, data: { patient: { name: patient.name, birthdate: patient.birthdate, med_brand: patient.med_brand, med_mg: patient.med_mg }, readings: readingsResult.ok ? readingsResult.data : [] } });
+  const reactionsResult = await callSheetsApi({ action: "list_reactions", patient_id: patient.id });
+  res.json({
+    ok: true,
+    data: {
+      patient: { name: patient.name, birthdate: patient.birthdate, med_brand: patient.med_brand, med_mg: patient.med_mg },
+      readings: readingsResult.ok ? readingsResult.data : [],
+      reactions: reactionsResult.ok ? reactionsResult.data : [],
+    },
+  });
+}));
+
+// Reacción de familia/amigos (sin cuenta): el patient_id nunca se toma del
+// body, siempre se resuelve aquí a partir del token del enlace, para que
+// nadie pueda mandar reacciones a un paciente que no le corresponde a ese
+// enlace. reactor_id es un id anónimo generado y guardado por el propio
+// navegador de esa persona (ver wireReactionBars en common.js).
+app.post("/api/familia/:token/react", asyncRoute(async (req, res) => {
+  const patientResult = await callSheetsApi({ action: "get_patient_by_share_token", token_value: req.params.token });
+  if (!patientResult.ok || !patientResult.data) return res.status(404).json({ ok: false, error: "enlace no válido" });
+  const patient = patientResult.data;
+  const { target_type, target_id, reaction, reactor_id } = req.body;
+  if (!reactor_id) return res.status(400).json({ ok: false, error: "faltan datos" });
+  const result = await callSheetsApi(null, {
+    action: "toggle_reaction", patient_id: patient.id, target_type, target_id, reaction,
+    reactor_role: "family", reactor_id,
+  });
+  res.json(result);
 }));
 
 // ================= API con sesión (paciente y/o médico) =================
@@ -291,6 +317,22 @@ app.post("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "add_comment", patient_id: req.session.patientId, reading_id, parent_id, text,
     author_role: "patient", author_id: req.session.patientId,
+  }));
+}));
+
+app.get("/api/reactions", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_reactions", patient_id: req.session.patientId }));
+}));
+// Un click togglea: misma reacción la quita, otra la cambia, ninguna la
+// agrega. reactor_role/reactor_id se toman siempre de la sesión, nunca del
+// body, para que nadie pueda reaccionar a nombre de alguien más.
+app.post("/api/reactions/toggle", requireAnyRole, asyncRoute(async (req, res) => {
+  const { target_type, target_id, reaction } = req.body;
+  const reactorRole = req.session.role; // "patient" o "doctor"
+  const reactorId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+  res.json(await callSheetsApi(null, {
+    action: "toggle_reaction", patient_id: req.session.patientId, target_type, target_id, reaction,
+    reactor_role: reactorRole, reactor_id: reactorId,
   }));
 }));
 
