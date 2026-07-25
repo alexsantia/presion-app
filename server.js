@@ -323,6 +323,23 @@ app.post("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
 app.get("/api/reactions", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_reactions", patient_id: req.session.patientId }));
 }));
+// Nombre para el mensaje de la notificación de reacción (v27). Se resuelve
+// aquí, en el servidor, a partir de la sesión — nunca se confía en un
+// nombre mandado por el cliente.
+async function resolveReactorName_(req) {
+  try {
+    if (req.session.role === "doctor") {
+      const result = await callSheetsApi({ action: "get_doctor_by_id", id: req.session.doctorId });
+      const d = result.ok ? result.data : null;
+      if (!d) return "";
+      return `${d.title || "Dr(a)."} ${d.name || ""}`.trim();
+    }
+    const result = await callSheetsApi({ action: "get_patient_by_id", id: req.session.patientId });
+    return result.ok && result.data ? (result.data.name || "") : "";
+  } catch (err) {
+    return ""; // si falla, Code.gs cae a un nombre genérico — no debe tumbar la reacción
+  }
+}
 // Un click togglea: misma reacción la quita, otra la cambia, ninguna la
 // agrega. reactor_role/reactor_id se toman siempre de la sesión, nunca del
 // body, para que nadie pueda reaccionar a nombre de alguien más.
@@ -330,9 +347,10 @@ app.post("/api/reactions/toggle", requireAnyRole, asyncRoute(async (req, res) =>
   const { target_type, target_id, reaction } = req.body;
   const reactorRole = req.session.role; // "patient" o "doctor"
   const reactorId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+  const reactorName = await resolveReactorName_(req);
   res.json(await callSheetsApi(null, {
     action: "toggle_reaction", patient_id: req.session.patientId, target_type, target_id, reaction,
-    reactor_role: reactorRole, reactor_id: reactorId,
+    reactor_role: reactorRole, reactor_id: reactorId, reactor_name: reactorName,
   }));
 }));
 

@@ -512,7 +512,7 @@ function replyBoxHTML(parentId) {
 }
 
 // ---- Notificaciones (v18) ----
-const NOTIFICATION_ICONS = { new_comment: "💬", new_reply: "↩️", stage_alert: "⚠️" };
+const NOTIFICATION_ICONS = { new_comment: "💬", new_reply: "↩️", stage_alert: "⚠️", new_reaction: "👍" };
 function renderNotificationListHTML(notifications) {
   if (!notifications || !notifications.length) {
     return `<div class="notif-empty">No tienes notificaciones.</div>`;
@@ -685,6 +685,9 @@ function ensureReactionStyles_() {
     .reaction-add-btn { border:1px solid #ddd; background:#fff; border-radius:14px; padding:2px 10px;
       font-size:12px; cursor:pointer; color:var(--text-muted); }
     .reaction-add-btn.mine { border-color:transparent; background:#EAF3EC; color:#4F7A6F; font-weight:600; }
+    .reaction-chevron-btn { border:1px solid #ddd; background:#fff; border-radius:50%; width:22px; height:22px;
+      font-size:11px; line-height:1; cursor:pointer; color:var(--text-muted); padding:0; }
+    .reaction-chevron-btn:hover, .reaction-chevron-btn:focus-visible { background:#F0F0F0; outline:none; }
     .reaction-picker { display:none; position:absolute; bottom:calc(100% + 6px); left:0; background:#fff; border-radius:20px;
       box-shadow:0 4px 14px rgba(0,0,0,0.18); padding:4px 6px; gap:2px; z-index:30; }
     .reaction-picker.open { display:flex; }
@@ -697,6 +700,12 @@ function ensureReactionStyles_() {
 // Arma el HTML de la barra de reacciones para un target (comentario o
 // lectura). list: reacciones ya filtradas para ese target (reactionsForTarget).
 // opts: { viewerRole, viewerId }.
+//
+// v27: si ya tienes una reacción puesta, el botón principal la muestra
+// (ej. "👍 Me gusta") y un solo clic sobre ese mismo botón la quita directo
+// (como el "Me gusta" de Facebook) — ya no hace falta reabrir el selector
+// para quitarla. Un botón chevron aparte (▾) abre/cierra el selector en
+// cualquier momento, para elegir tu primera reacción o cambiar a otra.
 function renderReactionBarHTML(targetType, targetId, list, opts) {
   ensureReactionStyles_();
   opts = opts || {};
@@ -709,8 +718,9 @@ function renderReactionBarHTML(targetType, targetId, list, opts) {
   const pickerButtons = REACTIONS.map(r =>
     `<button type="button" class="reaction-pick" data-reaction="${r.key}" title="${r.label}" aria-label="${r.label}">${r.emoji}</button>`).join("");
   return `
-    <div class="reaction-bar" data-target-type="${targetType}" data-target-id="${targetId}">
-      <button type="button" class="reaction-add-btn ${mine ? "mine" : ""}" data-reaction-toggle-btn>${btnLabel}</button>
+    <div class="reaction-bar" data-target-type="${targetType}" data-target-id="${targetId}" data-mine="${mine || ""}">
+      <button type="button" class="reaction-add-btn ${mine ? "mine" : ""}" data-reaction-main-btn>${btnLabel}</button>
+      <button type="button" class="reaction-chevron-btn" data-reaction-chevron-btn aria-label="Elegir reacción">▾</button>
       <div class="reaction-picker">${pickerButtons}</div>
       ${summaryHtml}
     </div>`;
@@ -726,13 +736,30 @@ function wireReactionBars(root, opts) {
   if (root._reactionBarsWired) return;
   root._reactionBarsWired = true;
   root.addEventListener("click", e => {
-    const toggleBtn = e.target.closest("[data-reaction-toggle-btn]");
+    const mainBtn = e.target.closest("[data-reaction-main-btn]");
+    const chevronBtn = e.target.closest("[data-reaction-chevron-btn]");
     const pickBtn = e.target.closest(".reaction-pick");
     const bar = e.target.closest(".reaction-bar");
     root.querySelectorAll(".reaction-picker.open").forEach(p => {
       if (!bar || p !== bar.querySelector(".reaction-picker")) p.classList.remove("open");
     });
-    if (toggleBtn && bar) {
+    if (mainBtn && bar) {
+      e.stopPropagation();
+      const mine = bar.getAttribute("data-mine");
+      if (mine) {
+        // Ya reaccionaste con esto: un clic más la quita directo, sin picker.
+        playReactionSound();
+        const targetType = bar.getAttribute("data-target-type");
+        const targetId = bar.getAttribute("data-target-id");
+        if (typeof opts.onReact === "function") opts.onReact(targetType, targetId, mine);
+        return;
+      }
+      // Todavía no reaccionas: el botón principal abre el selector para elegir.
+      const picker = bar.querySelector(".reaction-picker");
+      if (picker) picker.classList.toggle("open");
+      return;
+    }
+    if (chevronBtn && bar) {
       e.stopPropagation();
       const picker = bar.querySelector(".reaction-picker");
       if (picker) picker.classList.toggle("open");
@@ -742,6 +769,7 @@ function wireReactionBars(root, opts) {
       e.stopPropagation();
       const picker = bar.querySelector(".reaction-picker");
       if (picker) picker.classList.remove("open");
+      playReactionSound();
       const targetType = bar.getAttribute("data-target-type");
       const targetId = bar.getAttribute("data-target-id");
       const reaction = pickBtn.getAttribute("data-reaction");
@@ -749,6 +777,61 @@ function wireReactionBars(root, opts) {
     }
   });
   ensureReactionOutsideClickCloser_();
+}
+
+// Sonido corto ("pop") al reaccionar, generado con Web Audio API — sin
+// archivos de audio externos, para no depender de ningún servicio ni
+// aumentar el peso de la app. Silencioso si el navegador no lo soporta o
+// bloquea el audio (por ejemplo, antes de cualquier interacción del
+// usuario en la página, algo que aquí ya no aplica porque esto solo se
+// llama en respuesta a un click).
+function playReactionSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!playReactionSound._ctx) playReactionSound._ctx = new Ctx();
+    const ctx = playReactionSound._ctx;
+    if (ctx.state === "suspended") ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.16);
+  } catch (err) { /* silencioso: el sonido es un extra, nunca debe romper la reacción */ }
+}
+
+// Sonido de notificación (paciente/médico al recibir una alerta nueva en la
+// campanita, familia al ver reacciones nuevas desde su última visita) — un
+// timbre de dos notas, distinto del "pop" de reaccionar para que se
+// distingan al oído.
+function playNotificationSound() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!playNotificationSound._ctx) playNotificationSound._ctx = new Ctx();
+    const ctx = playNotificationSound._ctx;
+    if (ctx.state === "suspended") ctx.resume();
+    [523.25, 783.99].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const start = ctx.currentTime + i * 0.11;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.16, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.24);
+    });
+  } catch (err) { /* silencioso */ }
 }
 // Cierra cualquier picker de reacciones abierto al hacer click fuera de toda
 // barra de reacciones (por ejemplo, en otra sección de la página). Un solo

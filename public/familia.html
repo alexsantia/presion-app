@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=26"></script>
+<script src="/shared/common.js?v=27"></script>
 <style>
   :root {
     color-scheme: light;
@@ -92,6 +92,11 @@
   .med-ad-badge .med-ad-tooltip { display: none; }
   .med-ad-badge .med-ad-tooltip.show { display: block; }
 
+  /* v27: aviso de reacciones nuevas desde la última visita (sin cuenta, no
+     hay campanita de notificaciones real, así que esto hace ese papel) */
+  .family-reaction-alert { display: flex; align-items: center; gap: 8px; background: var(--accent-soft); color: var(--accent-hover);
+    font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; }
+
   /* v25: mostrar/ocultar columnas del Historial de lecturas */
   .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
@@ -107,6 +112,7 @@
 <div class="subtitle" id="subtitleText">Vista de solo lectura, compartida por el paciente</div>
 
 <div id="statusBanner"></div>
+<div id="familyReactionAlert" class="family-reaction-alert" style="display:none;"></div>
 <div class="section section-streak" id="streakSection"></div>
 <div class="grid" id="summaryCards"></div>
 
@@ -202,7 +208,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v26</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -249,6 +255,7 @@ async function load() {
     currentData = readings.slice().sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
     currentReactions = json.data.reactions || [];
     reactionsGrouped = groupReactionsByTarget(currentReactions);
+    checkNewReactionsSinceLastVisit_();
     render();
   } catch (err) {
     setStatus("error", "No se pudo cargar esta página: " + err.message);
@@ -302,6 +309,33 @@ document.addEventListener("click", e => {
   const wrap = document.querySelector(".col-toggle-wrap");
   if (wrap && !wrap.contains(e.target)) document.getElementById("colToggleMenu").style.display = "none";
 });
+
+// Aviso de reacciones nuevas desde la última visita (v27). Como familia y
+// amigos no tienen cuenta ni sesión, no existe una campanita de
+// notificaciones real para ellos — esto cumple ese papel de forma sencilla:
+// se guarda en este navegador la fecha de la reacción más reciente vista, y
+// si al volver a abrir el enlace hay reacciones de otras personas más
+// nuevas que esa marca, se muestra un aviso y suena el mismo timbre de
+// notificación que usan paciente y médico.
+function checkNewReactionsSinceLastVisit_() {
+  const key = "bp_family_last_seen_" + token;
+  const lastSeen = localStorage.getItem(key) || "";
+  const myId = getFamilyReactorId();
+  const others = currentReactions.filter(r => String(r.reactor_id) !== String(myId));
+  const newOnes = others.filter(r => String(r.created_at) > lastSeen);
+  const banner = document.getElementById("familyReactionAlert");
+  if (newOnes.length) {
+    banner.textContent = newOnes.length === 1
+      ? "🔔 Hay 1 reacción nueva desde tu última visita."
+      : `🔔 Hay ${newOnes.length} reacciones nuevas desde tu última visita.`;
+    banner.style.display = "flex";
+    playNotificationSound();
+  } else {
+    banner.style.display = "none";
+  }
+  const latest = currentReactions.reduce((max, r) => (String(r.created_at) > max ? String(r.created_at) : max), lastSeen);
+  try { localStorage.setItem(key, latest); } catch (err) { /* silencioso */ }
+}
 
 // Reacciones (v26): la familia/amigos no tiene cuenta, así que se identifica
 // con un id anónimo por dispositivo (getFamilyReactorId, ver common.js) y

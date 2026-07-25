@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=26"></script>
+<script src="/shared/common.js?v=27"></script>
 <style>
   :root {
     color-scheme: light;
@@ -311,7 +311,7 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v26</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
 
 <script>
 let chartInstance = null;
@@ -464,8 +464,19 @@ document.getElementById("doctorTitleForm").addEventListener("submit", async e =>
   } catch (err) { setStatus("error", err.message); }
 });
 
+// v27: si aparece una notificación nueva (sin leer) que no estaba en la
+// última consulta, suena un aviso. La primera carga de la página nunca
+// suena, solo las que llegan después mientras la tienes abierta.
+let notifiedIds_ = null;
 async function loadNotifications() {
   try { notifications = await apiGet("/api/notifications"); } catch (err) { notifications = []; }
+  const currentUnreadIds = new Set(notifications.filter(n => !n.read_at).map(n => n.id));
+  if (notifiedIds_ !== null) {
+    let hasNew = false;
+    currentUnreadIds.forEach(id => { if (!notifiedIds_.has(id)) hasNew = true; });
+    if (hasNew) playNotificationSound();
+  }
+  notifiedIds_ = currentUnreadIds;
   renderNotifBadge();
 }
 function renderNotifBadge() {

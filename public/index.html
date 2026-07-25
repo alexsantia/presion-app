@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=26"></script>
+<script src="/shared/common.js?v=27"></script>
 <style>
   :root {
     color-scheme: light;
@@ -262,6 +262,7 @@
     <div><label>Sistólica</label><input type="number" id="f_sys" required min="50" max="260"></div>
     <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
     <div><label title="Frecuencia cardíaca (pulsaciones por minuto)">FC</label><input type="number" id="f_hr" min="30" max="220"></div>
+    <div><label>Peso (kg)</label><input type="number" id="f_weight" min="20" max="300" step="0.1"></div>
     <div class="full checkbox-field">
       <label class="checkbox-label"><input type="checkbox" id="f_medicated"> Controlado por <span id="medNameLabel">medicamento</span> (tomé mi antihipertensivo)</label><button type="button" class="med-ad-badge" id="medAdBadge">💊<span class="med-ad-tooltip" id="medAdTooltip"></span></button>
     </div>
@@ -416,7 +417,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v26</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -603,9 +604,19 @@ function renderGreeting() {
   }
 }
 
-// ---- Peso (v25): ya no se captura por lectura en este formulario — vive en
-// Parámetros (currentAccount.weight) y cada lectura nueva usa ese valor
-// vigente automáticamente. Ver addForm submit más abajo.
+// ---- Peso: el campo "Peso (kg)" de "Agregar lectura" siempre repite el
+// último peso registrado (currentAccount.weight) al abrir el formulario para
+// una lectura nueva. Si el paciente lo cambia al agregar una lectura, ese
+// nuevo valor también se guarda como el peso vigente en Parámetros (ver
+// addForm submit más abajo). Al editar una lectura ya existente, el campo
+// muestra el peso histórico de esa lectura y un cambio ahí solo corrige esa
+// lectura, sin tocar Parámetros. ----
+function applyDefaultWeight() {
+  const el = document.getElementById("f_weight");
+  if (el && !editingId) {
+    el.value = currentAccount && currentAccount.weight != null ? currentAccount.weight : "";
+  }
+}
 
 // ---- Medicado: el checkbox de "nueva lectura" precarga siempre el último
 // estado registrado (Sí o No), en vez de reiniciarse a desmarcado cada vez,
@@ -658,6 +669,7 @@ async function loadAccount() {
     document.getElementById("familyLink").textContent = window.location.origin + "/familia/" + currentAccount.share_token;
     renderGreeting();
     fillParamsForm();
+    applyDefaultWeight();
     const medName = medicationName(currentAccount);
     document.getElementById("medNameLabel").textContent = medName;
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
@@ -1074,8 +1086,20 @@ document.getElementById("commentsContent").addEventListener("click", async e => 
 });
 
 // ---- Notificaciones ----
+// v27: además de mostrar la campanita, si aparece una notificación nueva
+// (sin leer) que no estaba en la última consulta, suena un aviso. La
+// primera carga de la página nunca suena (sería raro sonar solo por abrir
+// la app), solo las que llegan después mientras la tienes abierta.
+let notifiedIds_ = null;
 async function loadNotifications() {
   try { notifications = await apiGet("/api/notifications"); } catch (err) { notifications = []; }
+  const currentUnreadIds = new Set(notifications.filter(n => !n.read_at).map(n => n.id));
+  if (notifiedIds_ !== null) {
+    let hasNew = false;
+    currentUnreadIds.forEach(id => { if (!notifiedIds_.has(id)) hasNew = true; });
+    if (hasNew) playNotificationSound();
+  }
+  notifiedIds_ = currentUnreadIds;
   renderNotifBadge();
 }
 function renderNotifBadge() {
@@ -1354,20 +1378,19 @@ function render() {
   renderChart();
 }
 
-// El peso ya no se captura en este formulario (vive en Parámetros), pero al
-// editar una lectura existente hay que conservar el peso que esa lectura ya
-// tenía guardado, en vez de sobrescribirlo con el valor actual de Parámetros.
-let editingWeight = null;
+// Al editar una lectura existente, el campo Peso muestra el peso histórico
+// que esa lectura ya tenía guardado (no el vigente en Parámetros), para no
+// sobrescribir un dato pasado con el peso de hoy.
 function startEdit(id) {
   const r = currentData.find(e => e.id === id);
   if (!r) return;
   editingId = id;
-  editingWeight = r.weight ?? null;
   document.getElementById("f_date").value = r.date;
   document.getElementById("f_time").value = r.time;
   document.getElementById("f_sys").value = r.sys;
   document.getElementById("f_dia").value = r.dia;
   document.getElementById("f_hr").value = r.hr ?? "";
+  document.getElementById("f_weight").value = r.weight ?? "";
   document.getElementById("f_obs").value = r.obs || "";
   document.getElementById("f_medicated").checked = !!r.medicated;
   document.getElementById("submitBtn").textContent = "Guardar cambios";
@@ -1377,12 +1400,12 @@ function startEdit(id) {
 }
 function cancelEdit() {
   editingId = null;
-  editingWeight = null;
   document.getElementById("addForm").reset();
   document.getElementById("submitBtn").textContent = "Agregar";
   document.getElementById("cancelEditBtn").style.display = "none";
   document.getElementById("editingBanner").style.display = "none";
   applyDefaultMedicated();
+  applyDefaultWeight();
 }
 document.getElementById("cancelEditBtn").addEventListener("click", cancelEdit);
 
@@ -1405,16 +1428,16 @@ document.getElementById("readingsBody").addEventListener("click", async e => {
 
 document.getElementById("addForm").addEventListener("submit", async e => {
   e.preventDefault();
+  const weightRaw = document.getElementById("f_weight").value;
+  const enteredWeight = weightRaw !== "" ? Number(weightRaw) : null;
+  const wasEditing = !!editingId;
   const values = {
     date: document.getElementById("f_date").value,
     time: document.getElementById("f_time").value,
     sys: Number(document.getElementById("f_sys").value),
     dia: Number(document.getElementById("f_dia").value),
     hr: document.getElementById("f_hr").value ? Number(document.getElementById("f_hr").value) : null,
-    // El peso viene de Parámetros (currentAccount.weight), no de este
-    // formulario. Al editar una lectura vieja se conserva el peso que ya
-    // tenía (editingWeight); al agregar una nueva se usa el vigente.
-    weight: editingId ? editingWeight : (currentAccount && currentAccount.weight != null ? currentAccount.weight : null),
+    weight: enteredWeight,
     obs: document.getElementById("f_obs").value,
     medicated: document.getElementById("f_medicated").checked,
     flag: "",
@@ -1428,6 +1451,16 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     else {
       await apiPost("/api/readings", values);
       e.target.reset();
+      // Al agregar una lectura nueva, si el peso capturado aquí es distinto
+      // al que tenía Parámetros, ese nuevo peso pasa a ser el vigente.
+      if (!wasEditing && enteredWeight != null && (!currentAccount || currentAccount.weight !== enteredWeight)) {
+        try {
+          await apiPost("/api/account/params", { weight: enteredWeight });
+          if (currentAccount) currentAccount.weight = enteredWeight;
+          fillParamsForm();
+        } catch (err) { /* silencioso: la lectura ya se guardó bien */ }
+      }
+      applyDefaultWeight();
     }
     await loadAndRender();
   } catch (err) {
