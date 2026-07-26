@@ -100,6 +100,32 @@ function asyncRoute(fn) {
   return (req, res) => fn(req, res).catch(err => res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message }));
 }
 
+// ---- Migración manual Sheets -> Postgres (solo backend Postgres/MVP2) ----
+// Ruta protegida por un secreto para copiar los datos de Sheets a esta
+// misma base de datos sin necesitar terminal local ni consola de Render:
+// basta con visitar la URL una vez desde el navegador. Solo lee de Sheets,
+// nunca escribe ahí; es seguro visitarla más de una vez (reemplaza los
+// datos del paciente indicado con la copia más reciente de Sheets).
+if (DB_BACKEND === "postgres") {
+  app.get("/internal/migrate", asyncRoute(async (req, res) => {
+    const { MIGRATION_SECRET, SHEETS_WEBAPP_URL: SRC_URL, SHEETS_TOKEN: SRC_TOKEN } = process.env;
+    if (!MIGRATION_SECRET || req.query.secret !== MIGRATION_SECRET) {
+      return res.status(403).send("secreto inválido o faltante (usa ?secret=...)");
+    }
+    if (!SRC_URL || !SRC_TOKEN) {
+      return res.status(500).send("faltan SHEETS_WEBAPP_URL/SHEETS_TOKEN como variables de entorno en este servicio");
+    }
+    const emails = String(req.query.emails || "alejandro@empresso.mx").split(",").map(s => s.trim()).filter(Boolean);
+    const { runMigration } = require("./scripts/migrate-sheets-to-postgres");
+    const { pool: pgPool } = require("./db-postgres");
+    const lines = [];
+    const log = (...args) => lines.push(args.join(" "));
+    const results = await runMigration({ sheetsWebappUrl: SRC_URL, sheetsToken: SRC_TOKEN, pool: pgPool, emails, log });
+    res.set("Content-Type", "text/plain; charset=utf-8");
+    res.send(lines.join("\n") + "\n\n" + JSON.stringify(results, null, 2));
+  }));
+}
+
 // ---- Middlewares de autenticación ----
 // Para el rol de médico, además de revisar la sesión, se vuelve a confirmar
 // en cada request que la cuenta de médico siga existiendo en Medicos: así,

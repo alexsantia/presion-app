@@ -12,44 +12,14 @@
 // otra vez justo antes del cutover final para capturar lo que se haya
 // registrado mientras tanto en MVP1.
 //
-// Uso:
-//   SHEETS_WEBAPP_URL=... SHEETS_TOKEN=... DATABASE_URL=... \
-//     node scripts/migrate-sheets-to-postgres.js [correo1,correo2,...]
-// Si no se pasa ninguna lista de correos, migra PATIENT_EMAILS del entorno,
-// o por default solo alejandro@empresso.mx.
+// Este archivo sirve de dos formas:
+//   1) Como script de línea de comandos:
+//        SHEETS_WEBAPP_URL=... SHEETS_TOKEN=... DATABASE_URL=... \
+//          node scripts/migrate-sheets-to-postgres.js [correo1,correo2,...]
+//   2) Como módulo reutilizable (runMigration), para poder dispararla desde
+//      una ruta protegida del propio servidor cuando no hay forma cómoda de
+//      correr un script de terminal (ver /internal/migrate en server.js).
 
-const { Pool } = require("pg");
-
-const { SHEETS_WEBAPP_URL, SHEETS_TOKEN, DATABASE_URL, PATIENT_EMAILS } = process.env;
-
-if (!SHEETS_WEBAPP_URL || !SHEETS_TOKEN || !DATABASE_URL) {
-  console.error("Faltan SHEETS_WEBAPP_URL, SHEETS_TOKEN o DATABASE_URL en el entorno.");
-  process.exit(1);
-}
-
-const emailsArg = process.argv[2] || PATIENT_EMAILS || "alejandro@empresso.mx";
-const emails = emailsArg.split(",").map(s => s.trim()).filter(Boolean);
-
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
-});
-
-async function sheetsGet(params) {
-  const qs = new URLSearchParams({ ...params, token: SHEETS_TOKEN }).toString();
-  const resp = await fetch(SHEETS_WEBAPP_URL + (SHEETS_WEBAPP_URL.includes("?") ? "&" : "?") + qs);
-  const json = await resp.json();
-  if (!json.ok) throw new Error(`acción ${params.action} falló: ${json.error}`);
-  return json.data;
-}
-
-// Sheets a veces guarda fechas como objeto Date y Apps Script las serializa
-// como marca de tiempo completa ("2026-07-18T06:00:00.000Z") en vez de solo
-// "2026-07-18". Las acciones que ya normalizan (list, list de lecturas) no
-// tienen este problema, pero get_patient_by_email SÍ regresa la fila cruda
-// (necesaria aquí porque es la única que trae password_hash). Por eso
-// cualquier campo de fecha se recorta defensivamente a los primeros 10
-// caracteres antes de guardarlo en una columna DATE de Postgres.
 function toDateOnly(v) {
   if (v === null || v === undefined || v === "") return null;
   const s = String(v);
@@ -59,12 +29,22 @@ function toNumOrNull(v) {
   return v === null || v === undefined || v === "" ? null : Number(v);
 }
 
-async function migratePatient(email) {
-  console.log(`\n=== Migrando paciente: ${email} ===`);
+function makeSheetsGet(sheetsWebappUrl, sheetsToken) {
+  return async function sheetsGet(params) {
+    const qs = new URLSearchParams({ ...params, token: sheetsToken }).toString();
+    const resp = await fetch(sheetsWebappUrl + (sheetsWebappUrl.includes("?") ? "&" : "?") + qs);
+    const json = await resp.json();
+    if (!json.ok) throw new Error(`acción ${params.action} falló: ${json.error}`);
+    return json.data;
+  };
+}
+
+async function migratePatient(email, { sheetsGet, pool, log }) {
+  log(`\n=== Migrando paciente: ${email} ===`);
   const patient = await sheetsGet({ action: "get_patient_by_email", email });
   if (!patient) {
-    console.log(`  (no existe un paciente con ese correo en Sheets, se omite)`);
-    return;
+    log(`  (no existe un paciente con ese correo en Sheets, se omite)`);
+    return { email, migrated: false };
   }
   const patientId = patient.id;
 
@@ -83,7 +63,7 @@ async function migratePatient(email) {
   const doctorNotificationsByDoctor = {};
   for (const dPublic of doctorsPublic) {
     const dRaw = await sheetsGet({ action: "get_doctor_by_email", email: dPublic.email });
-    if (!dRaw) { console.log(`  aviso: no se pudo releer al médico ${dPublic.email}, se omite`); continue; }
+    if (!dRaw) { log(`  aviso: no se pudo releer al médico ${dPublic.email}, se omite`); continue; }
     doctors.push(dRaw);
     doctorNotificationsByDoctor[dRaw.id] = await sheetsGet({ action: "list_notifications", recipient_type: "doctor", recipient_id: dRaw.id });
   }
@@ -119,7 +99,7 @@ async function migratePatient(email) {
         toNumOrNull(patient.weight), toNumOrNull(patient.waist),
       ]
     );
-    console.log(`  paciente ✔`);
+    log(`  paciente ✔`);
 
     for (const d of doctors) {
       await client.query(
@@ -127,7 +107,7 @@ async function migratePatient(email) {
         [d.id, d.patient_id, d.name, String(d.email || "").toLowerCase(), d.password_hash, d.created_at || new Date().toISOString(), d.title || "Dr(a)."]
       );
     }
-    console.log(`  médicos: ${doctors.length} ✔`);
+    log(`  médicos: ${doctors.length} ✔`);
 
     for (const inv of invites) {
       await client.query(
@@ -135,7 +115,7 @@ async function migratePatient(email) {
         [inv.id, patientId, inv.token, inv.created_at || new Date().toISOString()]
       );
     }
-    console.log(`  invitaciones pendientes: ${invites.length} ✔`);
+    log(`  invitaciones pendientes: ${invites.length} ✔`);
 
     for (const r of readings) {
       await client.query(
@@ -145,7 +125,7 @@ async function migratePatient(email) {
           toNumOrNull(r.weight), r.obs || "", r.flag || "", r.created_at, r.updated_at, !!r.medicated]
       );
     }
-    console.log(`  lecturas: ${readings.length} ✔`);
+    log(`  lecturas: ${readings.length} ✔`);
 
     for (const c of comments) {
       await client.query(
@@ -154,7 +134,7 @@ async function migratePatient(email) {
         [c.id, patientId, c.reading_id || null, c.author || "", c.author_role || "doctor", c.author_id || "", c.parent_id || null, c.text || "", c.created_at]
       );
     }
-    console.log(`  comentarios: ${comments.length} ✔`);
+    log(`  comentarios: ${comments.length} ✔`);
 
     for (const r of reactions) {
       await client.query(
@@ -163,7 +143,7 @@ async function migratePatient(email) {
         [r.id, patientId, r.target_type, r.target_id, r.reactor_role, r.reactor_id, r.reaction, r.created_at]
       );
     }
-    console.log(`  reacciones: ${reactions.length} ✔`);
+    log(`  reacciones: ${reactions.length} ✔`);
 
     let notifCount = 0;
     for (const n of patientNotifications) {
@@ -184,32 +164,62 @@ async function migratePatient(email) {
         notifCount++;
       }
     }
-    console.log(`  notificaciones: ${notifCount} ✔`);
+    log(`  notificaciones: ${notifCount} ✔`);
 
     // Nota: PasswordResets no se migra a propósito. Son enlaces de un solo
-    // uso con 30 minutos de vigencia; para cuando se corre este script ya
-    // casi seguro están vencidos, y si alguien los necesita, simplemente
-    // vuelve a pedir "olvidé mi contraseña" ya en el ambiente nuevo.
+    // uso con 30 minutos de vigencia; para cuando se corre esto ya casi
+    // seguro están vencidos, y si alguien los necesita, simplemente vuelve a
+    // pedir "olvidé mi contraseña" ya en el ambiente nuevo.
 
     await client.query("COMMIT");
-    console.log(`  === listo, todo dentro de una sola transacción ===`);
+    log(`  === listo, todo dentro de una sola transacción ===`);
+    return {
+      email, migrated: true, patient_id: patientId,
+      counts: { doctors: doctors.length, invites: invites.length, readings: readings.length, comments: comments.length, reactions: reactions.length, notifications: notifCount },
+    };
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(`  ERROR migrando a ${email}, se revirtió todo para este paciente:`, err.message);
+    log(`  ERROR migrando a ${email}, se revirtió todo para este paciente: ${err.message}`);
     throw err;
   } finally {
     client.release();
   }
 }
 
-(async () => {
-  console.log(`Migrando ${emails.length} paciente(s): ${emails.join(", ")}`);
+// Punto de entrada reutilizable. `pool` se recibe ya creado (para poder
+// compartir el mismo pool de conexiones que ya usa el servidor en vez de
+// abrir uno nuevo cuando se invoca desde una ruta HTTP).
+async function runMigration({ sheetsWebappUrl, sheetsToken, pool, emails, log = console.log }) {
+  const sheetsGet = makeSheetsGet(sheetsWebappUrl, sheetsToken);
+  const results = [];
+  log(`Migrando ${emails.length} paciente(s): ${emails.join(", ")}`);
   for (const email of emails) {
-    await migratePatient(email);
+    results.push(await migratePatient(email, { sheetsGet, pool, log }));
   }
-  await pool.end();
-  console.log("\nMigración completa.");
-})().catch(err => {
-  console.error("Migración abortada:", err);
-  process.exit(1);
-});
+  log("\nMigración completa.");
+  return results;
+}
+
+module.exports = { runMigration };
+
+// ---- Modo línea de comandos (solo si se ejecuta directamente) ----
+if (require.main === module) {
+  const { Pool } = require("pg");
+  const { SHEETS_WEBAPP_URL, SHEETS_TOKEN, DATABASE_URL, PATIENT_EMAILS } = process.env;
+  if (!SHEETS_WEBAPP_URL || !SHEETS_TOKEN || !DATABASE_URL) {
+    console.error("Faltan SHEETS_WEBAPP_URL, SHEETS_TOKEN o DATABASE_URL en el entorno.");
+    process.exit(1);
+  }
+  const emailsArg = process.argv[2] || PATIENT_EMAILS || "alejandro@empresso.mx";
+  const emails = emailsArg.split(",").map(s => s.trim()).filter(Boolean);
+  const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
+  });
+  runMigration({ sheetsWebappUrl: SHEETS_WEBAPP_URL, sheetsToken: SHEETS_TOKEN, pool, emails })
+    .then(async () => { await pool.end(); })
+    .catch(err => {
+      console.error("Migración abortada:", err);
+      process.exit(1);
+    });
+}
