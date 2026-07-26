@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=27"></script>
+<script src="/shared/common.js?v=28"></script>
 <style>
   :root {
     color-scheme: light;
@@ -394,16 +394,11 @@
   <h2>Compartir Mediciones</h2>
   <div class="two-col">
     <div>
-      <h3>Invitar a tu médico</h3>
-      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Puedes vincular hasta 5 médicos.</p>
-      <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
-      <button class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
-      <div class="share-box" id="inviteBox" style="display:none; margin-top:12px;">
-        <code id="inviteLink"></code>
-        <button class="btn-secondary" id="copyInviteLink" style="margin-left:8px;">Copiar</button>
-      </div>
-      <div id="pendingInvitesWrap"></div>
+      <h3>Médicos vinculados</h3>
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Tu médico ve tus datos en modo de solo lectura. Puedes vincular hasta 5 médicos.</p>
+      <div id="doctorsMainCount" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
       <div id="doctorsListWrap"></div>
+      <button type="button" class="btn-secondary" id="openInviteDoctorBtn" data-open-modal="paramsModal" style="margin-top:8px;">Invitar a tu médico</button>
     </div>
     <div>
       <h3>Compartir con familia y amigos</h3>
@@ -417,7 +412,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -493,6 +488,16 @@
 
       <div class="full"><button type="submit" class="btn-primary">Guardar parámetros</button></div>
     </form>
+
+    <div class="modal-section-title">Invitar a tu médico</div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura.</p>
+    <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
+    <button type="button" class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
+    <div class="share-box" id="inviteBox" style="display:none; margin-top:12px;">
+      <code id="inviteLink"></code>
+      <button type="button" class="btn-secondary" id="copyInviteLink" style="margin-left:8px;">Copiar</button>
+    </div>
+    <div id="pendingInvitesWrap"></div>
   </div>
 </div>
 
@@ -526,6 +531,15 @@
       <button type="button" class="btn-secondary" id="settingsBackupBtn">⬇️ Respaldar historial (CSV)</button>
       <button type="button" class="btn-secondary" id="settingsRegenFamilyBtn">🔄 Regenerar enlace de familia</button>
     </div>
+
+    <div class="modal-section-title">Respaldo y restauración</div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">A diferencia del CSV de arriba (solo para ver tus lecturas en Excel), este respaldo guarda absolutamente todo — lecturas, comentarios y reacciones — para poder restaurarlo tal cual, tú mismo, si algo sale mal.</p>
+    <div class="settings-actions">
+      <button type="button" class="btn-secondary" id="fullBackupBtn">💾 Descargar respaldo completo</button>
+      <input type="file" id="fullRestoreFile" accept="application/json,.json" style="display:none;">
+      <button type="button" class="btn-secondary" id="fullRestoreBtn">♻️ Restaurar desde un respaldo</button>
+    </div>
+    <div class="modal-hint">Restaurar reemplaza tus lecturas, comentarios y reacciones actuales por lo que tenía el archivo al momento de respaldarlo. Tus médicos vinculados, tu correo y tu contraseña nunca se tocan.</div>
   </div>
 </div>
 
@@ -849,6 +863,68 @@ document.getElementById("settingsRegenFamilyBtn").addEventListener("click", () =
   document.getElementById("regenerateFamilyLink").click();
 });
 
+// ---- Respaldo completo y restauración (v28) ----
+// A diferencia del CSV de arriba (solo lecturas, para ver en Excel), este
+// respaldo guarda lecturas + comentarios + reacciones + parámetros en un
+// .json que el propio servidor sabe reconstruir tal cual con /api/account/restore.
+document.getElementById("fullBackupBtn").addEventListener("click", async () => {
+  try {
+    setStatus("loading", "Generando respaldo…");
+    const resp = await fetch("/api/account/backup");
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || "no se pudo generar el respaldo");
+    }
+    const blob = await resp.blob();
+    const cd = resp.headers.get("Content-Disposition") || "";
+    const match = cd.match(/filename="([^"]+)"/);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = match ? match[1] : `respaldo-presion-${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    setStatus("success", "Respaldo descargado.");
+    setTimeout(() => setStatus(null), 1500);
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+document.getElementById("fullRestoreBtn").addEventListener("click", () => {
+  document.getElementById("fullRestoreFile").click();
+});
+document.getElementById("fullRestoreFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ""; // permite volver a elegir el mismo archivo más adelante si hace falta
+  if (!file) return;
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch (err) {
+    setStatus("error", "Ese archivo no es un respaldo válido (JSON corrupto).");
+    return;
+  }
+  if (!confirm("Esto va a reemplazar todas tus lecturas, comentarios y reacciones actuales por lo que tenía este respaldo" +
+    (backup.exported_at ? ` (generado el ${new Date(backup.exported_at).toLocaleString()})` : "") +
+    ". Esta acción no se puede deshacer. ¿Continuar?")) {
+    return;
+  }
+  try {
+    setStatus("loading", "Restaurando…");
+    const result = await apiPost("/api/account/restore", backup);
+    setStatus("success", `Restaurado: ${result.counts.readings} lecturas, ${result.counts.comments} comentarios, ${result.counts.reactions} reacciones.`);
+    setTimeout(() => setStatus(null), 2500);
+    closeModal("settingsModal");
+    await Promise.all([loadAndRender(), loadComments(), loadReactions(), loadAccount()]);
+    renderComments();
+    if (typeof renderTablePage === "function") renderTablePage();
+  } catch (err) {
+    setStatus("error", err.message);
+  }
+});
+
 // ---- Médicos vinculados e invitaciones pendientes (hasta 5 en total) ----
 const MAX_DOCTORS = 5;
 async function loadDoctorsAndInvites() {
@@ -866,6 +942,9 @@ function renderDoctorsAndInvites(doctors, invites) {
   const used = doctors.length + invites.length;
   const capInfo = document.getElementById("doctorCapInfo");
   capInfo.textContent = `${doctors.length} de ${MAX_DOCTORS} médicos vinculados` +
+    (invites.length ? ` · ${invites.length} invitación${invites.length === 1 ? "" : "es"} pendiente${invites.length === 1 ? "" : "s"}` : "");
+  const mainCount = document.getElementById("doctorsMainCount");
+  mainCount.textContent = `${doctors.length} de ${MAX_DOCTORS} médicos vinculados` +
     (invites.length ? ` · ${invites.length} invitación${invites.length === 1 ? "" : "es"} pendiente${invites.length === 1 ? "" : "s"}` : "");
   const generateBtn = document.getElementById("generateInviteBtn");
   generateBtn.disabled = used >= MAX_DOCTORS;
@@ -1562,6 +1641,22 @@ loadReactions().then(() => {
   if (typeof renderTablePage === "function") renderTablePage();
 });
 loadDoctorsAndInvites();
+
+// ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
+// solas en pantalla, sin depender de un refresh manual (útil si tienes esta
+// misma cuenta abierta en más de un dispositivo, o mientras tu médico
+// comenta o reacciona desde la suya). ----
+connectRealtime("/api/stream", kind => {
+  if (kind === "reading") loadAndRender();
+  if (kind === "comment") loadComments();
+  if (kind === "reaction") {
+    loadReactions().then(() => {
+      renderComments();
+      if (typeof renderTablePage === "function") renderTablePage();
+    });
+  }
+  loadNotifications();
+});
 </script>
 </body>
 </html>

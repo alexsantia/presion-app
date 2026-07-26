@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=27"></script>
+<script src="/shared/common.js?v=28"></script>
 <style>
   :root {
     color-scheme: light;
@@ -311,7 +311,7 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
 
 <script>
 let chartInstance = null;
@@ -791,6 +791,20 @@ loadNotifications();
 loadReactions().then(() => {
   renderComments();
   if (typeof renderTablePage === "function") renderTablePage();
+});
+
+// ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas de tu
+// paciente aparecen solas en pantalla, sin depender de un refresh manual. ----
+connectRealtime("/api/stream", kind => {
+  if (kind === "reading") loadAndRender();
+  if (kind === "comment") loadComments();
+  if (kind === "reaction") {
+    loadReactions().then(() => {
+      renderComments();
+      if (typeof renderTablePage === "function") renderTablePage();
+    });
+  }
+  loadNotifications();
 });
 </script>
 </body>

@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=27"></script>
+<script src="/shared/common.js?v=28"></script>
 <style>
   :root {
     color-scheme: light;
@@ -208,7 +208,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v27</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -521,6 +521,10 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
 wireReactionBars(document.getElementById("readingsBody"), { onReact: toggleReaction });
 load();
+
+// ---- Tiempo real (v28): lecturas y reacciones nuevas aparecen solas en
+// pantalla, sin depender de un refresh manual. ----
+connectRealtime("/familia/" + encodeURIComponent(token) + "/stream", () => load());
 </script>
 </body>
 </html>

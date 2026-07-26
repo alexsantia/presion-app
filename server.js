@@ -39,7 +39,11 @@ if (DB_BACKEND === "postgres") {
 const app = express();
 app.set("trust proxy", 1);
 
-app.use(express.json());
+// El límite por default de express.json() (100kb) se queda corto para
+// restaurar un respaldo con muchos años de lecturas/comentarios/reacciones
+// (ver /api/account/restore, v28); 10mb es generoso incluso para varios años
+// de historial diario.
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: false }));
 app.use(
   cookieSession({
@@ -172,6 +176,73 @@ async function requireAnyRole(req, res, next) {
     if (linked === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
   }
   next();
+}
+
+// ---- Tiempo real (SSE) — solo disponible con backend Postgres (MVP2) ----
+// Server-Sent Events: cada pestaña abierta (paciente, médico o familia)
+// mantiene una conexión abierta a esta ruta; cuando algo cambia (lectura,
+// comentario o reacción) se le manda un aviso mínimo — nunca el dato en sí,
+// para no duplicar aquí la lógica de permisos/roles que ya vive en las
+// rutas normales de la API — y la propia página reutiliza sus funciones de
+// carga ya existentes (loadAndRender, loadComments, etc.) para refrescarse
+// sola, sin que el usuario tenga que recargar la pantalla.
+if (DB_BACKEND === "postgres") {
+  const { events: dbEvents } = require("./db-postgres");
+  const streamClients = new Map(); // patient_id -> Set<res>
+
+  function addStreamClient_(patientId, res) {
+    if (!streamClients.has(patientId)) streamClients.set(patientId, new Set());
+    streamClients.get(patientId).add(res);
+  }
+  function removeStreamClient_(patientId, res) {
+    const set = streamClients.get(patientId);
+    if (!set) return;
+    set.delete(res);
+    if (!set.size) streamClients.delete(patientId);
+  }
+  dbEvents.on("change", (patientId, kind) => {
+    const set = streamClients.get(patientId);
+    if (!set || !set.size) return;
+    const payload = `data: ${JSON.stringify({ type: kind })}\n\n`;
+    for (const res of set) {
+      try { res.write(payload); } catch (err) { /* el cliente ya se desconectó */ }
+    }
+  });
+
+  function wireStream_(req, res, patientId) {
+    res.set({
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
+    res.write(": conectado\n\n");
+    addStreamClient_(patientId, res);
+    // Ping cada 25s para que proxies/navegadores no cierren la conexión por
+    // inactividad (varios cortan cerca de los 55-60s sin datos).
+    const ping = setInterval(() => {
+      try { res.write(": ping\n\n"); } catch (err) { clearInterval(ping); }
+    }, 25000);
+    req.on("close", () => {
+      clearInterval(ping);
+      removeStreamClient_(patientId, res);
+    });
+  }
+
+  // Paciente o médico logueado: el patient_id siempre sale de la sesión,
+  // nunca de un parámetro que el cliente pudiera manipular.
+  app.get("/api/stream", requireAnyRole, (req, res) => {
+    wireStream_(req, res, req.session.patientId);
+  });
+
+  // Familia/amigos (enlace público, sin cuenta): el patient_id se resuelve
+  // a partir del token, igual que en /api/familia/:token.
+  app.get("/familia/:token/stream", asyncRoute(async (req, res) => {
+    const patientResult = await callSheetsApi({ action: "get_patient_by_share_token", token_value: req.params.token });
+    if (!patientResult.ok || !patientResult.data) return res.status(404).end();
+    wireStream_(req, res, patientResult.data.id);
+  }));
 }
 
 app.post("/logout", (req, res) => {
@@ -504,6 +575,26 @@ app.post("/api/account/doctors/:id/remove", requireRole("patient"), asyncRoute(a
 
 app.post("/api/account/share-token/regenerate", requireRole("patient"), asyncRoute(async (req, res) => {
   const result = await callSheetsApi(null, { action: "regenerate_share_token", patient_id: req.session.patientId });
+  res.json(result);
+}));
+
+// ---- Respaldo/restauración (v28) ----
+// Descarga un archivo .json con tus lecturas, comentarios, reacciones y
+// parámetros físicos/de laboratorio, para poder restaurarlo tú mismo ante
+// cualquier imprevisto. Nunca incluye tu correo/contraseña ni tus médicos
+// vinculados (ver comentario en export_backup, db-postgres.js).
+app.get("/api/account/backup", requireRole("patient"), asyncRoute(async (req, res) => {
+  const result = await callSheetsApi({ action: "export_backup", patient_id: req.session.patientId });
+  if (!result.ok) return res.status(400).json(result);
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.set("Content-Type", "application/json; charset=utf-8");
+  res.set("Content-Disposition", `attachment; filename="respaldo-presion-${stamp}.json"`);
+  res.send(JSON.stringify(result.data, null, 2));
+}));
+
+app.post("/api/account/restore", requireRole("patient"), asyncRoute(async (req, res) => {
+  const result = await callSheetsApi(null, { action: "restore_backup", patient_id: req.session.patientId, backup: req.body });
+  if (!result.ok) return res.status(400).json(result);
   res.json(result);
 }));
 

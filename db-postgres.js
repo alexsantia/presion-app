@@ -17,11 +17,24 @@
 const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
+const { EventEmitter } = require("events");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
 });
+
+// v28: avisador de cambios en tiempo real. server.js se suscribe a esto para
+// reenviar un aviso (vía Server-Sent Events) a las tres interfaces
+// (paciente/médico/familia) sin que nadie tenga que refrescar la pantalla.
+// Nunca se emite al quitar una reacción (mismo criterio que las
+// notificaciones: quitar algo no avisa a nadie), y nunca lleva datos
+// sensibles: solo "algo cambió para este paciente, ve a repreguntar".
+const events = new EventEmitter();
+function emitChange(patientId, kind) {
+  if (!patientId) return;
+  events.emit("change", String(patientId), kind);
+}
 
 // Aplica db/schema.sql automáticamente al arrancar (CREATE TABLE IF NOT
 // EXISTS, seguro de correr una y otra vez), para que crear la instancia de
@@ -72,6 +85,7 @@ const MAX_DOCTORS_PER_PATIENT = 5;
 const DEFAULT_DOCTOR_TITLE = "Dr(a).";
 const VALID_DOCTOR_TITLES = ["Dr.", "Dra.", "Dr(a)."];
 const RESET_TOKEN_TTL_MINUTES = 30;
+const BACKUP_VERSION = 1;
 
 function classifyReading(sys, dia) {
   if (sys >= 180 || dia >= 120) return { label: "Crisis hipertensiva", key: "crisis" };
@@ -331,6 +345,42 @@ async function handleGet(params) {
   if (action === "list_reactions") {
     return { ok: true, data: await listReactions(params.patient_id) };
   }
+  // v28: respaldo descargable (JSON) con todo lo que el propio paciente
+  // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
+  // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
+  // notificaciones, correo ni contraseña: eso es administración de la cuenta,
+  // no "tu historial", y restaurarlo de un respaldo viejo podría reabrir el
+  // acceso de un médico que ya quitaste o pisar tu correo/contraseña actual.
+  if (action === "export_backup") {
+    const p = await findPatientById(params.patient_id);
+    if (!p) return { ok: false, error: "no encontrado" };
+    const patientRow = patientRaw(p);
+    const [readings, comments, reactions] = await Promise.all([
+      listReadings(params.patient_id),
+      listComments(params.patient_id),
+      listReactions(params.patient_id),
+    ]);
+    return {
+      ok: true,
+      data: {
+        backup_version: BACKUP_VERSION,
+        exported_at: nowIso(),
+        app: "Reigning Blood Pressure App",
+        patient: {
+          name: patientRow.name,
+          last_lab_date: patientRow.last_lab_date,
+          cholesterol: patientRow.cholesterol,
+          triglycerides: patientRow.triglycerides,
+          med_brand: patientRow.med_brand,
+          med_mg: patientRow.med_mg,
+          gender: patientRow.gender,
+          weight: patientRow.weight,
+          waist: patientRow.waist,
+        },
+        readings, comments, reactions,
+      },
+    };
+  }
   return { ok: false, error: "acción no soportada" };
 }
 
@@ -360,6 +410,7 @@ async function handlePost(body) {
         }
       }
     }
+    emitChange(body.patient_id, "reading");
     return { ok: true, id };
   }
   if (body.action === "update") {
@@ -369,11 +420,13 @@ async function handlePost(body) {
       [body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated, body.id, body.patient_id]
     );
     if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "reading");
     return { ok: true };
   }
   if (body.action === "delete") {
     const { rowCount } = await pool.query(`DELETE FROM lecturas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "reading");
     return { ok: true };
   }
 
@@ -585,6 +638,7 @@ async function handlePost(body) {
         await createNotification("doctor", parent.author_id, "new_reply", `${authorName} respondió a tu comentario.`, id);
       }
     }
+    emitChange(body.patient_id, "comment");
     return { ok: true, id };
   }
   if (body.action === "mark_notifications_read") {
@@ -616,11 +670,17 @@ async function handlePost(body) {
     const existing = await findReactionRow(body.patient_id, targetType, body.target_id, reactorRole, body.reactor_id);
     if (existing && existing.reaction === body.reaction) {
       await pool.query(`DELETE FROM reacciones WHERE id = $1`, [existing.id]);
+      // No dispara notifyReaction (igual que antes), pero sí avisa por SSE:
+      // esto no es una notificación (no queda registro ni le llega a nadie
+      // una alerta), solo un "algo cambió, vuelve a pedir los datos" para que
+      // el conteo se actualice en vivo en las demás pantallas abiertas.
+      emitChange(body.patient_id, "reaction");
       return { ok: true, action: "removed", reaction: null };
     }
     if (existing) {
       await pool.query(`UPDATE reacciones SET reaction = $1, created_at = $2 WHERE id = $3`, [body.reaction, now, existing.id]);
       await notifyReaction(body.patient_id, targetType, body.target_id, reactorRole, body.reactor_name, body.reaction);
+      emitChange(body.patient_id, "reaction");
       return { ok: true, action: "changed", reaction: body.reaction };
     }
     const id = uuid();
@@ -630,7 +690,84 @@ async function handlePost(body) {
       [id, body.patient_id, targetType, body.target_id, reactorRole, body.reactor_id, body.reaction, now]
     );
     await notifyReaction(body.patient_id, targetType, body.target_id, reactorRole, body.reactor_name, body.reaction);
+    emitChange(body.patient_id, "reaction");
     return { ok: true, action: "added", reaction: body.reaction, id };
+  }
+
+  // ---- Respaldo/restauración (v28) ----
+  // Reemplaza lecturas/comentarios/reacciones del paciente por lo que venga
+  // en el respaldo (mismo criterio "borra y vuelve a insertar" del script de
+  // migración: re-ejecutable y sin dejar residuos de antes de la
+  // restauración), y actualiza sus parámetros físicos/de laboratorio al
+  // valor exacto que tenían al momento del respaldo. Nunca toca médicos
+  // vinculados, invitaciones, correo ni contraseña — ver comentario en
+  // export_backup.
+  if (body.action === "restore_backup") {
+    const p = await findPatientById(body.patient_id);
+    if (!p) return { ok: false, error: "no encontrado" };
+    const backup = body.backup;
+    if (!backup || backup.backup_version !== BACKUP_VERSION || !Array.isArray(backup.readings) ||
+        !Array.isArray(backup.comments) || !Array.isArray(backup.reactions)) {
+      return { ok: false, error: "el archivo de respaldo no es válido o es de una versión incompatible" };
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`DELETE FROM reacciones WHERE patient_id = $1`, [body.patient_id]);
+      await client.query(`DELETE FROM comentarios WHERE patient_id = $1`, [body.patient_id]);
+      await client.query(`DELETE FROM lecturas WHERE patient_id = $1`, [body.patient_id]);
+
+      for (const r of backup.readings) {
+        await client.query(
+          `INSERT INTO lecturas (id, patient_id, date, time, sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [r.id || uuid(), body.patient_id, r.date || null, r.time || null, num(r.sys), num(r.dia), num(r.hr),
+            num(r.weight), r.obs || "", r.flag || "", r.created_at || now, r.updated_at || now, !!r.medicated]
+        );
+      }
+      // Primero los comentarios sin padre, luego las respuestas: así la
+      // llave foránea parent_id siempre encuentra ya insertado el comentario
+      // al que responde, sin depender de que created_at venga en orden.
+      const withoutParent = backup.comments.filter(c => !c.parent_id);
+      const withParent = backup.comments.filter(c => c.parent_id);
+      for (const c of [...withoutParent, ...withParent]) {
+        await client.query(
+          `INSERT INTO comentarios (id, patient_id, reading_id, author, author_role, author_id, parent_id, text, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [c.id || uuid(), body.patient_id, c.reading_id || null, c.author || "", c.author_role || "doctor", c.author_id || "", c.parent_id || null, c.text || "", c.created_at || now]
+        );
+      }
+      for (const r of backup.reactions) {
+        await client.query(
+          `INSERT INTO reacciones (id, patient_id, target_type, target_id, reactor_role, reactor_id, reaction, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [r.id || uuid(), body.patient_id, r.target_type, r.target_id, r.reactor_role, r.reactor_id, r.reaction, r.created_at || now]
+        );
+      }
+      const bp = backup.patient || {};
+      await client.query(
+        `UPDATE pacientes SET
+           last_lab_date = $1::date, cholesterol = $2::numeric, triglycerides = $3::numeric,
+           med_brand = $4, med_mg = $5::numeric, gender = $6, weight = $7::numeric, waist = $8::numeric,
+           updated_at = $9
+         WHERE id = $10`,
+        [bp.last_lab_date || null, bp.cholesterol ?? null, bp.triglycerides ?? null, bp.med_brand || null,
+          bp.med_mg ?? null, bp.gender || null, bp.weight ?? null, bp.waist ?? null, now, body.patient_id]
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+    emitChange(body.patient_id, "reading");
+    emitChange(body.patient_id, "comment");
+    emitChange(body.patient_id, "reaction");
+    return {
+      ok: true,
+      counts: { readings: backup.readings.length, comments: backup.comments.length, reactions: backup.reactions.length },
+    };
   }
 
   return { ok: false, error: "acción no soportada" };
@@ -650,4 +787,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema };
+module.exports = { callPostgresApi, pool, ensureSchema, events };

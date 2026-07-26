@@ -645,9 +645,6 @@ const REACTIONS = [
   { key: "sad", emoji: "😢", label: "Me entristece" },
   { key: "angry", emoji: "😡", label: "Me enoja" },
 ];
-const REACTION_BY_KEY_ = {};
-REACTIONS.forEach(r => { REACTION_BY_KEY_[r.key] = r; });
-
 // Agrupa todas las reacciones de un paciente (comentarios + lecturas) por
 // target, para poder pedirlas todas juntas una sola vez por página.
 function groupReactionsByTarget(reactions) {
@@ -679,20 +676,15 @@ function ensureReactionStyles_() {
   const style = document.createElement("style");
   style.id = "bp-reaction-styles";
   style.textContent = `
-    .reaction-bar { display:flex; align-items:center; gap:8px; margin-top:6px; flex-wrap:wrap; position:relative; }
+    .reaction-bar { display:flex; align-items:center; gap:6px; margin-top:6px; flex-wrap:wrap; }
+    .reaction-icons { display:flex; align-items:center; gap:2px; }
+    .reaction-icon-btn { border:1px solid transparent; background:transparent; border-radius:50%;
+      width:28px; height:28px; font-size:17px; line-height:1; cursor:pointer; padding:0;
+      display:flex; align-items:center; justify-content:center; opacity:0.55; transition:transform 0.08s ease, opacity 0.08s ease; }
+    .reaction-icon-btn:hover, .reaction-icon-btn:focus-visible { opacity:1; background:#F0F0F0; outline:none; transform:scale(1.12); }
+    .reaction-icon-btn.active { opacity:1; background:#EAF3EC; border-color:#cfe3d7; }
     .reaction-summary { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-muted); }
     .reaction-summary .rs-emoji { font-size:13px; }
-    .reaction-add-btn { border:1px solid #ddd; background:#fff; border-radius:14px; padding:2px 10px;
-      font-size:12px; cursor:pointer; color:var(--text-muted); }
-    .reaction-add-btn.mine { border-color:transparent; background:#EAF3EC; color:#4F7A6F; font-weight:600; }
-    .reaction-chevron-btn { border:1px solid #ddd; background:#fff; border-radius:50%; width:22px; height:22px;
-      font-size:11px; line-height:1; cursor:pointer; color:var(--text-muted); padding:0; }
-    .reaction-chevron-btn:hover, .reaction-chevron-btn:focus-visible { background:#F0F0F0; outline:none; }
-    .reaction-picker { display:none; position:absolute; bottom:calc(100% + 6px); left:0; background:#fff; border-radius:20px;
-      box-shadow:0 4px 14px rgba(0,0,0,0.18); padding:4px 6px; gap:2px; z-index:30; }
-    .reaction-picker.open { display:flex; }
-    .reaction-picker button { border:none; background:transparent; font-size:19px; cursor:pointer; padding:4px 5px; border-radius:50%; line-height:1; }
-    .reaction-picker button:hover, .reaction-picker button:focus-visible { background:#F0F0F0; outline:none; }
   `;
   document.head.appendChild(style);
 }
@@ -701,11 +693,9 @@ function ensureReactionStyles_() {
 // lectura). list: reacciones ya filtradas para ese target (reactionsForTarget).
 // opts: { viewerRole, viewerId }.
 //
-// v27: si ya tienes una reacción puesta, el botón principal la muestra
-// (ej. "👍 Me gusta") y un solo clic sobre ese mismo botón la quita directo
-// (como el "Me gusta" de Facebook) — ya no hace falta reabrir el selector
-// para quitarla. Un botón chevron aparte (▾) abre/cierra el selector en
-// cualquier momento, para elegir tu primera reacción o cambiar a otra.
+// v28: los 6 emojis quedan siempre visibles en línea (nada de picker ni
+// flecha que abrir). Tocar el que ya tienes activo lo quita; tocar otro lo
+// cambia; tocar cualquiera sin tener reacción propia la agrega.
 function renderReactionBarHTML(targetType, targetId, list, opts) {
   ensureReactionStyles_();
   opts = opts || {};
@@ -713,70 +703,35 @@ function renderReactionBarHTML(targetType, targetId, list, opts) {
   const summaryHtml = total
     ? `<span class="reaction-summary">${REACTIONS.filter(r => counts[r.key]).map(r => `<span class="rs-emoji">${r.emoji}</span>`).join("")} ${total}</span>`
     : "";
-  const mineDef = mine ? REACTION_BY_KEY_[mine] : null;
-  const btnLabel = mineDef ? `${mineDef.emoji} ${mineDef.label}` : "Reaccionar";
-  const pickerButtons = REACTIONS.map(r =>
-    `<button type="button" class="reaction-pick" data-reaction="${r.key}" title="${r.label}" aria-label="${r.label}">${r.emoji}</button>`).join("");
+  const iconButtons = REACTIONS.map(r =>
+    `<button type="button" class="reaction-icon-btn ${mine === r.key ? "active" : ""}" data-reaction="${r.key}" title="${r.label}" aria-label="${r.label}">${r.emoji}</button>`).join("");
   return `
     <div class="reaction-bar" data-target-type="${targetType}" data-target-id="${targetId}" data-mine="${mine || ""}">
-      <button type="button" class="reaction-add-btn ${mine ? "mine" : ""}" data-reaction-main-btn>${btnLabel}</button>
-      <button type="button" class="reaction-chevron-btn" data-reaction-chevron-btn aria-label="Elegir reacción">▾</button>
-      <div class="reaction-picker">${pickerButtons}</div>
+      <div class="reaction-icons">${iconButtons}</div>
       ${summaryHtml}
     </div>`;
 }
 
 // Delega los clicks de todas las .reaction-bar dentro de "root" (una sola
-// vez). Solo click/tap, nunca hover — ver comentario al inicio de esta
-// sección. opts: { onReact(targetType, targetId, reactionKey) } — quien
-// llama decide cómo mandarlo al backend y cómo re-renderizar después.
+// vez). Solo click/tap, nunca hover. opts: { onReact(targetType, targetId,
+// reactionKey) } — quien llama decide cómo mandarlo al backend y cómo
+// re-renderizar después.
 function wireReactionBars(root, opts) {
   root = root || document;
   opts = opts || {};
   if (root._reactionBarsWired) return;
   root._reactionBarsWired = true;
   root.addEventListener("click", e => {
-    const mainBtn = e.target.closest("[data-reaction-main-btn]");
-    const chevronBtn = e.target.closest("[data-reaction-chevron-btn]");
-    const pickBtn = e.target.closest(".reaction-pick");
+    const iconBtn = e.target.closest(".reaction-icon-btn");
     const bar = e.target.closest(".reaction-bar");
-    root.querySelectorAll(".reaction-picker.open").forEach(p => {
-      if (!bar || p !== bar.querySelector(".reaction-picker")) p.classList.remove("open");
-    });
-    if (mainBtn && bar) {
-      e.stopPropagation();
-      const mine = bar.getAttribute("data-mine");
-      if (mine) {
-        // Ya reaccionaste con esto: un clic más la quita directo, sin picker.
-        playReactionSound();
-        const targetType = bar.getAttribute("data-target-type");
-        const targetId = bar.getAttribute("data-target-id");
-        if (typeof opts.onReact === "function") opts.onReact(targetType, targetId, mine);
-        return;
-      }
-      // Todavía no reaccionas: el botón principal abre el selector para elegir.
-      const picker = bar.querySelector(".reaction-picker");
-      if (picker) picker.classList.toggle("open");
-      return;
-    }
-    if (chevronBtn && bar) {
-      e.stopPropagation();
-      const picker = bar.querySelector(".reaction-picker");
-      if (picker) picker.classList.toggle("open");
-      return;
-    }
-    if (pickBtn && bar) {
-      e.stopPropagation();
-      const picker = bar.querySelector(".reaction-picker");
-      if (picker) picker.classList.remove("open");
-      playReactionSound();
-      const targetType = bar.getAttribute("data-target-type");
-      const targetId = bar.getAttribute("data-target-id");
-      const reaction = pickBtn.getAttribute("data-reaction");
-      if (typeof opts.onReact === "function") opts.onReact(targetType, targetId, reaction);
-    }
+    if (!iconBtn || !bar) return;
+    e.stopPropagation();
+    playReactionSound();
+    const targetType = bar.getAttribute("data-target-type");
+    const targetId = bar.getAttribute("data-target-id");
+    const reaction = iconBtn.getAttribute("data-reaction");
+    if (typeof opts.onReact === "function") opts.onReact(targetType, targetId, reaction);
   });
-  ensureReactionOutsideClickCloser_();
 }
 
 // Sonido corto ("pop") al reaccionar, generado con Web Audio API — sin
@@ -833,19 +788,6 @@ function playNotificationSound() {
     });
   } catch (err) { /* silencioso */ }
 }
-// Cierra cualquier picker de reacciones abierto al hacer click fuera de toda
-// barra de reacciones (por ejemplo, en otra sección de la página). Un solo
-// listener global, independiente de cuántas veces se llame wireReactionBars
-// en la página (una vez para comentarios, otra para el Historial, etc.).
-function ensureReactionOutsideClickCloser_() {
-  if (typeof document === "undefined" || ensureReactionOutsideClickCloser_._wired) return;
-  ensureReactionOutsideClickCloser_._wired = true;
-  document.addEventListener("click", e => {
-    if (e.target.closest(".reaction-bar")) return;
-    document.querySelectorAll(".reaction-picker.open").forEach(p => p.classList.remove("open"));
-  });
-}
-
 // Id anónimo por dispositivo para la vista de familia/amigos (sin cuenta):
 // se genera una sola vez y se guarda en localStorage, para poder togglear su
 // propia reacción de la misma forma que un paciente o médico logueado.
@@ -861,6 +803,32 @@ function getFamilyReactorId() {
   } catch (err) {
     return "fam_" + Math.random().toString(36).slice(2); // sin localStorage: funciona la sesión actual, sin persistir
   }
+}
+
+// ---- Tiempo real (v28) ----
+// Envuelve el EventSource nativo del navegador (que ya trae reconexión
+// automática incluida, sin código extra) para recibir avisos de "algo
+// cambió" desde el servidor y no depender de refrescar la pantalla a mano.
+// url: el endpoint SSE (/api/stream para paciente/médico logueados,
+// /familia/TOKEN/stream para el enlace de familia). onChange(kind): se
+// llama con "reading" | "comment" | "reaction" cada vez que llega un aviso;
+// quien llama decide qué recargar (reutilizando sus funciones de carga ya
+// existentes) — aquí nunca viaja el dato en sí, solo el aviso.
+function connectRealtime(url, onChange) {
+  if (typeof EventSource === "undefined") return null; // navegador muy viejo: la página sigue funcionando igual que antes, solo sin tiempo real
+  let source;
+  try {
+    source = new EventSource(url);
+  } catch (err) {
+    return null;
+  }
+  source.onmessage = ev => {
+    try {
+      const data = JSON.parse(ev.data);
+      if (data && data.type && typeof onChange === "function") onChange(data.type);
+    } catch (err) { /* keepalive u otro mensaje no-JSON: se ignora */ }
+  };
+  return source;
 }
 
 // ---- "Recomienda esta app" ----
