@@ -15,11 +15,43 @@
 // directamente en el SQL, nunca se dejan como tipos nativos de Postgres.
 
 const { Pool } = require("pg");
+const fs = require("fs");
+const path = require("path");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
 });
+
+// Aplica db/schema.sql automáticamente al arrancar (CREATE TABLE IF NOT
+// EXISTS, seguro de correr una y otra vez), para que crear la instancia de
+// Postgres en Render sea el único paso manual: nadie tiene que copiar/pegar
+// SQL a mano ni abrir una terminal de psql. Se corre una sola vez por
+// arranque del proceso (schemaReady cachea la promesa).
+let schemaReady = null;
+function ensureSchema() {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      const sql = fs.readFileSync(path.join(__dirname, "db", "schema.sql"), "utf8");
+      const statements = sql.split(/;\s*\n/).map(s => s.trim()).filter(s => s && !s.startsWith("--"));
+      for (const stmt of statements) {
+        await pool.query(stmt);
+      }
+      console.log("Postgres: esquema verificado/creado (db/schema.sql)");
+    })().catch(err => {
+      console.error("Postgres: no se pudo aplicar el esquema automáticamente:", err.message);
+      schemaReady = null; // permite reintentar en la siguiente llamada en vez de quedar roto para siempre
+      throw err;
+    });
+  }
+  return schemaReady;
+}
+// Se dispara de inmediato al cargar este módulo (cuando arranca el proceso
+// de Node en Render), no solo cuando llega la primera petición. Así, con
+// solo desplegar el servicio ya queda lista la base de datos, sin depender
+// de que alguien visite la página primero (importante para el script de
+// migración, que se corre por separado y espera que las tablas ya existan).
+ensureSchema().catch(() => {});
 
 function uuid() {
   return require("crypto").randomUUID();
@@ -610,6 +642,7 @@ async function handlePost(body) {
 // llega a esta capa), así que aquí no hace falta revisarlo de nuevo.
 async function callPostgresApi(params, body) {
   try {
+    await ensureSchema();
     if (body) return await handlePost(body);
     return await handleGet(params || {});
   } catch (err) {
@@ -617,4 +650,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool };
+module.exports = { callPostgresApi, pool, ensureSchema };
