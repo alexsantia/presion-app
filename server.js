@@ -15,9 +15,20 @@ const {
   SESSION_SECRET,
   SHEETS_WEBAPP_URL,
   SHEETS_TOKEN,
+  DB_BACKEND = "sheets", // "sheets" (MVP1, Google Sheets vía Apps Script) o "postgres" (MVP2)
+  DATABASE_URL,
 } = process.env;
 
-if (!SESSION_SECRET || !SHEETS_WEBAPP_URL || !SHEETS_TOKEN) {
+if (!SESSION_SECRET) {
+  console.error("Falta SESSION_SECRET en las variables de entorno.");
+  process.exit(1);
+}
+if (DB_BACKEND === "postgres") {
+  if (!DATABASE_URL) {
+    console.error("DB_BACKEND=postgres pero falta DATABASE_URL en las variables de entorno.");
+    process.exit(1);
+  }
+} else if (!SHEETS_WEBAPP_URL || !SHEETS_TOKEN) {
   console.error(
     "Faltan variables de entorno. Revisa .env.example y crea tu propio .env con " +
     "SESSION_SECRET, SHEETS_WEBAPP_URL y SHEETS_TOKEN."
@@ -60,8 +71,14 @@ function sendPage_(res, filename) {
   res.sendFile(path.join(__dirname, "public", filename));
 }
 
-// ---- Proxy hacia el Apps Script Web App ----
-async function callSheetsApi(params, body) {
+// ---- Acceso a datos: Google Sheets (MVP1) o Postgres (MVP2) ----
+// callSheetsApi(params, body) es el único punto de contacto con la base de
+// datos en todo este archivo. El nombre se conserva (en vez de renombrarlo a
+// algo genérico) para no tocar ninguna otra línea de este servidor durante
+// la migración: todas las rutas de abajo siguen llamando a callSheetsApi
+// exactamente igual, sin saber ni importarles cuál de los dos backends
+// responde. Cuál se usa se decide una sola vez aquí, con DB_BACKEND.
+async function callSheetsApiViaAppsScript_(params, body) {
   let url = SHEETS_WEBAPP_URL;
   if (params) {
     const qs = new URLSearchParams(params).toString();
@@ -74,6 +91,10 @@ async function callSheetsApi(params, body) {
   const resp = await fetch(url, options);
   return resp.json();
 }
+const callSheetsApi = DB_BACKEND === "postgres"
+  ? require("./db-postgres").callPostgresApi
+  : callSheetsApiViaAppsScript_;
+console.log(`Reigning Blood Pressure App: backend de datos = ${DB_BACKEND === "postgres" ? "Postgres (MVP2)" : "Google Sheets (MVP1)"}`);
 
 function asyncRoute(fn) {
   return (req, res) => fn(req, res).catch(err => res.status(502).json({ ok: false, error: "no se pudo contactar Google Sheets: " + err.message }));
