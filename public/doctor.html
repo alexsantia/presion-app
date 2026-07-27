@@ -45,6 +45,11 @@
   .section-password { background:#F2F0F7; border-left:4px solid #6B4FA0; }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .chart-wrap { position: relative; height: 300px; }
+  .avatar-preview-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .avatar-preview-fallback { position: absolute; inset: 0; border-radius: 50%; background: var(--border, #E2E2E2); display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .avatar-preview { position: relative; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; display: block; background: transparent; }
+  .avatar-preview.avatar-hidden { display: none; }
+  .avatar-mini { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 6px; background: var(--border, #E2E2E2); }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -182,6 +187,7 @@
 <div class="subtitle">Solo lectura · puedes revisar lecturas y dejar comentarios, no puedes editar ni borrar datos</div>
 
 <div id="statusBanner"></div>
+<div id="broadcastBanner"></div>
 
 <div class="section section-streak" id="streakSection"></div>
 
@@ -245,7 +251,7 @@
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
       <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
-      <th data-col="obs">Observaciones</th><th data-col="reacciones">Reacciones</th>
+      <th data-col="obs">Observaciones</th>
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
@@ -307,6 +313,21 @@
 </div>
 
 <div class="section section-password">
+  <h2>Foto de perfil</h2>
+  <div style="display:flex; align-items:center; gap:14px;">
+    <div class="avatar-preview-wrap">
+      <div class="avatar-preview-fallback">👤</div>
+      <img id="doc_avatar_preview" class="avatar-preview" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
+    </div>
+    <div>
+      <label class="btn-secondary" for="doc_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
+      <input type="file" id="doc_avatar_input" accept="image/*" style="display:none;">
+      <button type="button" class="btn-mini danger" id="doc_avatar_remove" style="margin-left:6px;">Quitar</button>
+    </div>
+  </div>
+</div>
+
+<div class="section section-password">
   <h2>Cómo firmas tus comentarios</h2>
   <form class="pw-form" id="doctorTitleForm">
     <div class="field"><label>Título</label>
@@ -334,6 +355,33 @@
   <h2>Notificaciones</h2>
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Si ancla esta app a su pantalla de inicio, puede recibir avisos del sistema aunque la tenga cerrada.</p>
   <button type="button" class="btn-secondary" id="pushToggleBtn" disabled>Cargando…</button>
+</div>
+
+<div class="section section-password">
+  <h2>Soporte</h2>
+  <div id="ticketListWrap">
+    <div id="ticketList"></div>
+    <form id="ticketForm" style="margin-top:12px;">
+      <div class="field" style="margin-bottom:8px;">
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Asunto</label>
+        <input type="text" id="ticketSubject" required>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Mensaje</label>
+        <textarea id="ticketMessage" rows="3" required style="width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:13px; box-sizing:border-box;"></textarea>
+      </div>
+      <button type="submit" class="btn-secondary">Enviar</button>
+    </form>
+  </div>
+  <div id="ticketThreadWrap" style="display:none;">
+    <button type="button" class="btn-mini" id="ticketBackBtn">← Volver</button>
+    <h3 id="ticketThreadSubject" style="font-size:14px;margin:10px 0;"></h3>
+    <div id="ticketThreadList" style="margin-bottom:10px;"></div>
+    <form id="ticketReplyForm">
+      <textarea id="ticketReplyInput" rows="2" placeholder="Escribe tu respuesta…" style="width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px;"></textarea>
+      <button type="submit" class="btn-secondary">Responder</button>
+    </form>
+  </div>
 </div>
 
 <footer>Reigning Blood Pressure App · creado por Alex Santiago · v29</footer>
@@ -471,10 +519,22 @@ document.getElementById("commentsContent").addEventListener("click", async e => 
   }
 });
 
+let doctorAvatarWired = false;
 async function loadDoctorAccount() {
   try {
     currentDoctorAccount = await apiGet("/api/account");
     document.getElementById("doctorTitleSelect").value = currentDoctorAccount.title || "Dr(a).";
+    if (!doctorAvatarWired) {
+      doctorAvatarWired = true;
+      wireAvatarUploader({
+        fileInput: document.getElementById("doc_avatar_input"),
+        previewImg: document.getElementById("doc_avatar_preview"),
+        removeBtn: document.getElementById("doc_avatar_remove"),
+        accountType: "doctor",
+        accountId: currentDoctorAccount.id,
+        onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
+      });
+    }
   } catch (err) { /* silencioso */ }
 }
 document.getElementById("doctorTitleForm").addEventListener("submit", async e => {
@@ -576,7 +636,6 @@ const TOGGLABLE_COLUMNS = [
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
   { key: "obs", label: "Observaciones" },
-  { key: "reacciones", label: "Reacciones" },
 ];
 function getHiddenColumns() {
   try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols_doctor") || "[]")); } catch (e) { return new Set(); }
@@ -637,8 +696,7 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}</td>
-      <td data-col="reacciones">${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "doctor", viewerId: currentDoctorAccount ? currentDoctorAccount.id : null })}</td>`;
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "doctor", viewerId: currentDoctorAccount ? currentDoctorAccount.id : null })}</td>`;
     tbody.appendChild(tr);
   });
   applyColumnVisibility();
@@ -811,6 +869,21 @@ loadAndRender();
 loadComments();
 loadDoctorAccount();
 loadNotifications();
+wireBroadcastBanner(document.getElementById("broadcastBanner"));
+wireSupportTickets({
+  listEl: document.getElementById("ticketList"),
+  formEl: document.getElementById("ticketForm"),
+  subjectInput: document.getElementById("ticketSubject"),
+  messageInput: document.getElementById("ticketMessage"),
+  threadWrap: document.getElementById("ticketThreadWrap"),
+  threadListEl: document.getElementById("ticketThreadList"),
+  threadSubjectEl: document.getElementById("ticketThreadSubject"),
+  replyForm: document.getElementById("ticketReplyForm"),
+  replyInput: document.getElementById("ticketReplyInput"),
+  backBtn: document.getElementById("ticketBackBtn"),
+  myRole: "doctor",
+  onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
+});
 // Las reacciones se piden aparte y, cuando llegan, se vuelve a renderizar lo
 // que ya esté en pantalla (comentarios y tabla) para que aparezcan sin
 // esperar a un refresh manual.

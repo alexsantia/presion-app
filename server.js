@@ -145,20 +145,60 @@ async function doctorStillLinked_(doctorId) {
     return null; // no se pudo verificar (problema de red) — se trata distinto de "no existe"
   }
 }
+// v30: además de "¿sigue existiendo/ligado?", ahora también hay que
+// verificar "¿lo suspendió el administrador?" en cada request, no solo al
+// iniciar sesión — si no, alguien suspendido seguiría entrando con la
+// sesión ya abierta hasta que expirara sola (30 días).
+async function doctorAccountStatus_(doctorId) {
+  try {
+    const result = await callSheetsApi({ action: "get_doctor_by_id", id: doctorId });
+    if (!(result.ok && result.data)) return { exists: false };
+    return { exists: true, suspended: !!result.data.suspended };
+  } catch (err) {
+    return { exists: null }; // no se pudo verificar (problema de red)
+  }
+}
+async function patientAccountStatus_(patientId) {
+  try {
+    const result = await callSheetsApi({ action: "get_patient_by_id", id: patientId });
+    if (!(result.ok && result.data)) return { exists: false };
+    return { exists: true, suspended: !!result.data.suspended };
+  } catch (err) {
+    return { exists: null };
+  }
+}
 function requireRole(role) {
   return async (req, res, next) => {
     if (!(req.session && req.session.role === role)) {
       if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "no autenticado" });
-      return res.redirect(role === "doctor" ? "/doctor/login" : "/login");
+      return res.redirect(role === "doctor" ? "/doctor/login" : (role === "admin" ? "/admin/login" : "/login"));
     }
     if (role === "doctor") {
-      const linked = await doctorStillLinked_(req.session.doctorId);
-      if (linked === false) {
+      const status = await doctorAccountStatus_(req.session.doctorId);
+      if (status.exists === false) {
         req.session = null;
         if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "tu acceso de médico fue revocado" });
         return res.redirect("/doctor/login");
       }
-      if (linked === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+      if (status.exists === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+      if (status.suspended) {
+        req.session = null;
+        if (req.path.startsWith("/api/")) return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
+        return res.redirect("/doctor/login");
+      }
+    }
+    if (role === "patient") {
+      const status = await patientAccountStatus_(req.session.patientId);
+      if (status.exists === false) {
+        req.session = null;
+        if (req.path.startsWith("/api/")) return res.status(401).json({ ok: false, error: "cuenta no encontrada" });
+        return res.redirect("/login");
+      }
+      if (status.suspended) {
+        req.session = null;
+        if (req.path.startsWith("/api/")) return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
+        return res.redirect("/login");
+      }
     }
     next();
   };
@@ -168,12 +208,23 @@ async function requireAnyRole(req, res, next) {
     return res.status(401).json({ ok: false, error: "no autenticado" });
   }
   if (req.session.role === "doctor") {
-    const linked = await doctorStillLinked_(req.session.doctorId);
-    if (linked === false) {
+    const status = await doctorAccountStatus_(req.session.doctorId);
+    if (status.exists === false) {
       req.session = null;
       return res.status(401).json({ ok: false, error: "tu acceso de médico fue revocado" });
     }
-    if (linked === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+    if (status.exists === null) return res.status(502).json({ ok: false, error: "no se pudo verificar tu acceso, intenta de nuevo" });
+    if (status.suspended) {
+      req.session = null;
+      return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
+    }
+  }
+  if (req.session.role === "patient") {
+    const status = await patientAccountStatus_(req.session.patientId);
+    if (status.suspended) {
+      req.session = null;
+      return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
+    }
   }
   next();
 }
@@ -291,6 +342,9 @@ app.post("/login", asyncRoute(async (req, res) => {
   if (!patient || !(await bcrypt.compare(password || "", patient.password_hash || ""))) {
     return res.status(401).json({ ok: false, error: "correo o contraseña incorrectos" });
   }
+  if (patient.suspended) {
+    return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
+  }
   req.session = { role: "patient", patientId: patient.id, email: patient.email };
   res.json({ ok: true, redirect: "/" });
 }));
@@ -341,6 +395,9 @@ app.post("/doctor/login", asyncRoute(async (req, res) => {
   const doctor = result.ok ? result.data : null;
   if (!doctor || !(await bcrypt.compare(password || "", doctor.password_hash || ""))) {
     return res.status(401).json({ ok: false, error: "correo o contraseña incorrectos" });
+  }
+  if (doctor.suspended) {
+    return res.status(403).json({ ok: false, error: "tu cuenta fue suspendida, contacta al administrador" });
   }
   req.session = { role: "doctor", doctorId: doctor.id, patientId: doctor.patient_id, email: doctor.email };
   res.json({ ok: true, redirect: "/doctor" });
@@ -397,6 +454,61 @@ app.post("/api/familia/:token/react", asyncRoute(async (req, res) => {
     reactor_role: "family", reactor_id,
   });
   res.json(result);
+}));
+
+// ================= ADMIN (v30) =================
+// Panel maestro de administrador: cuentas del propio equipo de Reigning
+// Blood Pressure App, no de pacientes/médicos. No hay registro público —
+// la única cuenta de administrador se crea/actualiza sola al arrancar el
+// servidor a partir de ADMIN_EMAIL/ADMIN_PASSWORD (ver más abajo, junto al
+// resto de lo que solo existe con backend Postgres).
+
+app.get("/admin/login", (req, res) => sendPage_(res, "admin-login.html"));
+app.get("/admin", requireRole("admin"), (req, res) => sendPage_(res, "admin.html"));
+
+app.post("/admin/login", asyncRoute(async (req, res) => {
+  const { email, password } = req.body;
+  const result = await callSheetsApi({ action: "get_admin_by_email", email: String(email || "").toLowerCase() });
+  const admin = result.ok ? result.data : null;
+  if (!admin || !(await bcrypt.compare(password || "", admin.password_hash || ""))) {
+    return res.status(401).json({ ok: false, error: "correo o contraseña incorrectos" });
+  }
+  req.session = { role: "admin", adminId: admin.id, email: admin.email };
+  res.json({ ok: true, redirect: "/admin" });
+}));
+
+app.get("/api/admin/accounts", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_all_accounts" }));
+}));
+app.post("/api/admin/accounts/:type/:id/suspend", requireRole("admin"), asyncRoute(async (req, res) => {
+  const accountType = req.params.type === "doctor" ? "doctor" : "patient";
+  const result = await callSheetsApi(null, { action: "toggle_account_suspended", account_type: accountType, id: req.params.id, suspended: !!req.body.suspended });
+  res.json(result);
+}));
+app.get("/api/admin/stats", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "usage_stats" }));
+}));
+app.get("/api/admin/broadcasts", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_broadcasts" }));
+}));
+app.post("/api/admin/broadcasts", requireRole("admin"), asyncRoute(async (req, res) => {
+  if (!req.body.title || !String(req.body.title).trim()) return res.status(400).json({ ok: false, error: "escribe un título" });
+  res.json(await callSheetsApi(null, { action: "create_broadcast", title: req.body.title, body: req.body.body || "" }));
+}));
+app.post("/api/admin/broadcasts/:id/deactivate", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "deactivate_broadcast", id: req.params.id }));
+}));
+app.get("/api/admin/tickets", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_all_tickets" }));
+}));
+app.get("/api/admin/tickets/:id/messages", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "get_ticket_messages", ticket_id: req.params.id }));
+}));
+app.post("/api/admin/tickets/:id/messages", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_ticket_message", ticket_id: req.params.id, author_role: "admin", text: req.body.text }));
+}));
+app.post("/api/admin/tickets/:id/status", requireRole("admin"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "set_ticket_status", id: req.params.id, status: req.body.status }));
 }));
 
 // ================= API con sesión (paciente y/o médico) =================
@@ -556,7 +668,11 @@ app.post("/api/account/params", requireRole("patient"), asyncRoute(async (req, r
 }));
 
 app.post("/api/account/invite", requireRole("patient"), asyncRoute(async (req, res) => {
-  const result = await callSheetsApi(null, { action: "generate_doctor_invite", patient_id: req.session.patientId });
+  const result = await callSheetsApi(null, {
+    action: "generate_doctor_invite", patient_id: req.session.patientId,
+    email: req.body && req.body.email ? req.body.email : undefined,
+    origin: requestOrigin_(req),
+  });
   res.json(result);
 }));
 
@@ -598,6 +714,59 @@ app.post("/api/account/restore", requireRole("patient"), asyncRoute(async (req, 
   res.json(result);
 }));
 
+// ---- Mensajes generales del administrador (v30) ----
+// Cualquier paciente o médico con sesión puede ver los mensajes activos;
+// no hay nada sensible aquí, es lo mismo para todos.
+app.get("/api/broadcasts", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "get_active_broadcasts" }));
+}));
+
+// ---- Tickets de soporte (v30) ----
+// Cada quien solo ve/escribe en sus propios tickets: account_type/account_id
+// siempre salen de la sesión, nunca del cuerpo de la petición, y las rutas
+// de un ticket puntual verifican que ese ticket sea suyo antes de dejar
+// leer o escribir en él (el panel de administrador tiene sus propias rutas
+// separadas para ver cualquier ticket).
+function myAccountIdentity_(req) {
+  return req.session.role === "doctor"
+    ? { type: "doctor", id: req.session.doctorId }
+    : { type: "patient", id: req.session.patientId };
+}
+app.get("/api/support/tickets", requireAnyRole, asyncRoute(async (req, res) => {
+  const me = myAccountIdentity_(req);
+  res.json(await callSheetsApi({ action: "list_my_tickets", account_type: me.type, account_id: me.id }));
+}));
+app.post("/api/support/tickets", requireAnyRole, asyncRoute(async (req, res) => {
+  const me = myAccountIdentity_(req);
+  const accountName = req.session.email || "";
+  const result = await callSheetsApi(null, {
+    action: "create_support_ticket", account_type: me.type, account_id: me.id, account_name: accountName,
+    subject: req.body.subject, message: req.body.message,
+  });
+  res.json(result);
+}));
+app.get("/api/support/tickets/:id/messages", requireAnyRole, asyncRoute(async (req, res) => {
+  const me = myAccountIdentity_(req);
+  const result = await callSheetsApi({ action: "get_ticket_messages", ticket_id: req.params.id });
+  if (!result.ok) return res.status(404).json(result);
+  const ticket = result.data.ticket;
+  if (ticket.account_type !== me.type || String(ticket.account_id) !== String(me.id)) {
+    return res.status(404).json({ ok: false, error: "no encontrado" });
+  }
+  res.json(result);
+}));
+app.post("/api/support/tickets/:id/messages", requireAnyRole, asyncRoute(async (req, res) => {
+  const me = myAccountIdentity_(req);
+  const ticketResult = await callSheetsApi({ action: "get_ticket_messages", ticket_id: req.params.id });
+  if (!ticketResult.ok) return res.status(404).json(ticketResult);
+  const ticket = ticketResult.data.ticket;
+  if (ticket.account_type !== me.type || String(ticket.account_id) !== String(me.id)) {
+    return res.status(404).json({ ok: false, error: "no encontrado" });
+  }
+  const result = await callSheetsApi(null, { action: "add_ticket_message", ticket_id: req.params.id, author_role: me.type, text: req.body.text });
+  res.json(result);
+}));
+
 // ---- Notificaciones push (Web Push, v29) — solo con backend Postgres ----
 // El service worker se sirve desde la raíz (no desde /shared/) para que su
 // alcance ("scope") cubra toda la app y no solo /shared/; así puede
@@ -623,6 +792,59 @@ if (DB_BACKEND === "postgres") {
     const result = await callSheetsApi(null, { action: "delete_push_subscription", endpoint: req.body.endpoint });
     res.json(result);
   }));
+
+  // ---- Foto de perfil (v30) — solo con backend Postgres ----
+  // Subir/borrar siempre usa la cuenta de la sesión (nunca un id que mande
+  // el cliente), para que nadie pueda tocar la foto de otra cuenta. Servir
+  // la imagen SÍ es una ruta pública (sin sesión): la ven el médico, la
+  // familia y quien tenga el enlace de solo lectura, igual que ya pasa con
+  // los demás datos de "solo lectura" de esta app.
+  app.post("/api/account/avatar", requireAnyRole, asyncRoute(async (req, res) => {
+    const accountType = req.session.role;
+    const accountId = accountType === "patient" ? req.session.patientId : req.session.doctorId;
+    const result = await callSheetsApi(null, { action: "upload_avatar", account_type: accountType, account_id: accountId, data_base64: req.body.data_base64, mime: req.body.mime });
+    res.json(result);
+  }));
+  app.post("/api/account/avatar/remove", requireAnyRole, asyncRoute(async (req, res) => {
+    const accountType = req.session.role;
+    const accountId = accountType === "patient" ? req.session.patientId : req.session.doctorId;
+    const result = await callSheetsApi(null, { action: "remove_avatar", account_type: accountType, account_id: accountId });
+    res.json(result);
+  }));
+  app.get("/api/avatar/:type/:id", asyncRoute(async (req, res) => {
+    const accountType = req.params.type === "doctor" ? "doctor" : "patient";
+    const { getAvatarData } = require("./db-postgres");
+    const avatar = await getAvatarData(accountType, req.params.id);
+    if (!avatar) return res.status(404).end();
+    res.set("Content-Type", avatar.mime);
+    res.set("Cache-Control", "private, max-age=300");
+    res.send(avatar.data);
+  }));
+
+  // ---- Cuenta de administrador (v30) — se crea/actualiza sola al arrancar ----
+  // No hay pantalla de registro para administradores: la única cuenta sale
+  // de ADMIN_EMAIL/ADMIN_PASSWORD en las variables de entorno de Render. Si
+  // faltan, el panel de administrador simplemente no tiene con qué iniciar
+  // sesión (el resto de la app sigue funcionando igual). Cambiar
+  // ADMIN_PASSWORD y reiniciar el servicio rota la contraseña sola.
+  if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
+    (async () => {
+      try {
+        const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
+        await callSheetsApi(null, {
+          action: "bootstrap_admin",
+          name: process.env.ADMIN_NAME || "Alex",
+          email: String(process.env.ADMIN_EMAIL).toLowerCase(),
+          password_hash: hash,
+        });
+        console.log("[admin] cuenta de administrador lista (" + process.env.ADMIN_EMAIL + ")");
+      } catch (err) {
+        console.error("[admin] no se pudo preparar la cuenta de administrador:", err.message);
+      }
+    })();
+  } else {
+    console.warn("[admin] faltan ADMIN_EMAIL/ADMIN_PASSWORD en el entorno: el panel de administrador no tiene con qué iniciar sesión");
+  }
 }
 
 app.listen(PORT, () => {

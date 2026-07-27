@@ -155,6 +155,11 @@
   .modal-form .modal-section-title { grid-column: 1 / -1; }
   .modal-hint { font-size: 11px; color: var(--text-muted); margin: -6px 0 4px 0; }
   .settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .avatar-preview-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .avatar-preview-fallback { position: absolute; inset: 0; border-radius: 50%; background: var(--border, #E2E2E2); display: flex; align-items: center; justify-content: center; font-size: 26px; }
+  .avatar-preview { position: relative; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; display: block; background: transparent; }
+  .avatar-preview.avatar-hidden { display: none; }
+  .avatar-mini { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 6px; background: var(--border, #E2E2E2); }
   @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
 
   /* v29: responsivo para celular. Antes .topbar-links no envolvía nunca, así
@@ -274,6 +279,7 @@
 </div>
 
 <div id="statusBanner"></div>
+<div id="broadcastBanner"></div>
 
 <!-- v29: primer intento de navegación por secciones — "Presión Arterial" es
      todo lo que ya existía; "Estadísticas" por ahora es solo un aviso, para
@@ -382,7 +388,7 @@
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
       <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
-      <th data-col="obs">Observaciones</th><th data-col="reacciones">Reacciones</th><th data-col="actions">Acciones</th>
+      <th data-col="obs">Observaciones</th><th data-col="actions">Acciones</th>
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
@@ -457,9 +463,18 @@
 <!-- /tabPresion -->
 
 <div id="tabEstadisticas" class="tab-panel" style="display:none;">
-  <div class="section section-stats-soon">
-    <h2>📊 Estadísticas</h2>
-    <p>Próximamente, Alex ya está trabajando en esto.</p>
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Comparar por franja horaria</h2>
+      <div class="chart-filter" id="statsChartFilter" role="group" aria-label="Periodo a comparar">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de tus lecturas en cada franja del día, para ver si tu presión cambia según la hora en que te la tomas.</p>
+    <div class="chart-wrap"><canvas id="statsTimeOfDayChart"></canvas></div>
+    <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
   </div>
 </div>
 
@@ -469,6 +484,19 @@
 <div class="modal-overlay" id="accountModal" style="display:none;">
   <div class="modal-card">
     <div class="modal-header"><h2>👤 Cuenta</h2><button type="button" class="modal-close" data-close-modal="accountModal">✕</button></div>
+
+    <div class="modal-section-title">Foto de perfil</div>
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
+      <div class="avatar-preview-wrap">
+        <div class="avatar-preview-fallback">👤</div>
+        <img id="p_avatar_preview" class="avatar-preview" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
+      </div>
+      <div>
+        <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
+        <input type="file" id="p_avatar_input" accept="image/*" style="display:none;">
+        <button type="button" class="btn-mini danger" id="p_avatar_remove" style="margin-left:6px;">Quitar</button>
+      </div>
+    </div>
 
     <div class="modal-section-title">Datos personales</div>
     <form class="modal-form" id="profileForm">
@@ -541,13 +569,20 @@
     </form>
 
     <div class="modal-section-title">Invitar a tu médico</div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura.</p>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Si escribes su correo, se lo mandamos directo; si lo dejas en blanco, solo se genera el enlace para que lo copies.</p>
     <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
-    <button type="button" class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+      <div style="flex:1; min-width:200px;">
+        <label style="font-size:12px;">Correo del médico (opcional)</label>
+        <input type="email" id="inviteDoctorEmail" placeholder="doctor@ejemplo.com">
+      </div>
+      <button type="button" class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
+    </div>
     <div class="share-box" id="inviteBox" style="display:none; margin-top:12px;">
       <code id="inviteLink"></code>
       <button type="button" class="btn-secondary" id="copyInviteLink" style="margin-left:8px;">Copiar</button>
     </div>
+    <div id="inviteEmailStatus" style="display:none; font-size:12px; margin-top:6px;"></div>
     <div id="pendingInvitesWrap"></div>
   </div>
 </div>
@@ -595,15 +630,43 @@
       <button type="button" class="btn-secondary" id="fullRestoreBtn">♻️ Restaurar desde un respaldo</button>
     </div>
     <div class="modal-hint">Restaurar reemplaza tus lecturas, comentarios y reacciones actuales por lo que tenía el archivo al momento de respaldarlo. Tus médicos vinculados, tu correo y tu contraseña nunca se tocan.</div>
+
+    <div class="modal-section-title">Soporte</div>
+    <div id="ticketListWrap">
+      <div id="ticketList"></div>
+      <form id="ticketForm" style="margin-top:12px;">
+        <div class="field full" style="margin-bottom:8px;">
+          <label>Asunto</label>
+          <input type="text" id="ticketSubject" required>
+        </div>
+        <div class="field full" style="margin-bottom:8px;">
+          <label>Mensaje</label>
+          <textarea id="ticketMessage" rows="3" required style="width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:13px; box-sizing:border-box;"></textarea>
+        </div>
+        <button type="submit" class="btn-secondary">Enviar</button>
+      </form>
+    </div>
+    <div id="ticketThreadWrap" style="display:none;">
+      <button type="button" class="btn-mini" id="ticketBackBtn">← Volver</button>
+      <h3 id="ticketThreadSubject" style="font-size:14px;margin:10px 0;"></h3>
+      <div id="ticketThreadList" style="margin-bottom:10px;"></div>
+      <form id="ticketReplyForm">
+        <textarea id="ticketReplyInput" rows="2" placeholder="Escribe tu respuesta…" style="width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px;"></textarea>
+        <button type="submit" class="btn-secondary">Responder</button>
+      </form>
+    </div>
   </div>
 </div>
 
 <script>
 let chartInstance = null;
+let statsChartInstance = null;
+let statsChartPeriod = "month";
 let editingId = null;
 let currentData = [];
 let currentComments = [];
 let currentAccount = null;
+let avatarWired = false;
 let lastMedicated = null;
 let commentDay = todayStr();
 let commentDayInitialized = false;
@@ -743,6 +806,17 @@ async function loadAccount() {
     document.getElementById("medNameLabel").textContent = medName;
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     updateMedAdBadge();
+    if (!avatarWired) {
+      avatarWired = true;
+      wireAvatarUploader({
+        fileInput: document.getElementById("p_avatar_input"),
+        previewImg: document.getElementById("p_avatar_preview"),
+        removeBtn: document.getElementById("p_avatar_remove"),
+        accountType: "patient",
+        accountId: currentAccount.id,
+        onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
+      });
+    }
   } catch (err) { /* silencioso */ }
 }
 // Tooltip publicitario: aparece en cada lugar donde se muestra el nombre del
@@ -1018,7 +1092,7 @@ function renderDoctorsAndInvites(doctors, invites) {
   doctorsWrap.innerHTML = doctors.length
     ? `<div class="doctor-list-title">Médicos vinculados</div>` + doctors.map(d => `
         <div class="doctor-row">
-          <div class="doctor-info"><strong>${d.name || "(sin nombre)"}</strong><span>${d.email}</span></div>
+          <div class="doctor-info">${d.avatar_mime ? `<img class="avatar-mini" src="${avatarUrl('doctor', d.id)}" alt="" onerror="this.style.display='none'">` : ""}<strong>${d.name || "(sin nombre)"}</strong><span>${d.email}</span></div>
           <div class="doctor-actions"><button type="button" class="btn-mini danger remove-doctor-btn" data-id="${d.id}">Quitar acceso</button></div>
         </div>`).join("")
     : "";
@@ -1027,7 +1101,7 @@ function renderDoctorsAndInvites(doctors, invites) {
   invitesWrap.innerHTML = invites.length
     ? `<div class="doctor-list-title">Invitaciones pendientes</div>` + invites.map(i => `
         <div class="doctor-row">
-          <div class="doctor-info"><code>${window.location.origin}/doctor/invite/${i.token}</code></div>
+          <div class="doctor-info">${i.email ? `<strong>${i.email}</strong>` : ""}<code>${window.location.origin}/doctor/invite/${i.token}</code></div>
           <div class="doctor-actions">
             <button type="button" class="btn-mini copy-invite-btn" data-token="${i.token}">Copiar</button>
             <button type="button" class="btn-mini danger cancel-invite-btn" data-id="${i.id}">Cancelar</button>
@@ -1072,12 +1146,26 @@ document.getElementById("pendingInvitesWrap").addEventListener("click", async e 
 });
 
 document.getElementById("generateInviteBtn").addEventListener("click", async () => {
+  const emailEl = document.getElementById("inviteDoctorEmail");
+  const email = emailEl.value.trim();
+  const statusEl = document.getElementById("inviteEmailStatus");
+  statusEl.style.display = "none";
   try {
-    setStatus("loading", "Generando enlace…");
-    const result = await apiPost("/api/account/invite", {});
+    setStatus("loading", email ? "Generando enlace y enviando correo…" : "Generando enlace…");
+    const result = await apiPost("/api/account/invite", email ? { email } : {});
     const link = window.location.origin + "/doctor/invite/" + result.invite_token;
     document.getElementById("inviteLink").textContent = link;
     document.getElementById("inviteBox").style.display = "block";
+    if (result.email_sent === true) {
+      statusEl.textContent = `✅ Correo enviado a ${email}.`;
+      statusEl.style.color = "var(--success, #4F9E8C)";
+      statusEl.style.display = "block";
+    } else if (result.email_sent === false) {
+      statusEl.textContent = `No se pudo enviar el correo (${result.email_error || "intenta de nuevo"}). Copia el enlace y mándaselo tú.`;
+      statusEl.style.color = "var(--danger, #C97064)";
+      statusEl.style.display = "block";
+    }
+    emailEl.value = "";
     setStatus(null);
     await loadDoctorsAndInvites();
   } catch (err) {
@@ -1317,7 +1405,6 @@ const TOGGLABLE_COLUMNS = [
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
   { key: "obs", label: "Observaciones" },
-  { key: "reacciones", label: "Reacciones" },
 ];
 function getHiddenColumns() {
   try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols") || "[]")); } catch (e) { return new Set(); }
@@ -1380,8 +1467,7 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}</td>
-      <td data-col="reacciones">${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "patient", viewerId: currentAccount ? currentAccount.id : null })}</td>
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "patient", viewerId: currentAccount ? currentAccount.id : null })}</td>
       <td data-col="actions"><div class="row-actions">
         <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
         <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
@@ -1472,6 +1558,64 @@ function renderChart() {
   });
 }
 
+// ---- Estadísticas: comparación por franja horaria (v30) ----
+function renderStatsChart() {
+  const canvas = document.getElementById("statsTimeOfDayChart");
+  if (!canvas) return;
+  const grouped = timeOfDayComparisonData(currentData, statsChartPeriod);
+  const emptyEl = document.getElementById("statsTimeOfDayEmpty");
+  const hasData = grouped.some(g => g.sys != null || g.dia != null);
+  emptyEl.style.display = hasData ? "none" : "block";
+  canvas.style.display = hasData ? "" : "none";
+  if (statsChartInstance) { statsChartInstance.destroy(); statsChartInstance = null; }
+  if (!hasData) return;
+  const ctx = canvas.getContext("2d");
+  statsChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: grouped.map(g => g.label),
+      datasets: [
+        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9" },
+        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9" },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const point = grouped[items[0].dataIndex];
+              const parts = [];
+              if (point.hr != null) parts.push(`FC prom.: ${point.hr}`);
+              parts.push(`${point.count} lectura${point.count === 1 ? "" : "s"}`);
+              return parts;
+            },
+          },
+        },
+      },
+      scales: { y: { title: { display: true, text: "mmHg" }, beginAtZero: false } },
+    },
+  });
+}
+document.getElementById("statsChartFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  statsChartPeriod = btn.dataset.statsPeriod;
+  document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  renderStatsChart();
+});
+// La pestaña Estadísticas empieza oculta (display:none); Chart.js no puede
+// medir un canvas oculto, así que además de renderizar junto con la
+// pestaña Presión Arterial, se vuelve a dibujar justo al entrar a
+// Estadísticas por si acaso quedó con el tamaño equivocado.
+document.querySelectorAll("[data-page-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.pageTab === "estadisticas") renderStatsChart();
+  });
+});
+
 function render() {
   const data = currentData;
   const emptyState = document.getElementById("emptyState");
@@ -1483,6 +1627,7 @@ function render() {
     document.getElementById("summaryCards").innerHTML = "";
     document.getElementById("alertsContent").innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Agrega o importa lecturas para ver alertas y tendencias.</div>`;
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    renderStatsChart();
     return;
   }
   emptyState.style.display = "none";
@@ -1520,6 +1665,7 @@ function render() {
   document.getElementById("alertsContent").innerHTML = alertsHtml;
 
   renderChart();
+  renderStatsChart();
 }
 
 // Al editar una lectura existente, el campo Peso muestra el peso histórico
@@ -1698,6 +1844,21 @@ wireMedAdBadge("medAdBadgeLegend");
 loadAccount();
 loadAndRender();
 loadComments();
+wireBroadcastBanner(document.getElementById("broadcastBanner"));
+wireSupportTickets({
+  listEl: document.getElementById("ticketList"),
+  formEl: document.getElementById("ticketForm"),
+  subjectInput: document.getElementById("ticketSubject"),
+  messageInput: document.getElementById("ticketMessage"),
+  threadWrap: document.getElementById("ticketThreadWrap"),
+  threadListEl: document.getElementById("ticketThreadList"),
+  threadSubjectEl: document.getElementById("ticketThreadSubject"),
+  replyForm: document.getElementById("ticketReplyForm"),
+  replyInput: document.getElementById("ticketReplyInput"),
+  backBtn: document.getElementById("ticketBackBtn"),
+  myRole: "patient",
+  onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
+});
 loadNotifications();
 // Las reacciones se piden aparte y, cuando llegan, se vuelve a renderizar lo
 // que ya esté en pantalla (comentarios y tabla) para que aparezcan sin

@@ -150,6 +150,31 @@ function chartDataForFilter(data, chartPeriod, selectedDay, timeView) {
   return rawSeriesForChart(filtered);
 }
 
+// ---- Comparación por franja horaria (v30) ----
+// Para la sección Estadísticas: promedia sys/dia/hr dentro de cada una de las
+// cuatro franjas del día (mismos rangos que filterByTimeView, reutilizados
+// para que ambas vistas coincidan), acotado al periodo elegido (semana, mes
+// o año). Siempre regresa las 4 franjas en el mismo orden, aunque alguna no
+// tenga lecturas (con sys/dia/hr en null, para que la gráfica muestre el
+// hueco en vez de desaparecer la barra).
+const TIME_OF_DAY_BUCKETS_ = [
+  { key: "madrugada", label: "Madrugada (1–5h)" },
+  { key: "manana", label: "Mañana (5–12h)" },
+  { key: "tarde", label: "Tarde (12–19h)" },
+  { key: "noche", label: "Noche (19–1h)" },
+];
+function timeOfDayComparisonData(data, granularity) {
+  const periodFiltered = filterByPeriod(data, granularity || "month");
+  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+  return TIME_OF_DAY_BUCKETS_.map(bucket => {
+    const bucketData = filterByTimeView(periodFiltered, bucket.key);
+    const sysVals = bucketData.map(r => r.sys).filter(v => v != null);
+    const diaVals = bucketData.map(r => r.dia).filter(v => v != null);
+    const hrVals = bucketData.map(r => r.hr).filter(v => v != null);
+    return { key: bucket.key, label: bucket.label, sys: avg(sysVals), dia: avg(diaVals), hr: avg(hrVals), count: bucketData.length };
+  });
+}
+
 // Callbacks del tooltip de Chart.js para la gráfica de Tendencia, compartidos
 // por las 3 vistas. Dos ajustes sobre el tooltip por default: (1) la línea
 // de "Medicado" muestra Sí/No (o el % de adherencia si el punto es un
@@ -940,8 +965,13 @@ function urlBase64ToUint8Array_(base64String) {
 // esperar a que el usuario active las notificaciones: registrarlo temprano
 // no pide permiso ni suscribe a nada por sí solo, solo lo deja listo).
 function registerServiceWorker_() {
-  if (!("serviceWorker" in navigator)) return Promise.resolve(null);
-  return navigator.serviceWorker.register("/sw.js").catch(() => null);
+  if (!("serviceWorker" in navigator)) {
+    console.warn("[push] este navegador no tiene Service Worker (serviceWorker no está en navigator)");
+    return Promise.resolve(null);
+  }
+  return navigator.serviceWorker.register("/sw.js")
+    .then(reg => { console.log("[push] service worker registrado, scope:", reg.scope); return reg; })
+    .catch(err => { console.error("[push] falló el registro del service worker:", err); return null; });
 }
 
 // Envuelve todo el flujo de activar/desactivar notificaciones push en un
@@ -952,42 +982,293 @@ function registerServiceWorker_() {
 // use esto actualice su propio botón/texto.
 async function wirePushToggle(reportStatus) {
   const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window);
-  if (unsupported) { reportStatus("unsupported"); return; }
+  if (unsupported) {
+    console.warn("[push] API no disponible en este navegador:", {
+      serviceWorker: "serviceWorker" in navigator,
+      PushManager: "PushManager" in window,
+      Notification: "Notification" in window,
+      standalone: window.matchMedia && window.matchMedia("(display-mode: standalone)").matches,
+    });
+    reportStatus("unsupported");
+    return;
+  }
 
   const reg = await registerServiceWorker_();
   if (!reg) { reportStatus("unsupported"); return; }
-  const existing = await reg.pushManager.getSubscription();
+  const existing = await reg.pushManager.getSubscription().catch(err => { console.error("[push] getSubscription falló:", err); return null; });
   reportStatus(existing ? "subscribed" : (Notification.permission === "denied" ? "denied" : "unsubscribed"));
 
   return {
     subscribe: async () => {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") { reportStatus("denied"); return; }
-      const keyResp = await fetch("/api/push/vapid-public-key");
-      const keyJson = await keyResp.json();
-      if (!keyJson.ok || !keyJson.enabled || !keyJson.publicKey) { reportStatus("unsupported"); return; }
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array_(keyJson.publicKey),
-      });
-      await fetch("/api/push/subscribe", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub.toJSON() }),
-      });
-      reportStatus("subscribed");
+      try {
+        const permission = await Notification.requestPermission();
+        console.log("[push] permiso de notificaciones:", permission);
+        if (permission !== "granted") { reportStatus("denied"); return; }
+        const keyResp = await fetch("/api/push/vapid-public-key");
+        const keyJson = await keyResp.json();
+        if (!keyJson.ok || !keyJson.enabled || !keyJson.publicKey) {
+          console.error("[push] el servidor no tiene VAPID configurado o la ruta falló:", keyJson);
+          reportStatus("unsupported");
+          return;
+        }
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array_(keyJson.publicKey),
+        });
+        console.log("[push] suscripción creada, endpoint:", sub.endpoint);
+        const saveResp = await fetch("/api/push/subscribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub.toJSON() }),
+        });
+        if (!saveResp.ok) console.error("[push] el servidor no pudo guardar la suscripción, status:", saveResp.status);
+        reportStatus("subscribed");
+      } catch (err) {
+        console.error("[push] subscribe falló:", err);
+        throw err;
+      }
     },
     unsubscribe: async () => {
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await fetch("/api/push/unsubscribe", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: sub.endpoint }),
-        });
-        await sub.unsubscribe();
+      try {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await fetch("/api/push/unsubscribe", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint: sub.endpoint }),
+          });
+          await sub.unsubscribe();
+        }
+        reportStatus("unsubscribed");
+      } catch (err) {
+        console.error("[push] unsubscribe falló:", err);
+        throw err;
       }
-      reportStatus("unsubscribed");
     },
   };
+}
+
+// ---- Foto de perfil (v30) ----
+// URL pública para mostrar la foto de una cuenta (paciente o médico). "v" es
+// para invalidar el caché del navegador justo después de subir/borrar una
+// foto nueva (si no, algunos navegadores se quedan con la vieja).
+function avatarUrl(accountType, id, cacheBuster) {
+  if (!id) return "";
+  return `/api/avatar/${accountType === "doctor" ? "doctor" : "patient"}/${id}` + (cacheBuster ? `?v=${cacheBuster}` : "");
+}
+
+// Redimensiona/comprime una imagen del lado del cliente antes de subirla,
+// para que nunca se manden fotos de varios MB a la base de datos (Postgres
+// no tiene por qué cargar con eso, y en móvil sube más rápido así). Regresa
+// { base64, mime } listos para mandar a /api/account/avatar.
+function resizeImageForAvatar_(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("no se pudo leer el archivo"));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error("el archivo no es una imagen válida"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) { height = Math.round(height * (maxDim / width)); width = maxDim; }
+        else if (height > maxDim) { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality || 0.85);
+        resolve({ base64: dataUrl.split(",")[1], mime: "image/jpeg" });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Conecta un <input type="file"> con la subida/borrado de foto de perfil.
+// opts: { fileInput, previewImg, removeBtn, accountType, accountId, onStatus }
+// onStatus(kind, message): kind "loading" | "success" | "error", para que
+// cada página lo muestre con su propio setStatus().
+function wireAvatarUploader(opts) {
+  const { fileInput, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
+  if (!fileInput) return;
+  function refreshPreview() {
+    if (previewImg) previewImg.src = avatarUrl(accountType, accountId, Date.now());
+  }
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); fileInput.value = ""; return; }
+    try {
+      onStatus && onStatus("loading", "Subiendo foto…");
+      const { base64, mime } = await resizeImageForAvatar_(file, 256, 0.85);
+      const resp = await fetch("/api/account/avatar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data_base64: base64, mime }),
+      });
+      const json = await resp.json();
+      if (!json.ok) throw new Error(json.error || "no se pudo subir la foto");
+      refreshPreview();
+      onStatus && onStatus("success", "Foto de perfil actualizada.");
+    } catch (err) {
+      onStatus && onStatus("error", err.message);
+    } finally {
+      fileInput.value = "";
+    }
+  });
+  if (removeBtn) {
+    removeBtn.addEventListener("click", async () => {
+      try {
+        onStatus && onStatus("loading", "Quitando foto…");
+        const resp = await fetch("/api/account/avatar/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const json = await resp.json();
+        if (!json.ok) throw new Error(json.error || "no se pudo quitar la foto");
+        refreshPreview();
+        onStatus && onStatus("success", "Foto de perfil quitada.");
+      } catch (err) {
+        onStatus && onStatus("error", err.message);
+      }
+    });
+  }
+  refreshPreview();
+}
+
+// ---- Mensajes generales del administrador (v30) ----
+// Se guardan en localStorage los ids ya cerrados, para no repetir el mismo
+// aviso una vez que el paciente/médico ya lo vio y lo cerró — pero si el
+// administrador publica uno nuevo, ese sí se muestra aunque haya otros ya
+// cerrados antes.
+function ensureBroadcastStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-broadcast-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-broadcast-styles";
+  style.textContent = `
+    .bp-broadcast { background: #FBF6E9; border: 1px solid #EEDCA8; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; display: flex; gap: 10px; align-items: flex-start; }
+    .bp-broadcast .bp-broadcast-body { flex: 1; }
+    .bp-broadcast strong { display: block; margin-bottom: 2px; }
+    .bp-broadcast-close { background: none; border: none; cursor: pointer; font-size: 15px; color: #A5791E; padding: 0 2px; line-height: 1; }
+  `;
+  document.head.appendChild(style);
+}
+async function wireBroadcastBanner(containerEl) {
+  if (!containerEl) return;
+  ensureBroadcastStyles_();
+  const dismissedKey = "bp_dismissed_broadcasts";
+  const dismissed = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
+  try {
+    const resp = await fetch("/api/broadcasts");
+    const json = await resp.json();
+    if (!json.ok) return;
+    const toShow = (json.data || []).filter(b => dismissed.indexOf(b.id) === -1);
+    containerEl.innerHTML = toShow.map(b => `
+      <div class="bp-broadcast" data-id="${b.id}">
+        <div class="bp-broadcast-body"><strong>📣 ${b.title}</strong>${b.body || ""}</div>
+        <button type="button" class="bp-broadcast-close" data-dismiss="${b.id}" aria-label="Cerrar">✕</button>
+      </div>`).join("");
+    containerEl.querySelectorAll("[data-dismiss]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.dismiss;
+        const list = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
+        list.push(id);
+        localStorage.setItem(dismissedKey, JSON.stringify(list));
+        btn.closest(".bp-broadcast").remove();
+      });
+    });
+  } catch (err) { /* silencioso: un aviso que no cargó no debe romper la página */ }
+}
+
+// ---- Tickets de soporte (v30) ----
+// Widget autocontenido: formulario para abrir un ticket + lista de los
+// propios + hilo de mensajes al abrir uno. authorRoleLabel es "patient" o
+// "doctor" (para mostrar "Tú" en los mensajes propios en el hilo).
+function ensureTicketStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-ticket-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-ticket-styles";
+  style.textContent = `
+    .bp-ticket-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+    .bp-ticket-row:last-child { border-bottom: none; }
+    .bp-ticket-row:hover { opacity: 0.8; }
+    .bp-ticket-pill { font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; }
+    .bp-ticket-pill.open { background: #FBF6E9; color: #A5791E; }
+    .bp-ticket-pill.closed { background: var(--bg-page, #F4F7F5); color: var(--text-muted); }
+    .bp-ticket-msg { padding: 9px 11px; border-radius: 10px; margin-bottom: 7px; font-size: 13px; max-width: 85%; }
+    .bp-ticket-msg.mine { background: var(--accent-soft, #E8F0EC); margin-left: auto; }
+    .bp-ticket-msg.other { background: var(--bg-page, #F4F7F5); }
+    .bp-ticket-msg .who { font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  `;
+  document.head.appendChild(style);
+}
+function wireSupportTickets(opts) {
+  const { listEl, formEl, subjectInput, messageInput, threadWrap, threadListEl, threadSubjectEl, replyForm, replyInput, backBtn, myRole, onStatus } = opts;
+  if (!listEl) return;
+  ensureTicketStyles_();
+  let currentId = null;
+  async function refreshList() {
+    try {
+      const resp = await fetch("/api/support/tickets");
+      const json = await resp.json();
+      if (!json.ok) throw new Error(json.error);
+      listEl.innerHTML = (json.data || []).length
+        ? json.data.map(t => `
+            <div class="bp-ticket-row" data-id="${t.id}">
+              <span>${t.subject}</span>
+              <span class="bp-ticket-pill ${t.status}">${t.status === "open" ? "Abierto" : "Cerrado"}</span>
+            </div>`).join("")
+        : `<div style="font-size:13px;color:var(--text-muted);">Todavía no has abierto ningún ticket.</div>`;
+    } catch (err) { onStatus && onStatus("error", err.message); }
+  }
+  async function openThread(id) {
+    try {
+      currentId = id;
+      const resp = await fetch(`/api/support/tickets/${id}/messages`);
+      const json = await resp.json();
+      if (!json.ok) throw new Error(json.error);
+      threadSubjectEl.textContent = json.data.ticket.subject;
+      threadListEl.innerHTML = json.data.messages.map(m => `
+        <div class="bp-ticket-msg ${m.author_role === myRole ? "mine" : "other"}">
+          <div class="who">${m.author_role === myRole ? "Tú" : (m.author_role === "admin" ? "Soporte" : m.author_role)}</div>
+          ${m.text}
+        </div>`).join("");
+      listEl.parentElement.style.display = "none";
+      threadWrap.style.display = "block";
+    } catch (err) { onStatus && onStatus("error", err.message); }
+  }
+  listEl.addEventListener("click", e => {
+    const row = e.target.closest(".bp-ticket-row");
+    if (row) openThread(row.dataset.id);
+  });
+  if (backBtn) backBtn.addEventListener("click", () => {
+    threadWrap.style.display = "none";
+    listEl.parentElement.style.display = "block";
+    refreshList();
+  });
+  if (formEl) formEl.addEventListener("submit", async e => {
+    e.preventDefault();
+    const subject = subjectInput.value.trim();
+    const message = messageInput.value.trim();
+    if (!subject || !message) return;
+    try {
+      onStatus && onStatus("loading", "Enviando…");
+      const resp = await fetch("/api/support/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject, message }) });
+      const json = await resp.json();
+      if (!json.ok) throw new Error(json.error);
+      subjectInput.value = ""; messageInput.value = "";
+      onStatus && onStatus("success", "Ticket enviado. Te responderemos aquí mismo.");
+      await refreshList();
+    } catch (err) { onStatus && onStatus("error", err.message); }
+  });
+  if (replyForm) replyForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const text = replyInput.value.trim();
+    if (!text || !currentId) return;
+    try {
+      const resp = await fetch(`/api/support/tickets/${currentId}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      const json = await resp.json();
+      if (!json.ok) throw new Error(json.error);
+      replyInput.value = "";
+      await openThread(currentId);
+    } catch (err) { onStatus && onStatus("error", err.message); }
+  });
+  refreshList();
 }
 
 // ---- Icono de ojo para mostrar/ocultar contraseña (v29) ----

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de administrador · Reigning Blood Pressure App</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
+<link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
+<style>
+  :root {
+    color-scheme: light;
+    --border: #E1E9E4; --bg-card: #ffffff; --bg-page: #F4F7F5; --text: #33403D; --text-muted: #7C8A85;
+    --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC;
+    --danger: #C97064; --danger-soft: #FBF0EE;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 26px; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+  .link-btn { font-size: 12px; color: var(--text-muted); background: none; border: none; cursor: pointer; padding: 0; }
+  .link-btn:hover { text-decoration: underline; }
+  .status-banner { font-size: 12px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
+  .status-banner.loading { background: var(--accent-soft); color: var(--accent-hover); }
+  .status-banner.error { background: var(--danger-soft); color: var(--danger); }
+  .status-banner.success { background: #EEF6F1; color: var(--accent); }
+  .tabs { display: flex; gap: 4px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 18px; width: fit-content; }
+  .tab-btn { border: none; background: transparent; color: var(--text-muted); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 7px; cursor: pointer; }
+  .tab-btn.active { background: var(--accent); color: white; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
+  .card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .card .value { font-size: 22px; font-weight: 650; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .btn-primary { background: var(--accent); color: white; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary { background: var(--accent-soft); color: var(--accent-hover); border: none; padding: 7px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn-mini { background: var(--bg-page); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .btn-mini.danger { color: var(--danger); border-color: #F0D9D6; }
+  input, textarea, select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: inherit; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .badge-pill { font-size: 11px; font-weight: 650; padding: 3px 9px; border-radius: 20px; }
+  .badge-pill.ok { background: var(--accent-soft); color: var(--accent-hover); }
+  .badge-pill.suspended { background: var(--danger-soft); color: var(--danger); }
+  .badge-pill.open { background: #FBF6E9; color: #A5791E; }
+  .badge-pill.closed { background: var(--bg-page); color: var(--text-muted); }
+  .ticket-row { cursor: pointer; }
+  .ticket-row:hover { background: var(--bg-page); }
+  .thread-msg { padding: 10px 12px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; max-width: 80%; }
+  .thread-msg.admin { background: var(--accent-soft); margin-left: auto; }
+  .thread-msg.other { background: var(--bg-page); }
+  .thread-msg .who { font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
+  .broadcast-row { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .broadcast-row:last-child { border-bottom: none; }
+  .empty-hint { color: var(--text-muted); font-size: 13px; }
+  .subtabs { display: flex; gap: 16px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .subtab-btn { border: none; background: none; padding: 8px 2px; font-size: 13px; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  .subtab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🛡️ Panel de administrador</h1>
+  <form method="POST" action="/logout"><button type="submit" class="link-btn">Cerrar sesión</button></form>
+</div>
+<div class="subtitle">Reigning Blood Pressure App</div>
+
+<div id="statusBanner"></div>
+
+<div class="tabs" id="mainTabs">
+  <button type="button" class="tab-btn active" data-tab="cuentas">Cuentas</button>
+  <button type="button" class="tab-btn" data-tab="mensajes">Mensajes</button>
+  <button type="button" class="tab-btn" data-tab="estadisticas">Estadísticas</button>
+  <button type="button" class="tab-btn" data-tab="soporte">Soporte</button>
+</div>
+
+<!-- ---- Cuentas ---- -->
+<div class="panel active" id="panel-cuentas">
+  <div class="section">
+    <h2>Pacientes</h2>
+    <table><thead><tr><th>Nombre</th><th>Correo</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
+      <tbody id="patientsBody"></tbody>
+    </table>
+    <div id="patientsEmpty" class="empty-hint" style="display:none;">Sin pacientes registrados todavía.</div>
+  </div>
+  <div class="section">
+    <h2>Médicos</h2>
+    <table><thead><tr><th>Nombre</th><th>Correo</th><th>Paciente ligado</th><th>Alta</th><th>Estado</th><th></th></tr></thead>
+      <tbody id="doctorsBody"></tbody>
+    </table>
+    <div id="doctorsEmpty" class="empty-hint" style="display:none;">Sin médicos registrados todavía.</div>
+  </div>
+</div>
+
+<!-- ---- Mensajes ---- -->
+<div class="panel" id="panel-mensajes">
+  <div class="section">
+    <h2>Nuevo mensaje general</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:-6px;">Lo verán todos los pacientes y médicos con sesión iniciada, hasta que lo desactives.</p>
+    <form id="broadcastForm">
+      <div class="field"><label>Título</label><input type="text" id="bc_title" required></div>
+      <div class="field"><label>Mensaje</label><textarea id="bc_body" rows="3"></textarea></div>
+      <button type="submit" class="btn-primary">Publicar</button>
+    </form>
+  </div>
+  <div class="section">
+    <h2>Mensajes</h2>
+    <div id="broadcastsList"></div>
+    <div id="broadcastsEmpty" class="empty-hint" style="display:none;">Todavía no has publicado ningún mensaje.</div>
+  </div>
+</div>
+
+<!-- ---- Estadísticas ---- -->
+<div class="panel" id="panel-estadisticas">
+  <div class="grid" id="statsGrid"></div>
+</div>
+
+<!-- ---- Soporte ---- -->
+<div class="panel" id="panel-soporte">
+  <div class="section" id="ticketsListSection">
+    <div class="subtabs" id="ticketSubtabs">
+      <button type="button" class="subtab-btn active" data-status="open">Abiertos</button>
+      <button type="button" class="subtab-btn" data-status="closed">Cerrados</button>
+      <button type="button" class="subtab-btn" data-status="all">Todos</button>
+    </div>
+    <table><thead><tr><th>De</th><th>Asunto</th><th>Actualizado</th><th>Estado</th></tr></thead>
+      <tbody id="ticketsBody"></tbody>
+    </table>
+    <div id="ticketsEmpty" class="empty-hint" style="display:none;">No hay tickets en esta vista.</div>
+  </div>
+  <div class="section" id="ticketThreadSection" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <button type="button" class="btn-mini" id="backToTicketsBtn">← Volver a la lista</button>
+      <div>
+        <span id="ticketThreadStatus" class="badge-pill" style="margin-right:8px;"></span>
+        <button type="button" class="btn-mini" id="toggleTicketStatusBtn"></button>
+      </div>
+    </div>
+    <h2 id="ticketThreadSubject"></h2>
+    <div id="ticketThreadMessages" style="margin-bottom:14px;"></div>
+    <form id="ticketReplyForm">
+      <div class="field"><textarea id="ticketReplyText" rows="2" placeholder="Escribe tu respuesta…"></textarea></div>
+      <button type="submit" class="btn-primary">Responder</button>
+    </form>
+  </div>
+</div>
+
+<script>
+function setStatus(kind, msg) {
+  const el = document.getElementById("statusBanner");
+  if (!kind) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="status-banner ${kind}">${msg}</div>`;
+}
+async function apiGet(url) {
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al leer");
+  return json.data;
+}
+async function apiPost(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al guardar");
+  return json;
+}
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ---- Navegación por pestañas ----
+document.getElementById("mainTabs").addEventListener("click", e => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "panel-" + btn.dataset.tab));
+  if (btn.dataset.tab === "cuentas") loadAccounts();
+  if (btn.dataset.tab === "mensajes") loadBroadcasts();
+  if (btn.dataset.tab === "estadisticas") loadStats();
+  if (btn.dataset.tab === "soporte") loadTickets();
+});
+
+// ---- Cuentas ----
+async function loadAccounts() {
+  try {
+    const data = await apiGet("/api/admin/accounts");
+    const pBody = document.getElementById("patientsBody");
+    pBody.innerHTML = data.patients.map(p => `
+      <tr>
+        <td>${p.name || "(sin nombre)"}</td>
+        <td>${p.email}</td>
+        <td>${fmtDateTime(p.created_at)}</td>
+        <td><span class="badge-pill ${p.suspended ? "suspended" : "ok"}">${p.suspended ? "Suspendida" : "Activa"}</span></td>
+        <td><button type="button" class="btn-mini ${p.suspended ? "" : "danger"}" data-type="patient" data-id="${p.id}" data-suspend="${p.suspended ? "0" : "1"}">${p.suspended ? "Reactivar" : "Suspender"}</button></td>
+      </tr>`).join("");
+    document.getElementById("patientsEmpty").style.display = data.patients.length ? "none" : "block";
+
+    const dBody = document.getElementById("doctorsBody");
+    dBody.innerHTML = data.doctors.map(d => `
+      <tr>
+        <td>${d.name || "(sin nombre)"}</td>
+        <td>${d.email}</td>
+        <td>${d.patient_name || "—"}</td>
+        <td>${fmtDateTime(d.created_at)}</td>
+        <td><span class="badge-pill ${d.suspended ? "suspended" : "ok"}">${d.suspended ? "Suspendida" : "Activa"}</span></td>
+        <td><button type="button" class="btn-mini ${d.suspended ? "" : "danger"}" data-type="doctor" data-id="${d.id}" data-suspend="${d.suspended ? "0" : "1"}">${d.suspended ? "Reactivar" : "Suspender"}</button></td>
+      </tr>`).join("");
+    document.getElementById("doctorsEmpty").style.display = data.doctors.length ? "none" : "block";
+  } catch (err) { setStatus("error", err.message); }
+}
+document.getElementById("panel-cuentas").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-type]");
+  if (!btn) return;
+  const suspend = btn.dataset.suspend === "1";
+  if (suspend && !confirm("¿Suspender esta cuenta? No podrá iniciar sesión hasta que la reactives.")) return;
+  try {
+    setStatus("loading", suspend ? "Suspendiendo…" : "Reactivando…");
+    await apiPost(`/api/admin/accounts/${btn.dataset.type}/${btn.dataset.id}/suspend`, { suspended: suspend });
+    setStatus("success", suspend ? "Cuenta suspendida." : "Cuenta reactivada.");
+    setTimeout(() => setStatus(null), 1500);
+    await loadAccounts();
+  } catch (err) { setStatus("error", err.message); }
+});
+
+// ---- Mensajes ----
+async function loadBroadcasts() {
+  try {
+    const data = await apiGet("/api/admin/broadcasts");
+    const wrap = document.getElementById("broadcastsList");
+    wrap.innerHTML = data.map(b => `
+      <div class="broadcast-row">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
+          <div><strong>${b.title}</strong><div style="font-size:12px;color:var(--text-muted);">${fmtDateTime(b.created_at)}</div></div>
+          <div>
+            <span class="badge-pill ${b.active ? "ok" : "closed"}">${b.active ? "Activo" : "Inactivo"}</span>
+            ${b.active ? `<button type="button" class="btn-mini" data-deactivate="${b.id}" style="margin-left:8px;">Desactivar</button>` : ""}
+          </div>
+        </div>
+        ${b.body ? `<div style="font-size:13px;margin-top:6px;">${b.body}</div>` : ""}
+      </div>`).join("");
+    document.getElementById("broadcastsEmpty").style.display = data.length ? "none" : "block";
+  } catch (err) { setStatus("error", err.message); }
+}
+document.getElementById("broadcastForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    setStatus("loading", "Publicando…");
+    await apiPost("/api/admin/broadcasts", { title: document.getElementById("bc_title").value, body: document.getElementById("bc_body").value });
+    document.getElementById("broadcastForm").reset();
+    setStatus("success", "Mensaje publicado.");
+    setTimeout(() => setStatus(null), 1500);
+    await loadBroadcasts();
+  } catch (err) { setStatus("error", err.message); }
+});
+document.getElementById("broadcastsList").addEventListener("click", async e => {
+  const btn = e.target.closest("button[data-deactivate]");
+  if (!btn) return;
+  try {
+    setStatus("loading", "Desactivando…");
+    await apiPost(`/api/admin/broadcasts/${btn.dataset.deactivate}/deactivate`, {});
+    setStatus(null);
+    await loadBroadcasts();
+  } catch (err) { setStatus("error", err.message); }
+});
+
+// ---- Estadísticas ----
+async function loadStats() {
+  try {
+    const s = await apiGet("/api/admin/stats");
+    document.getElementById("statsGrid").innerHTML = `
+      <div class="card"><div class="label">Pacientes</div><div class="value">${s.patients}</div></div>
+      <div class="card"><div class="label">Médicos</div><div class="value">${s.doctors}</div></div>
+      <div class="card"><div class="label">Lecturas registradas</div><div class="value">${s.readings}</div></div>
+      <div class="card"><div class="label">Comentarios</div><div class="value">${s.comments}</div></div>
+      <div class="card"><div class="label">Reacciones</div><div class="value">${s.reactions}</div></div>
+      <div class="card"><div class="label">Tickets abiertos</div><div class="value">${s.openTickets}</div></div>
+      <div class="card"><div class="label">Altas últimos 7 días</div><div class="value">${s.newPatients7d}</div></div>
+      <div class="card"><div class="label">Altas últimos 30 días</div><div class="value">${s.newPatients30d}</div></div>
+      <div class="card"><div class="label">Suscripciones push activas</div><div class="value">${s.pushSubs}</div></div>
+    `;
+  } catch (err) { setStatus("error", err.message); }
+}
+
+// ---- Soporte ----
+let allTickets = [];
+let ticketStatusFilter = "open";
+async function loadTickets() {
+  try {
+    allTickets = await apiGet("/api/admin/tickets");
+    renderTickets();
+  } catch (err) { setStatus("error", err.message); }
+}
+function renderTickets() {
+  const filtered = ticketStatusFilter === "all" ? allTickets : allTickets.filter(t => t.status === ticketStatusFilter);
+  document.getElementById("ticketsBody").innerHTML = filtered.map(t => `
+    <tr class="ticket-row" data-id="${t.id}">
+      <td>${t.account_name || t.account_id}<div style="font-size:11px;color:var(--text-muted);">${t.account_type === "doctor" ? "Médico" : "Paciente"}</div></td>
+      <td>${t.subject}</td>
+      <td>${fmtDateTime(t.updated_at)}</td>
+      <td><span class="badge-pill ${t.status === "open" ? "open" : "closed"}">${t.status === "open" ? "Abierto" : "Cerrado"}</span></td>
+    </tr>`).join("");
+  document.getElementById("ticketsEmpty").style.display = filtered.length ? "none" : "block";
+}
+document.getElementById("ticketSubtabs").addEventListener("click", e => {
+  const btn = e.target.closest(".subtab-btn");
+  if (!btn) return;
+  document.querySelectorAll("#ticketSubtabs .subtab-btn").forEach(b => b.classList.toggle("active", b === btn));
+  ticketStatusFilter = btn.dataset.status;
+  renderTickets();
+});
+let currentTicketId = null;
+document.getElementById("ticketsBody").addEventListener("click", async e => {
+  const row = e.target.closest(".ticket-row");
+  if (!row) return;
+  currentTicketId = row.dataset.id;
+  await openTicketThread(currentTicketId);
+});
+async function openTicketThread(id) {
+  try {
+    const data = await apiGet(`/api/admin/tickets/${id}/messages`);
+    document.getElementById("ticketsListSection").style.display = "none";
+    document.getElementById("ticketThreadSection").style.display = "block";
+    document.getElementById("ticketThreadSubject").textContent = data.ticket.subject;
+    const statusEl = document.getElementById("ticketThreadStatus");
+    statusEl.textContent = data.ticket.status === "open" ? "Abierto" : "Cerrado";
+    statusEl.className = "badge-pill " + (data.ticket.status === "open" ? "open" : "closed");
+    const toggleBtn = document.getElementById("toggleTicketStatusBtn");
+    toggleBtn.textContent = data.ticket.status === "open" ? "Cerrar ticket" : "Reabrir ticket";
+    toggleBtn.dataset.newStatus = data.ticket.status === "open" ? "closed" : "open";
+    document.getElementById("ticketThreadMessages").innerHTML = data.messages.map(m => `
+      <div class="thread-msg ${m.author_role === "admin" ? "admin" : "other"}">
+        <div class="who">${m.author_role === "admin" ? "Tú (administrador)" : (m.author_role === "doctor" ? "Médico" : "Paciente")} · ${fmtDateTime(m.created_at)}</div>
+        ${m.text}
+      </div>`).join("");
+  } catch (err) { setStatus("error", err.message); }
+}
+document.getElementById("backToTicketsBtn").addEventListener("click", () => {
+  document.getElementById("ticketThreadSection").style.display = "none";
+  document.getElementById("ticketsListSection").style.display = "block";
+  loadTickets();
+});
+document.getElementById("toggleTicketStatusBtn").addEventListener("click", async e => {
+  try {
+    setStatus("loading", "Actualizando…");
+    await apiPost(`/api/admin/tickets/${currentTicketId}/status`, { status: e.target.dataset.newStatus });
+    setStatus(null);
+    await openTicketThread(currentTicketId);
+  } catch (err) { setStatus("error", err.message); }
+});
+document.getElementById("ticketReplyForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const textEl = document.getElementById("ticketReplyText");
+  if (!textEl.value.trim()) return;
+  try {
+    setStatus("loading", "Enviando…");
+    await apiPost(`/api/admin/tickets/${currentTicketId}/messages`, { text: textEl.value });
+    textEl.value = "";
+    setStatus(null);
+    await openTicketThread(currentTicketId);
+  } catch (err) { setStatus("error", err.message); }
+});
+
+// Carga inicial
+loadAccounts();
+</script>
+</body>
+</html>

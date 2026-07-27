@@ -169,7 +169,6 @@
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
       <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated">Medicado</th><th data-col="obs">Observaciones</th>
-      <th data-col="reacciones">Reacciones</th>
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
@@ -282,7 +281,6 @@ const TOGGLABLE_COLUMNS = [
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
   { key: "obs", label: "Observaciones" },
-  { key: "reacciones", label: "Reacciones" },
 ];
 function getHiddenColumns() {
   try { return new Set(JSON.parse(localStorage.getItem("bp_hidden_cols_familia") || "[]")); } catch (e) { return new Set(); }
@@ -392,8 +390,7 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}</td>
-      <td data-col="reacciones">${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "family", viewerId: getFamilyReactorId() })}</td>`;
+      <td data-col="obs" class="obs">${r.obs || ""}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "family", viewerId: getFamilyReactorId() })}</td>`;
     tbody.appendChild(tr);
   });
   applyColumnVisibility();

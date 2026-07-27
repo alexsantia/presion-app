@@ -38,6 +38,52 @@ const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:alejandro@empresso.mx
 const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 if (pushEnabled) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  console.log("[push] VAPID configurado, envío de push activado");
+} else {
+  console.warn("[push] faltan VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY en el entorno: el envío de push queda desactivado");
+}
+
+// v30: correo real para la invitación de médico (Resend). Se usa fetch()
+// directo a la API de Resend en vez de instalar su SDK, para no sumar una
+// dependencia solo por esto. Si falta RESEND_API_KEY, la invitación se sigue
+// generando igual (el enlace también se regresa en la respuesta, como
+// siempre) — el correo es un extra, no un requisito para invitar.
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "Reigning Blood Pressure App <onboarding@resend.dev>";
+const resendEnabled = !!RESEND_API_KEY;
+if (resendEnabled) {
+  console.log("[email] RESEND_API_KEY configurado, envío de correo activado");
+} else {
+  console.warn("[email] falta RESEND_API_KEY en el entorno: las invitaciones de médico no mandan correo, solo el enlace");
+}
+async function sendDoctorInviteEmail_(toEmail, patientName, inviteUrl) {
+  if (!resendEnabled) return { sent: false, reason: "resend no configurado" };
+  try {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: RESEND_FROM_EMAIL,
+        to: [toEmail],
+        subject: `${patientName} te invitó a Reigning Blood Pressure App`,
+        html: `<p>Hola,</p>
+<p><strong>${patientName}</strong> te invitó a ver su presión arterial en modo de solo lectura en Reigning Blood Pressure App.</p>
+<p><a href="${inviteUrl}" style="display:inline-block;background:#4F7A6F;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;">Crear mi cuenta de médico</a></p>
+<p>O copia y pega este enlace en tu navegador:<br>${inviteUrl}</p>
+<p style="color:#888;font-size:12px;">Este enlace es de un solo uso. Si no esperabas esta invitación, puedes ignorar este correo.</p>`,
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      console.error("[email] Resend respondió con error:", resp.status, errText);
+      return { sent: false, reason: "el servicio de correo respondió con error" };
+    }
+    console.log("[email] invitación de médico enviada a", toEmail);
+    return { sent: true };
+  } catch (err) {
+    console.error("[email] falló el envío de la invitación:", err.message);
+    return { sent: false, reason: "no se pudo contactar el servicio de correo" };
+  }
 }
 
 // v28: avisador de cambios en tiempo real. server.js se suscribe a esto para
@@ -111,6 +157,23 @@ const MAX_DOCTORS_PER_PATIENT = 5;
 const DEFAULT_DOCTOR_TITLE = "Dr(a).";
 const VALID_DOCTOR_TITLES = ["Dr.", "Dra.", "Dr(a)."];
 const RESET_TOKEN_TTL_MINUTES = 30;
+// v30: foto de perfil. El cliente ya la redimensiona/comprime antes de subir
+// (ver wireAvatarUpload en common.js), así que 800 KB es un tope generoso
+// pensado para atrapar errores, no el tamaño esperado normal.
+const AVATAR_MAX_BYTES = 800 * 1024;
+const AVATAR_ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
+
+// Lee la foto de perfil (bytes crudos) de un paciente o médico, para que
+// server.js la sirva directo por HTTP sin pasar por JSON/base64. Se exporta
+// aparte de callPostgresApi porque server.js necesita el Buffer y el mime
+// tal cual, no envueltos en la respuesta {ok, data} de siempre.
+async function getAvatarData(accountType, id) {
+  const table = accountType === "doctor" ? "medicos" : "pacientes";
+  const { rows } = await pool.query(`SELECT avatar_data, avatar_mime FROM ${table} WHERE id = $1`, [id]);
+  const row = rows[0];
+  if (!row || !row.avatar_data) return null;
+  return { data: row.avatar_data, mime: row.avatar_mime || "image/jpeg" };
+}
 const BACKUP_VERSION = 1;
 
 function classifyReading(sys, dia) {
@@ -161,6 +224,7 @@ function patientRaw(row) {
     cholesterol: num(row.cholesterol), triglycerides: num(row.triglycerides),
     med_brand: row.med_brand || "", med_mg: num(row.med_mg),
     gender: row.gender || "", weight: num(row.weight), waist: num(row.waist),
+    avatar_mime: row.avatar_mime || null, suspended: !!row.suspended,
   };
 }
 function patientPublic(row) {
@@ -169,9 +233,11 @@ function patientPublic(row) {
   const { password_hash, ...rest } = p;
   return rest;
 }
+// avatar_data (bytea) deliberadamente NO se incluye aquí: es pesado y casi
+// ninguna acción lo necesita. Se sirve aparte por /api/avatar/:type/:id.
 const PATIENT_SELECT = `SELECT id, name, email, password_hash, to_char(birthdate, 'YYYY-MM-DD') AS birthdate,
   share_token, created_at, updated_at, to_char(last_lab_date, 'YYYY-MM-DD') AS last_lab_date,
-  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist FROM pacientes`;
+  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, avatar_mime, suspended FROM pacientes`;
 
 async function findPatientByEmail(email) {
   const { rows } = await pool.query(`${PATIENT_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
@@ -189,24 +255,30 @@ async function findPatientByShareToken(token) {
 // ---- Medicos ----
 function doctorPublic(row) {
   if (!row) return null;
-  return { id: row.id, name: row.name, email: row.email, patient_id: row.patient_id, title: row.title || DEFAULT_DOCTOR_TITLE };
+  return {
+    id: row.id, name: row.name, email: row.email, patient_id: row.patient_id,
+    title: row.title || DEFAULT_DOCTOR_TITLE, avatar_mime: row.avatar_mime || null, suspended: !!row.suspended,
+  };
 }
 function doctorDisplayName(d) {
   if (!d) return DEFAULT_DOCTOR_TITLE + " " + "(médico)";
   const title = d.title && VALID_DOCTOR_TITLES.indexOf(d.title) !== -1 ? d.title : DEFAULT_DOCTOR_TITLE;
   return title + " " + (d.name || "");
 }
+// avatar_data (bytea) deliberadamente fuera de este SELECT por lo mismo que
+// en pacientes: pesado y casi nunca hace falta junto con el resto de la fila.
+const DOCTOR_SELECT = `SELECT id, patient_id, name, email, password_hash, created_at, title, avatar_mime, suspended FROM medicos`;
 async function findDoctorByEmail(email) {
-  const { rows } = await pool.query(`SELECT * FROM medicos WHERE email = $1`, [String(email || "").toLowerCase()]);
+  const { rows } = await pool.query(`${DOCTOR_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
   return rows[0] || null;
 }
 async function findDoctorById(id) {
-  const { rows } = await pool.query(`SELECT * FROM medicos WHERE id = $1`, [id]);
+  const { rows } = await pool.query(`${DOCTOR_SELECT} WHERE id = $1`, [id]);
   return rows[0] || null;
 }
 async function listDoctorsForPatient(patientId) {
   const { rows } = await pool.query(
-    `SELECT id, name, email, created_at, title FROM medicos WHERE patient_id = $1 ORDER BY created_at`,
+    `SELECT id, name, email, created_at, title, avatar_mime, suspended FROM medicos WHERE patient_id = $1 ORDER BY created_at`,
     [patientId]
   );
   return rows.map(r => ({ id: r.id, name: r.name, email: r.email, created_at: new Date(r.created_at).toISOString(), title: r.title || DEFAULT_DOCTOR_TITLE }));
@@ -226,8 +298,8 @@ async function findInviteById(id) {
   return rows[0] || null;
 }
 async function listInvitesForPatient(patientId) {
-  const { rows } = await pool.query(`SELECT id, token, created_at FROM medico_invites WHERE patient_id = $1 ORDER BY created_at`, [patientId]);
-  return rows.map(r => ({ id: r.id, token: r.token, created_at: new Date(r.created_at).toISOString() }));
+  const { rows } = await pool.query(`SELECT id, token, email, created_at FROM medico_invites WHERE patient_id = $1 ORDER BY created_at`, [patientId]);
+  return rows.map(r => ({ id: r.id, token: r.token, email: r.email || null, created_at: new Date(r.created_at).toISOString() }));
 }
 async function countPendingInvitesForPatient(patientId) {
   const { rows } = await pool.query(`SELECT count(*)::int AS c FROM medico_invites WHERE patient_id = $1`, [patientId]);
@@ -287,19 +359,24 @@ async function deletePushSubscription(endpoint) {
 // el navegador ya dio de baja (404/410, típico tras desinstalar la PWA o
 // borrar datos del sitio) se limpian solas de la tabla.
 async function sendPushToRecipient_(recipientType, recipientId, payload) {
-  if (!pushEnabled) return;
+  if (!pushEnabled) { console.warn("[push] pushEnabled=false (faltan VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY), no se manda push"); return; }
   let subs;
-  try { subs = await listPushSubscriptions(recipientType, recipientId); } catch (err) { return; }
+  try { subs = await listPushSubscriptions(recipientType, recipientId); } catch (err) { console.error("[push] no se pudieron leer las suscripciones:", err.message); return; }
+  console.log(`[push] enviando a ${recipientType}/${recipientId}: ${subs.length} suscripción(es)`);
   const body = JSON.stringify(payload);
   for (const s of subs) {
     try {
       await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body);
+      console.log(`[push] enviado OK a endpoint ...${s.endpoint.slice(-20)}`);
     } catch (err) {
+      console.error(`[push] falló el envío a endpoint ...${s.endpoint.slice(-20)}: statusCode=${err && err.statusCode} ${err && err.body ? err.body : err.message}`);
       if (err && (err.statusCode === 404 || err.statusCode === 410)) {
         await deletePushSubscription(s.endpoint).catch(() => {});
       }
-      // cualquier otro error (red, payload, etc.) se ignora: el push es un
-      // extra, la notificación in-app ya quedó guardada de cualquier forma.
+      // cualquier otro error (red, payload, etc.) no truena la operación: el
+      // push es un extra, la notificación in-app ya quedó guardada de
+      // cualquier forma. Pero sí queda en el log del servidor para poder
+      // diagnosticarlo.
     }
   }
 }
@@ -317,7 +394,7 @@ async function createNotification(recipientType, recipientId, type, message, rel
         body: message || "Tienes una notificación nueva.",
         count,
       }))
-      .catch(() => {});
+      .catch(err => console.error("[push] error inesperado preparando el envío:", err.message));
   }
 }
 async function listNotifications(recipientType, recipientId) {
@@ -373,6 +450,75 @@ async function findResetByToken(token) {
 }
 async function clearPendingResetsForAccount(accountType, accountId) {
   await pool.query(`DELETE FROM password_resets WHERE account_type = $1 AND account_id = $2`, [accountType, accountId]);
+}
+
+// ---- v30: administración ----
+async function findAdminByEmail(email) {
+  const { rows } = await pool.query(`SELECT * FROM admins WHERE email = $1`, [String(email || "").toLowerCase()]);
+  return rows[0] || null;
+}
+// Vista combinada de todas las cuentas (pacientes y médicos) para el panel
+// de administrador: solo lo necesario para la lista (nada de contraseñas ni
+// datos clínicos), con el nombre del paciente al que cada médico está
+// ligado para que la tabla tenga contexto sin una segunda consulta por fila.
+async function listAllAccounts() {
+  const [{ rows: patients }, { rows: doctors }] = await Promise.all([
+    pool.query(`SELECT id, name, email, created_at, suspended FROM pacientes ORDER BY created_at DESC`),
+    pool.query(`SELECT m.id, m.name, m.email, m.created_at, m.suspended, m.patient_id, p.name AS patient_name
+                FROM medicos m LEFT JOIN pacientes p ON p.id = m.patient_id ORDER BY m.created_at DESC`),
+  ]);
+  return {
+    patients: patients.map(r => ({ id: r.id, name: r.name, email: r.email, created_at: new Date(r.created_at).toISOString(), suspended: !!r.suspended })),
+    doctors: doctors.map(r => ({ id: r.id, name: r.name, email: r.email, created_at: new Date(r.created_at).toISOString(), suspended: !!r.suspended, patient_id: r.patient_id, patient_name: r.patient_name || "" })),
+  };
+}
+// Estadísticas de uso muy simples (conteos), a propósito sin analítica
+// pesada: esta app es de un solo consultorio/familia, no un SaaS con miles
+// de cuentas, así que un vistazo rápido de totales es lo que de verdad hace
+// falta en el panel, no un dashboard de BI.
+async function usageStats() {
+  const q = (sql, params) => pool.query(sql, params).then(r => r.rows[0].c);
+  const [patients, doctors, readings, comments, reactions, openTickets, newPatients7d, newPatients30d, pushSubs] = await Promise.all([
+    q(`SELECT count(*)::int AS c FROM pacientes`),
+    q(`SELECT count(*)::int AS c FROM medicos`),
+    q(`SELECT count(*)::int AS c FROM lecturas`),
+    q(`SELECT count(*)::int AS c FROM comentarios`),
+    q(`SELECT count(*)::int AS c FROM reacciones`),
+    q(`SELECT count(*)::int AS c FROM support_tickets WHERE status = 'open'`),
+    q(`SELECT count(*)::int AS c FROM pacientes WHERE created_at >= now() - interval '7 days'`),
+    q(`SELECT count(*)::int AS c FROM pacientes WHERE created_at >= now() - interval '30 days'`),
+    q(`SELECT count(*)::int AS c FROM push_subscriptions`),
+  ]);
+  return { patients, doctors, readings, comments, reactions, openTickets, newPatients7d, newPatients30d, pushSubs };
+}
+async function listBroadcasts() {
+  const { rows } = await pool.query(`SELECT * FROM broadcast_messages ORDER BY created_at DESC`);
+  return rows.map(r => ({ id: r.id, title: r.title, body: r.body, active: !!r.active, created_at: new Date(r.created_at).toISOString() }));
+}
+async function listActiveBroadcasts() {
+  const { rows } = await pool.query(`SELECT * FROM broadcast_messages WHERE active = true ORDER BY created_at DESC`);
+  return rows.map(r => ({ id: r.id, title: r.title, body: r.body, created_at: new Date(r.created_at).toISOString() }));
+}
+async function findTicketById(id) {
+  const { rows } = await pool.query(`SELECT * FROM support_tickets WHERE id = $1`, [id]);
+  const r = rows[0];
+  if (!r) return null;
+  return { id: r.id, account_type: r.account_type, account_id: r.account_id, account_name: r.account_name, subject: r.subject, status: r.status, created_at: new Date(r.created_at).toISOString(), updated_at: new Date(r.updated_at).toISOString() };
+}
+async function listTicketsForAccount(accountType, accountId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM support_tickets WHERE account_type = $1 AND account_id = $2 ORDER BY updated_at DESC`,
+    [accountType === "doctor" ? "doctor" : "patient", accountId]
+  );
+  return rows.map(r => ({ id: r.id, subject: r.subject, status: r.status, created_at: new Date(r.created_at).toISOString(), updated_at: new Date(r.updated_at).toISOString() }));
+}
+async function listAllTickets() {
+  const { rows } = await pool.query(`SELECT * FROM support_tickets ORDER BY (status = 'open') DESC, updated_at DESC`);
+  return rows.map(r => ({ id: r.id, account_type: r.account_type, account_id: r.account_id, account_name: r.account_name, subject: r.subject, status: r.status, created_at: new Date(r.created_at).toISOString(), updated_at: new Date(r.updated_at).toISOString() }));
+}
+async function listTicketMessages(ticketId) {
+  const { rows } = await pool.query(`SELECT * FROM support_ticket_messages WHERE ticket_id = $1 ORDER BY created_at`, [ticketId]);
+  return rows.map(r => ({ id: r.id, author_role: r.author_role, text: r.text, created_at: new Date(r.created_at).toISOString() }));
 }
 
 // ============================================================
@@ -465,6 +611,35 @@ async function handleGet(params) {
         readings, comments, reactions,
       },
     };
+  }
+
+  // ---- v30: panel de administrador ----
+  if (action === "get_admin_by_email") {
+    const a = await findAdminByEmail(params.email);
+    return { ok: true, data: a || null };
+  }
+  if (action === "list_all_accounts") {
+    return { ok: true, data: await listAllAccounts() };
+  }
+  if (action === "usage_stats") {
+    return { ok: true, data: await usageStats() };
+  }
+  if (action === "list_broadcasts") {
+    return { ok: true, data: await listBroadcasts() };
+  }
+  if (action === "get_active_broadcasts") {
+    return { ok: true, data: await listActiveBroadcasts() };
+  }
+  if (action === "list_my_tickets") {
+    return { ok: true, data: await listTicketsForAccount(params.account_type, params.account_id) };
+  }
+  if (action === "list_all_tickets") {
+    return { ok: true, data: await listAllTickets() };
+  }
+  if (action === "get_ticket_messages") {
+    const ticket = await findTicketById(params.ticket_id);
+    if (!ticket) return { ok: false, error: "no encontrado" };
+    return { ok: true, data: { ticket, messages: await listTicketMessages(params.ticket_id) } };
   }
   return { ok: false, error: "acción no soportada" };
 }
@@ -593,8 +768,15 @@ async function handlePost(body) {
       return { ok: false, error: "Ya llegaste al máximo de " + MAX_DOCTORS_PER_PATIENT + " médicos vinculados. Quita el acceso de alguno o cancela una invitación pendiente para generar uno nuevo." };
     }
     const inviteToken = uuid().replace(/-/g, "");
-    await pool.query(`INSERT INTO medico_invites (id, patient_id, token, created_at) VALUES ($1,$2,$3,$4)`, [uuid(), p.id, inviteToken, now]);
-    return { ok: true, invite_token: inviteToken };
+    const email = body.email ? String(body.email).toLowerCase().trim() : null;
+    await pool.query(`INSERT INTO medico_invites (id, patient_id, token, email, created_at) VALUES ($1,$2,$3,$4,$5)`, [uuid(), p.id, inviteToken, email, now]);
+    let emailResult = null;
+    if (email) {
+      const origin = String(body.origin || "").replace(/\/+$/, "");
+      const inviteUrl = origin + "/doctor/invite/" + inviteToken;
+      emailResult = await sendDoctorInviteEmail_(email, p.name, inviteUrl);
+    }
+    return { ok: true, invite_token: inviteToken, email_sent: emailResult ? emailResult.sent : null, email_error: emailResult && !emailResult.sent ? emailResult.reason : null };
   }
   if (body.action === "cancel_doctor_invite") {
     const inv = await findInviteById(body.id);
@@ -614,6 +796,27 @@ async function handlePost(body) {
     const shareToken = uuid().replace(/-/g, "");
     await pool.query(`UPDATE pacientes SET share_token = $1 WHERE id = $2`, [shareToken, p.id]);
     return { ok: true, share_token: shareToken };
+  }
+  // ---- v30: foto de perfil ----
+  // account_type/account_id siempre los decide el servidor (de la sesión),
+  // nunca el cliente, para que nadie pueda subir/borrar la foto de otra
+  // cuenta con solo cambiar el id en la petición.
+  if (body.action === "upload_avatar") {
+    const table = body.account_type === "doctor" ? "medicos" : "pacientes";
+    const buf = Buffer.from(body.data_base64, "base64");
+    if (buf.length > AVATAR_MAX_BYTES) {
+      return { ok: false, error: "la imagen es muy pesada (máximo " + Math.round(AVATAR_MAX_BYTES / 1024) + " KB), intenta con una más chica" };
+    }
+    if (AVATAR_ALLOWED_MIME.indexOf(body.mime) === -1) {
+      return { ok: false, error: "formato de imagen no soportado (usa JPG, PNG o WEBP)" };
+    }
+    await pool.query(`UPDATE ${table} SET avatar_data = $1, avatar_mime = $2 WHERE id = $3`, [buf, body.mime, body.account_id]);
+    return { ok: true };
+  }
+  if (body.action === "remove_avatar") {
+    const table = body.account_type === "doctor" ? "medicos" : "pacientes";
+    await pool.query(`UPDATE ${table} SET avatar_data = NULL, avatar_mime = NULL WHERE id = $1`, [body.account_id]);
+    return { ok: true };
   }
 
   // ---- Medicos ----
@@ -868,6 +1071,67 @@ async function handlePost(body) {
     return { ok: true };
   }
 
+  // ---- v30: panel de administrador ----
+  // bootstrap_admin: crea o actualiza la cuenta de administrador a partir de
+  // ADMIN_EMAIL/ADMIN_PASSWORD (server.js ya hashea la contraseña antes de
+  // llamar esto). Se corre una vez al arrancar el servidor; si ya existe un
+  // admin con ese correo, solo actualiza el nombre/contraseña — así cambiar
+  // ADMIN_PASSWORD en Render y reiniciar el servicio también rota la
+  // contraseña sin tener que tocar la base de datos a mano.
+  if (body.action === "bootstrap_admin") {
+    const existing = await findAdminByEmail(body.email);
+    if (existing) {
+      await pool.query(`UPDATE admins SET name = $1, password_hash = $2 WHERE id = $3`, [body.name, body.password_hash, existing.id]);
+      return { ok: true, id: existing.id, created: false };
+    }
+    const id = uuid();
+    await pool.query(`INSERT INTO admins (id, name, email, password_hash, created_at) VALUES ($1,$2,$3,$4,$5)`, [id, body.name, body.email, body.password_hash, now]);
+    return { ok: true, id, created: true };
+  }
+  if (body.action === "toggle_account_suspended") {
+    const table = body.account_type === "doctor" ? "medicos" : "pacientes";
+    await pool.query(`UPDATE ${table} SET suspended = $1 WHERE id = $2`, [!!body.suspended, body.id]);
+    return { ok: true };
+  }
+  if (body.action === "create_broadcast") {
+    const id = uuid();
+    await pool.query(`INSERT INTO broadcast_messages (id, title, body, active, created_at) VALUES ($1,$2,$3,true,$4)`, [id, body.title, body.body || "", now]);
+    return { ok: true, id };
+  }
+  if (body.action === "deactivate_broadcast") {
+    await pool.query(`UPDATE broadcast_messages SET active = false WHERE id = $1`, [body.id]);
+    return { ok: true };
+  }
+  if (body.action === "create_support_ticket") {
+    const accountType = body.account_type === "doctor" ? "doctor" : "patient";
+    if (!body.subject || !String(body.subject).trim()) return { ok: false, error: "escribe un asunto" };
+    if (!body.message || !String(body.message).trim()) return { ok: false, error: "escribe tu mensaje" };
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO support_tickets (id, account_type, account_id, account_name, subject, status, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,'open',$6,$6)`,
+      [id, accountType, body.account_id, body.account_name || "", body.subject, now]
+    );
+    await pool.query(`INSERT INTO support_ticket_messages (id, ticket_id, author_role, text, created_at) VALUES ($1,$2,$3,$4,$5)`, [uuid(), id, accountType, body.message, now]);
+    return { ok: true, id };
+  }
+  if (body.action === "add_ticket_message") {
+    const ticket = await findTicketById(body.ticket_id);
+    if (!ticket) return { ok: false, error: "no encontrado" };
+    if (!body.text || !String(body.text).trim()) return { ok: false, error: "escribe un mensaje" };
+    await pool.query(`INSERT INTO support_ticket_messages (id, ticket_id, author_role, text, created_at) VALUES ($1,$2,$3,$4,$5)`, [uuid(), body.ticket_id, body.author_role, body.text, now]);
+    // Un admin que responde reabre el ticket si estaba cerrado (para que no
+    // se le "pierda" al paciente/médico una respuesta a un ticket cerrado);
+    // un paciente/médico que escribe en un ticket cerrado también lo reabre.
+    await pool.query(`UPDATE support_tickets SET updated_at = $1, status = 'open' WHERE id = $2`, [now, body.ticket_id]);
+    return { ok: true };
+  }
+  if (body.action === "set_ticket_status") {
+    const status = body.status === "closed" ? "closed" : "open";
+    await pool.query(`UPDATE support_tickets SET status = $1, updated_at = $2 WHERE id = $3`, [status, now, body.id]);
+    return { ok: true };
+  }
+
   return { ok: false, error: "acción no soportada" };
 }
 
@@ -885,4 +1149,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData };

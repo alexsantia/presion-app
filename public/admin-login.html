@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de administrador · Reigning Blood Pressure App</title>
+<link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
+<link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
+<link rel="stylesheet" href="/shared/auth.css">
+<script src="/shared/auth.js"></script>
+</head>
+<body>
+  <form class="auth-card" id="loginForm">
+    <h1 class="brand-heading"><img src="/shared/logos/logo-full-light.png" alt="Reigning Blood Pressure App" class="brand-logo"></h1>
+    <p class="sub">Panel de administrador</p>
+    <label>Correo</label>
+    <input type="email" id="email" required autofocus>
+    <label>Contraseña</label>
+    <input type="password" id="password" required>
+    <div class="err" id="err" style="display:none;"></div>
+    <button type="submit">Entrar</button>
+  </form>
+<script>
+document.getElementById("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errEl = document.getElementById("err");
+  errEl.style.display = "none";
+  try {
+    const res = await fetch("/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: document.getElementById("email").value, password: document.getElementById("password").value }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || "no se pudo iniciar sesión");
+    window.location.href = json.redirect || "/admin";
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = "block";
+  }
+});
+</script>
+</body>
+</html>

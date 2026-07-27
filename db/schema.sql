@@ -136,3 +136,58 @@ CREATE TABLE IF NOT EXISTS reacciones (
   UNIQUE (patient_id, target_type, target_id, reactor_role, reactor_id)
 );
 CREATE INDEX IF NOT EXISTS idx_reacciones_patient_id ON reacciones(patient_id);
+
+-- v30: correo opcional en la invitación de médico, para poder mandar el
+-- enlace por correo (ver RESEND_API_KEY) además de copiarlo a mano.
+ALTER TABLE medico_invites ADD COLUMN IF NOT EXISTS email text;
+
+-- v30: foto de perfil. Se guarda directo en Postgres (bytea) porque Render
+-- no tiene disco persistente entre despliegues; para fotos de este tamaño
+-- (se comprimen/redimensionan del lado del cliente antes de subirlas) esto
+-- es más simple que depender de un bucket externo.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS avatar_data bytea;
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS avatar_mime text;
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS avatar_data bytea;
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS avatar_mime text;
+
+-- v30: panel maestro de administrador — suspensión de cuentas, cuentas de
+-- administrador, mensajes generales y tickets de soporte.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS suspended boolean NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS admins (
+  id uuid PRIMARY KEY,
+  name text NOT NULL,
+  email text NOT NULL UNIQUE,
+  password_hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS broadcast_messages (
+  id uuid PRIMARY KEY,
+  title text NOT NULL,
+  body text NOT NULL DEFAULT '',
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id uuid PRIMARY KEY,
+  account_type text NOT NULL CHECK (account_type IN ('patient', 'doctor')),
+  account_id uuid NOT NULL,
+  account_name text NOT NULL DEFAULT '',
+  subject text NOT NULL,
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_support_tickets_account ON support_tickets(account_type, account_id);
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+  id uuid PRIMARY KEY,
+  ticket_id uuid NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+  author_role text NOT NULL CHECK (author_role IN ('patient', 'doctor', 'admin')),
+  text text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id);
