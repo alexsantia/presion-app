@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=28"></script>
+<script src="/shared/common.js?v=29"></script>
 <style>
   :root {
     color-scheme: light;
@@ -101,6 +101,15 @@
   .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
   .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
+
+  /* v29: responsivo para celular */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) {
+    body { padding: 14px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    #readingsTable { min-width: 720px; }
+  }
 </style>
 </head>
 <body>
@@ -154,6 +163,7 @@
     </div>
   </div>
   <div id="emptyState" style="display:none; font-size:13px; color:var(--text-muted);">Todavía no hay lecturas registradas.</div>
+  <div class="table-scroll">
   <table id="readingsTable">
     <thead><tr>
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
@@ -163,6 +173,7 @@
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
+  </div>
   <div class="pagination" id="paginationBar" style="display:none;">
     <div class="pagination-info" id="paginationInfo"></div>
     <div class="pagination-controls">
@@ -208,7 +219,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v29</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();

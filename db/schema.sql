@@ -107,6 +107,23 @@ CREATE TABLE IF NOT EXISTS notificaciones (
 );
 CREATE INDEX IF NOT EXISTS idx_notificaciones_recipient ON notificaciones(recipient_type, recipient_id);
 
+-- v29: suscripciones a notificaciones push (Web Push). Igual que
+-- notificaciones, recipient_type/recipient_id identifican a quién pertenece
+-- (paciente o médico) sin llave foránea directa, porque un mismo id puede
+-- vivir en pacientes o en medicos según el tipo. endpoint es único porque el
+-- navegador puede volver a mandar la misma suscripción (por ejemplo, tras
+-- reinstalar la PWA); en ese caso solo se actualizan las llaves.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id uuid PRIMARY KEY,
+  recipient_type text NOT NULL CHECK (recipient_type IN ('patient', 'doctor')),
+  recipient_id uuid NOT NULL,
+  endpoint text NOT NULL UNIQUE,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_recipient ON push_subscriptions(recipient_type, recipient_id);
+
 CREATE TABLE IF NOT EXISTS reacciones (
   id uuid PRIMARY KEY,
   patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,

@@ -7,8 +7,13 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
+<link rel="manifest" href="/shared/manifest-doctor.webmanifest">
+<meta name="theme-color" content="#4F7A6F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=28"></script>
+<script src="/shared/common.js?v=29"></script>
 <style>
   :root {
     color-scheme: light;
@@ -147,6 +152,18 @@
   .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
   .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
+
+  /* v29: responsivo para celular (mismo criterio que index.html: sin
+     flex-wrap, .topbar-links se salía del viewport en pantallas angostas y
+     empujaba los menús desplegables fuera de la vista). */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) {
+    body { padding: 14px; }
+    .topbar-links { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    #readingsTable { min-width: 720px; }
+  }
 </style>
 </head>
 <body>
@@ -222,6 +239,7 @@
     </div>
   </div>
   <div id="emptyState" style="display:none;">El paciente todavía no ha registrado lecturas.</div>
+  <div class="table-scroll">
   <table id="readingsTable">
     <thead><tr>
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
@@ -231,6 +249,7 @@
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
+  </div>
   <div class="pagination" id="paginationBar" style="display:none;">
     <div class="pagination-info" id="paginationInfo"></div>
     <div class="pagination-controls">
@@ -311,7 +330,13 @@
   </form>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
+<div class="section section-password">
+  <h2>Notificaciones</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Si ancla esta app a su pantalla de inicio, puede recibir avisos del sistema aunque la tenga cerrada.</p>
+  <button type="button" class="btn-secondary" id="pushToggleBtn" disabled>Cargando…</button>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v29</footer>
 
 <script>
 let chartInstance = null;
@@ -484,6 +509,7 @@ function renderNotifBadge() {
   const badge = document.getElementById("notifBadge");
   if (unread > 0) { badge.textContent = unread > 9 ? "9+" : String(unread); badge.style.display = "flex"; }
   else { badge.style.display = "none"; }
+  updateAppBadge_(unread); // v29: mismo número en el ícono de pantalla de inicio
 }
 async function openNotifPanel() {
   const panel = document.getElementById("notifPanel");
@@ -806,6 +832,28 @@ connectRealtime("/api/stream", kind => {
   }
   loadNotifications();
 });
+
+// ---- Notificaciones push (v29) ----
+(async () => {
+  const btn = document.getElementById("pushToggleBtn");
+  if (!btn) return;
+  function render(state) {
+    if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
+    else if (state === "denied") { btn.textContent = "Notificaciones bloqueadas (revíselo en los ajustes de su navegador)"; btn.disabled = true; }
+    else if (state === "subscribed") { btn.textContent = "🔕 Desactivar notificaciones push"; btn.dataset.state = "subscribed"; btn.disabled = false; }
+    else { btn.textContent = "🔔 Activar notificaciones push"; btn.dataset.state = "unsubscribed"; btn.disabled = false; }
+  }
+  const actions = await wirePushToggle(render);
+  btn.addEventListener("click", async () => {
+    if (!actions) return;
+    btn.disabled = true;
+    try {
+      if (btn.dataset.state === "subscribed") await actions.unsubscribe();
+      else await actions.subscribe();
+    } catch (err) { setStatus("error", "No se pudo actualizar las notificaciones: " + err.message); }
+    finally { btn.disabled = false; }
+  });
+})();
 </script>
 </body>
 </html>

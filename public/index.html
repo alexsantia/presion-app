@@ -7,9 +7,14 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/shared/logos/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
+<link rel="manifest" href="/shared/manifest-patient.webmanifest">
+<meta name="theme-color" content="#4F7A6F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=28"></script>
+<script src="/shared/common.js?v=29"></script>
 <style>
   :root {
     color-scheme: light;
@@ -152,6 +157,22 @@
   .settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
   @media (max-width: 720px) { .grid, .two-col { grid-template-columns: 1fr 1fr; } form.add-form { grid-template-columns: 1fr 1fr; } }
 
+  /* v29: responsivo para celular. Antes .topbar-links no envolvía nunca, así
+     que en pantallas angostas se salía del viewport hacia la derecha —
+     .hamburger-wrap terminaba empujado fuera de la vista, y su menú
+     (position:absolute; right:0) se calculaba desde ahí, apareciendo
+     recortado del lado izquierdo de la pantalla. Con flex-wrap ya no se sale:
+     lo que no cabe baja a una segunda línea, siempre alineado a la derecha. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+  @media (max-width: 560px) {
+    body { padding: 14px; }
+    .topbar-links { flex-wrap: wrap; justify-content: flex-end; row-gap: 8px; }
+    .grid { grid-template-columns: 1fr 1fr; }
+    form.add-form { grid-template-columns: 1fr 1fr; }
+    .modal-form { grid-template-columns: 1fr; }
+    #readingsTable { min-width: 720px; }
+  }
+
   /* Feed de comentarios por día (v18) */
   .comment-daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
   .comment-daynav input[type="date"] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
@@ -201,6 +222,16 @@
   .view-as-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
   .view-as-banner { font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; background: var(--accent-soft); color: var(--accent-hover); }
 
+  /* v29: navegación por secciones de la página (Presión Arterial / Estadísticas) */
+  .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
+  .page-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+  .page-tab-btn + .page-tab-btn { margin-left: 14px; }
+  .page-tab-btn:hover { color: var(--text); }
+  .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .section-stats-soon { text-align: center; padding: 48px 20px; color: var(--text-muted); }
+  .section-stats-soon h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+
   /* v25: mostrar/ocultar columnas del Historial de lecturas */
   .col-toggle-menu { position: absolute; right: 0; top: 36px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.14); min-width: 190px; z-index: 55; padding: 8px; }
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
@@ -244,6 +275,15 @@
 
 <div id="statusBanner"></div>
 
+<!-- v29: primer intento de navegación por secciones — "Presión Arterial" es
+     todo lo que ya existía; "Estadísticas" por ahora es solo un aviso, para
+     ir probando la idea antes de construir gráficas nuevas ahí. -->
+<div class="page-tabs">
+  <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
+  <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
+</div>
+
+<div id="tabPresion" class="tab-panel">
 <div class="section section-streak" id="streakSection"></div>
 
 <div class="grid" id="summaryCards"></div>
@@ -336,6 +376,7 @@
     <div class="disclaimer">Selecciona el texto y cópialo para enviarlo por WhatsApp o correo.</div>
   </div>
   <div id="emptyState" style="display:none;">Todavía no hay lecturas registradas. Usa el formulario de arriba o importa un archivo.</div>
+  <div class="table-scroll">
   <table id="readingsTable">
     <thead><tr>
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
@@ -345,6 +386,7 @@
     </tr></thead>
     <tbody id="readingsBody"></tbody>
   </table>
+  </div>
   <div class="pagination" id="paginationBar" style="display:none;">
     <div class="pagination-info" id="paginationInfo"></div>
     <div class="pagination-controls">
@@ -411,8 +453,17 @@
     </div>
   </div>
 </div>
+</div>
+<!-- /tabPresion -->
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v28</footer>
+<div id="tabEstadisticas" class="tab-panel" style="display:none;">
+  <div class="section section-stats-soon">
+    <h2>📊 Estadísticas</h2>
+    <p>Próximamente, Alex ya está trabajando en esto.</p>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v29</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -531,6 +582,10 @@
       <button type="button" class="btn-secondary" id="settingsBackupBtn">⬇️ Respaldar historial (CSV)</button>
       <button type="button" class="btn-secondary" id="settingsRegenFamilyBtn">🔄 Regenerar enlace de familia</button>
     </div>
+
+    <div class="modal-section-title">Notificaciones</div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Si anclas esta app a tu pantalla de inicio, puedes recibir avisos del sistema aunque la tengas cerrada, y ver cuántas tienes pendientes en el ícono.</p>
+    <button type="button" class="btn-secondary" id="pushToggleBtn" disabled>Cargando…</button>
 
     <div class="modal-section-title">Respaldo y restauración</div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">A diferencia del CSV de arriba (solo para ver tus lecturas en Excel), este respaldo guarda absolutamente todo — lecturas, comentarios y reacciones — para poder restaurarlo tal cual, tú mismo, si algo sale mal.</p>
@@ -787,6 +842,15 @@ document.querySelectorAll("[data-close-modal]").forEach(btn => {
 });
 document.querySelectorAll(".modal-overlay").forEach(overlay => {
   overlay.addEventListener("click", e => { if (e.target === overlay) closeModal(overlay.id); });
+});
+
+// ---- Navegación por secciones: Presión Arterial / Estadísticas (v29) ----
+document.querySelectorAll("[data-page-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
+    document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
+  });
 });
 
 // ---- Parámetros (colesterol, triglicéridos, laboratorio, medicación) ----
@@ -1186,6 +1250,7 @@ function renderNotifBadge() {
   const badge = document.getElementById("notifBadge");
   if (unread > 0) { badge.textContent = unread > 9 ? "9+" : String(unread); badge.style.display = "flex"; }
   else { badge.style.display = "none"; }
+  updateAppBadge_(unread); // v29: mismo número en el ícono de pantalla de inicio
 }
 async function openNotifPanel() {
   const panel = document.getElementById("notifPanel");
@@ -1530,6 +1595,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     else {
       await apiPost("/api/readings", values);
       e.target.reset();
+      fireConfetti(submitBtn); // v29: confeti al terminar de agregar (no al editar)
       // Al agregar una lectura nueva, si el peso capturado aquí es distinto
       // al que tenía Parámetros, ese nuevo peso pasa a ser el vigente.
       if (!wasEditing && enteredWeight != null && (!currentAccount || currentAccount.weight !== enteredWeight)) {
@@ -1657,6 +1723,28 @@ connectRealtime("/api/stream", kind => {
   }
   loadNotifications();
 });
+
+// ---- Notificaciones push (v29) ----
+(async () => {
+  const btn = document.getElementById("pushToggleBtn");
+  if (!btn) return;
+  function render(state) {
+    if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
+    else if (state === "denied") { btn.textContent = "Notificaciones bloqueadas (revísalo en los ajustes de tu navegador)"; btn.disabled = true; }
+    else if (state === "subscribed") { btn.textContent = "🔕 Desactivar notificaciones push"; btn.dataset.state = "subscribed"; btn.disabled = false; }
+    else { btn.textContent = "🔔 Activar notificaciones push"; btn.dataset.state = "unsubscribed"; btn.disabled = false; }
+  }
+  const actions = await wirePushToggle(render);
+  btn.addEventListener("click", async () => {
+    if (!actions) return;
+    btn.disabled = true;
+    try {
+      if (btn.dataset.state === "subscribed") await actions.unsubscribe();
+      else await actions.subscribe();
+    } catch (err) { setStatus("error", "No se pudo actualizar las notificaciones: " + err.message); }
+    finally { btn.disabled = false; }
+  });
+})();
 </script>
 </body>
 </html>

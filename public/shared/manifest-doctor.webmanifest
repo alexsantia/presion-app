@@ -1,0 +1,14 @@
+{
+  "name": "Reigning Blood Pressure App · Médico",
+  "short_name": "RBP Médico",
+  "description": "Panel de médico: seguimiento de presión arterial de tu paciente.",
+  "start_url": "/doctor",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F4F7F5",
+  "theme_color": "#4F7A6F",
+  "icons": [
+    { "src": "/shared/logos/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/shared/logos/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

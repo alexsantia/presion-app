@@ -598,6 +598,33 @@ app.post("/api/account/restore", requireRole("patient"), asyncRoute(async (req, 
   res.json(result);
 }));
 
+// ---- Notificaciones push (Web Push, v29) — solo con backend Postgres ----
+// El service worker se sirve desde la raíz (no desde /shared/) para que su
+// alcance ("scope") cubra toda la app y no solo /shared/; así puede
+// interceptar push/notificationclick sin importar en qué página estaba
+// abierta cuando el usuario activó las notificaciones.
+app.get("/sw.js", (req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Content-Type", "application/javascript; charset=utf-8");
+  res.sendFile(path.join(__dirname, "public", "shared", "sw.js"));
+});
+if (DB_BACKEND === "postgres") {
+  const { pushEnabled, VAPID_PUBLIC_KEY } = require("./db-postgres");
+  app.get("/api/push/vapid-public-key", requireAnyRole, (req, res) => {
+    res.json({ ok: true, enabled: pushEnabled, publicKey: VAPID_PUBLIC_KEY });
+  });
+  app.post("/api/push/subscribe", requireAnyRole, asyncRoute(async (req, res) => {
+    const recipientType = req.session.role;
+    const recipientId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+    const result = await callSheetsApi(null, { action: "save_push_subscription", recipient_type: recipientType, recipient_id: recipientId, subscription: req.body.subscription });
+    res.json(result);
+  }));
+  app.post("/api/push/unsubscribe", requireAnyRole, asyncRoute(async (req, res) => {
+    const result = await callSheetsApi(null, { action: "delete_push_subscription", endpoint: req.body.endpoint });
+    res.json(result);
+  }));
+}
+
 app.listen(PORT, () => {
   console.log(`Reigning Blood Pressure App escuchando en http://localhost:${PORT}`);
 });

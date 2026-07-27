@@ -18,11 +18,27 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const { EventEmitter } = require("events");
+const webpush = require("web-push");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
 });
+
+// v29: notificaciones push (Web Push) para que lleguen avisos del sistema
+// aunque la app esté cerrada, cuando está anclada a la pantalla de inicio
+// (PWA). Requiere un par de llaves VAPID — se generan UNA sola vez para
+// todo el proyecto (no por usuario) con `npx web-push generate-vapid-keys`
+// y se guardan como variables de entorno en Render; si faltan, el envío de
+// push simplemente se omite (todo lo demás de la app sigue funcionando
+// exactamente igual, como si esta función no existiera).
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "";
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || "mailto:alejandro@empresso.mx";
+const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (pushEnabled) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 // v28: avisador de cambios en tiempo real. server.js se suscribe a esto para
 // reenviar un aviso (vía Server-Sent Events) a las tres interfaces
@@ -46,7 +62,17 @@ function ensureSchema() {
   if (!schemaReady) {
     schemaReady = (async () => {
       const sql = fs.readFileSync(path.join(__dirname, "db", "schema.sql"), "utf8");
-      const statements = sql.split(/;\s*\n/).map(s => s.trim()).filter(s => s && !s.startsWith("--"));
+      // v29 fix: antes se partía primero por ";\n" y luego se descartaba
+      // cualquier trozo que EMPEZARA con "--", pero un trozo con un
+      // comentario de varias líneas seguido de un CREATE real (como el de
+      // push_subscriptions) empieza con "--" igual, así que el CREATE de
+      // adentro se perdía completo y en silencio (el índice que lo usa
+      // fallaba después con "relation ... does not exist"). Ahora se quitan
+      // las líneas que son solo comentario ANTES de partir en sentencias,
+      // para que nunca se descarte SQL real por venir después de un
+      // comentario en el mismo trozo.
+      const sqlWithoutComments = sql.split("\n").filter(line => !line.trim().startsWith("--")).join("\n");
+      const statements = sqlWithoutComments.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
       for (const stmt of statements) {
         await pool.query(stmt);
       }
@@ -227,6 +253,56 @@ async function findCommentById(id) {
 }
 
 // ---- Notificaciones ----
+async function countUnreadNotifications(recipientType, recipientId) {
+  const { rows } = await pool.query(
+    `SELECT count(*)::int AS c FROM notificaciones WHERE recipient_type = $1 AND recipient_id = $2 AND read_at IS NULL`,
+    [recipientType, recipientId]
+  );
+  return rows[0].c;
+}
+
+// ---- Push (Web Push, v29) ----
+async function listPushSubscriptions(recipientType, recipientId) {
+  const { rows } = await pool.query(
+    `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE recipient_type = $1 AND recipient_id = $2`,
+    [recipientType, recipientId]
+  );
+  return rows;
+}
+async function savePushSubscription(recipientType, recipientId, sub) {
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) return;
+  await pool.query(
+    `INSERT INTO push_subscriptions (id, recipient_type, recipient_id, endpoint, p256dh, auth, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (endpoint) DO UPDATE SET recipient_type = $2, recipient_id = $3, p256dh = $5, auth = $6`,
+    [uuid(), recipientType, recipientId, sub.endpoint, sub.keys.p256dh, sub.keys.auth, nowIso()]
+  );
+}
+async function deletePushSubscription(endpoint) {
+  await pool.query(`DELETE FROM push_subscriptions WHERE endpoint = $1`, [endpoint]);
+}
+// Manda un push a todas las suscripciones de este destinatario. Nunca
+// truena si algo falla (una notificación in-app fallida por culpa del push
+// sería peor que el push mismo fallando en silencio); las suscripciones que
+// el navegador ya dio de baja (404/410, típico tras desinstalar la PWA o
+// borrar datos del sitio) se limpian solas de la tabla.
+async function sendPushToRecipient_(recipientType, recipientId, payload) {
+  if (!pushEnabled) return;
+  let subs;
+  try { subs = await listPushSubscriptions(recipientType, recipientId); } catch (err) { return; }
+  const body = JSON.stringify(payload);
+  for (const s of subs) {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, body);
+    } catch (err) {
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+        await deletePushSubscription(s.endpoint).catch(() => {});
+      }
+      // cualquier otro error (red, payload, etc.) se ignora: el push es un
+      // extra, la notificación in-app ya quedó guardada de cualquier forma.
+    }
+  }
+}
 async function createNotification(recipientType, recipientId, type, message, relatedId) {
   if (!recipientId) return;
   await pool.query(
@@ -234,6 +310,15 @@ async function createNotification(recipientType, recipientId, type, message, rel
      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [uuid(), recipientType, recipientId, type, message || "", relatedId || "", nowIso()]
   );
+  if (pushEnabled) {
+    countUnreadNotifications(recipientType, recipientId)
+      .then(count => sendPushToRecipient_(recipientType, recipientId, {
+        title: "Reigning Blood Pressure App",
+        body: message || "Tienes una notificación nueva.",
+        count,
+      }))
+      .catch(() => {});
+  }
 }
 async function listNotifications(recipientType, recipientId) {
   const { rows } = await pool.query(
@@ -770,6 +855,19 @@ async function handlePost(body) {
     };
   }
 
+  // ---- Push (Web Push, v29) ----
+  if (body.action === "save_push_subscription") {
+    const recipientType = body.recipient_type === "doctor" ? "doctor" : "patient";
+    if (!body.recipient_id || !body.subscription) return { ok: false, error: "faltan datos" };
+    await savePushSubscription(recipientType, body.recipient_id, body.subscription);
+    return { ok: true };
+  }
+  if (body.action === "delete_push_subscription") {
+    if (!body.endpoint) return { ok: false, error: "faltan datos" };
+    await deletePushSubscription(body.endpoint);
+    return { ok: true };
+  }
+
   return { ok: false, error: "acción no soportada" };
 }
 
@@ -787,4 +885,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY };

@@ -734,19 +734,42 @@ function wireReactionBars(root, opts) {
   });
 }
 
+// ---- Audio compartido para sonidos de reacciones/notificaciones (v29) ----
+// Antes, cada función de sonido creaba su propio AudioContext la primera vez
+// que se llamaba. Para las reacciones eso coincidía con un click (un gesto
+// válido de usuario), pero las notificaciones llegan por sondeo o por SSE
+// — sin ningún click de por medio — y en el celular (sobre todo iOS Safari)
+// el navegador exige que el AudioContext se cree/reanude DENTRO de un gesto
+// real; si no, se queda "suspended" para siempre y no suena nunca, que es
+// justo el bug reportado ("no se escuchan los sonidos en móvil"). Ahora se
+// desbloquea un solo AudioContext compartido en el primer toque/click que el
+// usuario haga en cualquier parte de la página (sí es un gesto real), y las
+// funciones de sonido reutilizan ese mismo contexto ya activo después,
+// aunque las dispare un timer o el SSE mucho más tarde.
+let _sharedAudioCtx = null;
+function getSharedAudioCtx_() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!_sharedAudioCtx) _sharedAudioCtx = new Ctx();
+  return _sharedAudioCtx;
+}
+if (typeof document !== "undefined") {
+  const unlockSharedAudio_ = () => {
+    const ctx = getSharedAudioCtx_();
+    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+  };
+  ["pointerdown", "touchend", "keydown"].forEach(evt => document.addEventListener(evt, unlockSharedAudio_, { once: true, passive: true }));
+}
+
 // Sonido corto ("pop") al reaccionar, generado con Web Audio API — sin
 // archivos de audio externos, para no depender de ningún servicio ni
 // aumentar el peso de la app. Silencioso si el navegador no lo soporta o
-// bloquea el audio (por ejemplo, antes de cualquier interacción del
-// usuario en la página, algo que aquí ya no aplica porque esto solo se
-// llama en respuesta a un click).
+// bloquea el audio.
 function playReactionSound() {
   try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!playReactionSound._ctx) playReactionSound._ctx = new Ctx();
-    const ctx = playReactionSound._ctx;
-    if (ctx.state === "suspended") ctx.resume();
+    const ctx = getSharedAudioCtx_();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -767,11 +790,9 @@ function playReactionSound() {
 // distingan al oído.
 function playNotificationSound() {
   try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!playNotificationSound._ctx) playNotificationSound._ctx = new Ctx();
-    const ctx = playNotificationSound._ctx;
-    if (ctx.state === "suspended") ctx.resume();
+    const ctx = getSharedAudioCtx_();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     [523.25, 783.99].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -829,6 +850,189 @@ function connectRealtime(url, onChange) {
     } catch (err) { /* keepalive u otro mensaje no-JSON: se ignora */ }
   };
   return source;
+}
+
+// ---- Confeti al agregar una lectura (v29) ----
+// Canvas propio, sin librería externa (mismo criterio que los sonidos de
+// Web Audio API de más abajo: un efecto chiquito no amerita una dependencia
+// nueva). originEl: elemento desde donde "explota" el confeti (normalmente
+// el botón "Agregar"); si no se da, sale del centro-arriba de la pantalla.
+function fireConfetti(originEl) {
+  try {
+    const colors = ["#6FA98C", "#D8AE5C", "#D98E5F", "#9B8AC4", "#4F7A6F", "#2E9E96"];
+    const rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
+    const originX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const originY = rect ? rect.top : window.innerHeight * 0.2;
+
+    const canvas = document.createElement("canvas");
+    canvas.style.cssText = "position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:9999;";
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+
+    const particles = Array.from({ length: 70 }, () => ({
+      x: originX, y: originY,
+      vx: (Math.random() - 0.5) * 9,
+      vy: -(Math.random() * 8 + 4),
+      size: Math.random() * 6 + 4,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.3,
+      shape: Math.random() < 0.5 ? "rect" : "circle",
+    }));
+    const gravity = 0.28;
+    const start = performance.now();
+    const durationMs = 1500;
+
+    function frame(now) {
+      const elapsed = now - start;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.vy += gravity;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rotation += p.rotSpeed;
+        const fade = Math.max(0, 1 - elapsed / durationMs);
+        ctx.save();
+        ctx.globalAlpha = fade;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        if (p.shape === "rect") ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.66);
+        else { ctx.beginPath(); ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      });
+      if (elapsed < durationMs) requestAnimationFrame(frame);
+      else canvas.remove();
+    }
+    requestAnimationFrame(frame);
+  } catch (err) { /* silencioso: el confeti es solo un extra, nunca debe romper el flujo de agregar */ }
+}
+
+// ---- Notificaciones push (Web Push) y badge del ícono (v29) ----
+// Badge: mientras la app está abierta, cada página llama esto desde su
+// propio renderNotifBadge() con el conteo que ya calcula para la campanita
+// — así el número del ícono (iOS 16.4+/Android, solo si está anclada a la
+// pantalla de inicio) siempre coincide con el de la campanita. Cuando la
+// app está CERRADA, el mismo número se pone desde el service worker al
+// recibir un push (ver sw.js), sin depender de que esta función corra.
+function updateAppBadge_(count) {
+  try {
+    if (!("setAppBadge" in navigator)) return;
+    if (count > 0) navigator.setAppBadge(count).catch(() => {});
+    else if ("clearAppBadge" in navigator) navigator.clearAppBadge().catch(() => {});
+  } catch (err) { /* silencioso: el badge es un extra */ }
+}
+
+function urlBase64ToUint8Array_(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+// Registra el service worker una sola vez por página (no hace falta
+// esperar a que el usuario active las notificaciones: registrarlo temprano
+// no pide permiso ni suscribe a nada por sí solo, solo lo deja listo).
+function registerServiceWorker_() {
+  if (!("serviceWorker" in navigator)) return Promise.resolve(null);
+  return navigator.serviceWorker.register("/sw.js").catch(() => null);
+}
+
+// Envuelve todo el flujo de activar/desactivar notificaciones push en un
+// botón: pide permiso, registra el service worker si hace falta, suscribe
+// (o desuscribe) al Push Manager del navegador, y avisa al servidor para
+// que guarde (o borre) esa suscripción. reportStatus(state): se llama con
+// "unsupported" | "denied" | "subscribed" | "unsubscribed" para que quien
+// use esto actualice su propio botón/texto.
+async function wirePushToggle(reportStatus) {
+  const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window);
+  if (unsupported) { reportStatus("unsupported"); return; }
+
+  const reg = await registerServiceWorker_();
+  if (!reg) { reportStatus("unsupported"); return; }
+  const existing = await reg.pushManager.getSubscription();
+  reportStatus(existing ? "subscribed" : (Notification.permission === "denied" ? "denied" : "unsubscribed"));
+
+  return {
+    subscribe: async () => {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") { reportStatus("denied"); return; }
+      const keyResp = await fetch("/api/push/vapid-public-key");
+      const keyJson = await keyResp.json();
+      if (!keyJson.ok || !keyJson.enabled || !keyJson.publicKey) { reportStatus("unsupported"); return; }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array_(keyJson.publicKey),
+      });
+      await fetch("/api/push/subscribe", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub.toJSON() }),
+      });
+      reportStatus("subscribed");
+    },
+    unsubscribe: async () => {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      reportStatus("unsubscribed");
+    },
+  };
+}
+
+// ---- Icono de ojo para mostrar/ocultar contraseña (v29) ----
+// Mismo helper que /shared/auth.js (login/signup no cargan common.js, así
+// que esa versión vive por separado), aquí para los campos de contraseña
+// que aparecen dentro de los modales de Cuenta (cambiar contraseña, correo).
+function ensurePasswordToggleStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-pw-toggle-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-pw-toggle-styles";
+  style.textContent = `
+    .pw-field { position: relative; }
+    .pw-field input { padding-right: 38px; }
+    .pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
+      padding: 6px; color: var(--text-muted); }
+    .pw-toggle:hover { color: var(--text); }
+  `;
+  document.head.appendChild(style);
+}
+function wirePasswordToggle(input) {
+  if (!input || input.dataset.pwWired) return;
+  ensurePasswordToggleStyles_();
+  input.dataset.pwWired = "1";
+  const wrap = document.createElement("div");
+  wrap.className = "pw-field";
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "pw-toggle";
+  btn.setAttribute("aria-label", "Mostrar contraseña");
+  btn.textContent = "👁";
+  wrap.appendChild(btn);
+  btn.addEventListener("click", () => {
+    const showing = input.type === "text";
+    input.type = showing ? "password" : "text";
+    btn.textContent = showing ? "👁" : "🙈";
+    btn.setAttribute("aria-label", showing ? "Mostrar contraseña" : "Ocultar contraseña");
+  });
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll('input[type="password"]').forEach(wirePasswordToggle);
+  });
 }
 
 // ---- "Recomienda esta app" ----
