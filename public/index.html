@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.3.1"></script>
+<script src="/shared/common.js?v=30.3.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -155,7 +155,7 @@
   .modal-form .modal-section-title { grid-column: 1 / -1; }
   .modal-hint { font-size: 11px; color: var(--text-muted); margin: -6px 0 4px 0; }
   .settings-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
-  .avatar-preview-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .avatar-preview-wrap { position: relative; width: 64px; height: 64px; flex-shrink: 0; cursor: pointer; }
   .avatar-preview-fallback { position: absolute; inset: 0; border-radius: 50%; background: var(--border, #E2E2E2); display: flex; align-items: center; justify-content: center; font-size: 26px; }
   .avatar-preview { position: relative; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; display: block; background: transparent; }
   .avatar-preview.avatar-hidden { display: none; }
@@ -526,7 +526,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3.2</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -536,8 +536,8 @@
     <div class="modal-section-title">Foto de perfil</div>
     <div style="display:flex; align-items:center; gap:14px; margin-bottom:10px;">
       <div class="avatar-preview-wrap">
-        <div class="avatar-preview-fallback">👤</div>
-        <img id="p_avatar_preview" class="avatar-preview" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
+        <div class="avatar-preview-fallback" id="p_avatar_fallback">?</div>
+        <img id="p_avatar_preview" class="avatar-preview avatar-clickable" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
       </div>
       <div>
         <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
@@ -859,6 +859,7 @@ async function loadAccount() {
     document.getElementById("medNameLabel").textContent = medName;
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     updateMedAdBadge();
+    setAvatarFallbackInitials_(document.getElementById("p_avatar_fallback"), document.getElementById("p_avatar_preview"), currentAccount.name);
     if (!avatarWired) {
       avatarWired = true;
       wireAvatarUploader({
@@ -978,7 +979,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.3.1");
+  showAboutOverlay_("30.3.2");
 });
 
 function openModal(id) {
@@ -1174,7 +1175,7 @@ function renderDoctorsAndInvites(doctors, invites) {
   doctorsWrap.innerHTML = doctors.length
     ? `<div class="doctor-list-title">Médicos vinculados</div>` + doctors.map(d => `
         <div class="doctor-row">
-          <div class="doctor-info">${d.avatar_mime ? `<img class="avatar-mini" src="${avatarUrl('doctor', d.id)}" alt="" onerror="this.style.display='none'">` : ""}<strong>${d.name || "(sin nombre)"}</strong><span>${d.email}</span></div>
+          <div class="doctor-info">${avatarWithInitialsHTML_("doctor", d.id, d.name, 28)}<strong>${d.name || "(sin nombre)"}</strong><span>${d.email}</span></div>
           <div class="doctor-actions"><button type="button" class="btn-mini danger remove-doctor-btn" data-id="${d.id}">Quitar acceso</button></div>
         </div>`).join("")
     : "";

@@ -543,6 +543,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.3.2", changes: [
+    "Al tomar una foto con la cámara, ahora se puede confirmar o repetir antes de subirla.",
+    "Clic en cualquier foto de perfil para verla ampliada (cuenta, médicos vinculados, catálogo de médicos).",
+    "Cuando no hay foto, se muestran las iniciales del nombre en vez de un ícono genérico.",
+  ] },
   { version: "30.3.1", changes: [
     "El botón de Tomar foto ahora abre la cámara de verdad en cualquier navegador (antes en Mac/PC solo abría el explorador de archivos).",
   ] },
@@ -659,7 +664,7 @@ function ensureDoctorCatalogStyles_() {
 function doctorCatalogCardHTML_(d) {
   return `
     <div class="catalog-card">
-      <img class="catalog-card-avatar" src="${avatarUrl("doctor", d.id)}" alt="" onerror="this.style.visibility='hidden'">
+      ${avatarWithInitialsHTML_("doctor", d.id, d.name, 40)}
       <div class="catalog-card-body">
         <div class="catalog-card-name">${escapeHtml_(d.title || "Dr(a).")} ${escapeHtml_(d.name)}</div>
         ${d.catalog_bio ? `<div class="catalog-card-bio">${escapeHtml_(d.catalog_bio)}</div>` : ""}
@@ -1305,6 +1310,77 @@ function avatarUrl(accountType, id, cacheBuster) {
   return `/api/avatar/${accountType === "doctor" ? "doctor" : "patient"}/${id}` + (cacheBuster ? `?v=${cacheBuster}` : "");
 }
 
+// ---- Iniciales y vista ampliada de foto de perfil (v30.3.2) ----
+// Cuando no hay foto, en vez del ícono genérico 👤 se muestran las
+// iniciales del nombre (hasta 2 letras). Y en cualquier avatar clicable (la
+// foto grande de la cuenta, los avatares chicos de médicos vinculados, el
+// catálogo de médicos) un clic abre una vista ampliada — un solo manejador
+// delegado en todo el documento cubre las tres vistas sin repetir código.
+function initialsFromName_(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+// Devuelve el HTML de un avatar circular de tamaño fijo que muestra la foto
+// si carga, o las iniciales del nombre si no hay foto (o falla la carga).
+// Se usa para los avatares chicos (médicos vinculados, catálogo); la foto
+// grande de la cuenta usa su propia estructura ya existente (avatar-preview
+// + avatar-preview-fallback), ver setAvatarFallbackInitials_ más abajo.
+function avatarWithInitialsHTML_(accountType, id, name, sizePx) {
+  const initials = initialsFromName_(name);
+  const fontSize = Math.max(9, Math.round(sizePx * 0.4));
+  return `<span style="position:relative; display:inline-block; width:${sizePx}px; height:${sizePx}px; vertical-align:middle; margin-right:6px; flex-shrink:0;">
+    <span style="position:absolute; inset:0; border-radius:50%; background:var(--accent-soft, #E8F0EC); color:var(--accent, #4F7A6F); display:flex; align-items:center; justify-content:center; font-size:${fontSize}px; font-weight:650;">${escapeHtml_(initials)}</span>
+    <img class="avatar-clickable" data-avatar-name="${escapeHtml_(name || "")}" src="${avatarUrl(accountType, id)}" alt=""
+      style="position:absolute; inset:0; width:100%; height:100%; border-radius:50%; object-fit:cover; cursor:pointer; display:block;"
+      onerror="this.style.visibility='hidden'" onload="this.style.visibility='visible'">
+  </span>`;
+}
+// Actualiza el texto de un div.avatar-preview-fallback ya existente en el
+// HTML (la foto grande de Cuenta) con las iniciales del nombre, y marca el
+// <img> junto a él como clicable para la vista ampliada.
+function setAvatarFallbackInitials_(fallbackEl, imgEl, name) {
+  if (fallbackEl) fallbackEl.textContent = initialsFromName_(name);
+  if (imgEl) {
+    imgEl.classList.add("avatar-clickable");
+    imgEl.dataset.avatarName = name || "";
+  }
+}
+function ensureAvatarLightboxStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-lightbox-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-lightbox-styles";
+  style.textContent = `
+    .avatar-clickable { cursor: pointer; }
+    .bp-lightbox-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.82); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:260; padding:24px; box-sizing:border-box; cursor:zoom-out; }
+    .bp-lightbox-img { max-width:min(85vw, 440px); max-height:75vh; border-radius:16px; box-shadow:0 10px 50px rgba(0,0,0,0.4); object-fit:contain; }
+    .bp-lightbox-name { color:#fff; font-size:14px; margin-top:14px; font-weight:600; }
+  `;
+  document.head.appendChild(style);
+}
+function openAvatarLightbox_(url, name) {
+  ensureAvatarLightboxStyles_();
+  const overlay = document.createElement("div");
+  overlay.className = "bp-lightbox-overlay";
+  overlay.innerHTML = `<img class="bp-lightbox-img" src="${url}" alt="">` +
+    (name ? `<div class="bp-lightbox-name">${escapeHtml_(name)}</div>` : "");
+  overlay.addEventListener("click", () => overlay.remove());
+  document.body.appendChild(overlay);
+}
+function wireAvatarLightboxDelegation_() {
+  if (typeof document === "undefined" || wireAvatarLightboxDelegation_._wired) return;
+  wireAvatarLightboxDelegation_._wired = true;
+  ensureAvatarLightboxStyles_();
+  document.addEventListener("click", e => {
+    const img = e.target.closest(".avatar-clickable");
+    if (!img || !img.naturalWidth) return; // sin foto real (falló la carga), no hay nada que ampliar
+    e.preventDefault();
+    openAvatarLightbox_(img.src, img.dataset.avatarName || "");
+  });
+}
+wireAvatarLightboxDelegation_();
+
 // Redimensiona/comprime una imagen del lado del cliente antes de subirla,
 // para que nunca se manden fotos de varios MB a la base de datos (Postgres
 // no tiene por qué cargar con eso, y en móvil sube más rápido así). Regresa
@@ -1351,15 +1427,20 @@ function ensureCameraCaptureStyles_() {
   style.textContent = `
     .bp-camera-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:250; padding:16px; box-sizing:border-box; }
     .bp-camera-card { background:#fff; border-radius:14px; padding:16px; max-width:420px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,0.3); box-sizing:border-box; }
-    .bp-camera-video { width:100%; border-radius:10px; background:#000; display:block; max-height:60vh; }
+    .bp-camera-video, .bp-camera-preview { width:100%; border-radius:10px; background:#000; display:block; max-height:60vh; object-fit:contain; }
+    .bp-camera-hint { font-size:12px; color:var(--text-muted, #7C8A85); margin-top:8px; text-align:center; }
     .bp-camera-actions { display:flex; gap:8px; margin-top:12px; }
     .bp-camera-actions button { flex:1; }
     .bp-camera-error { font-size:13px; color:#A6534B; margin-top:10px; }
   `;
   document.head.appendChild(style);
 }
-// onCaptured(blob) se llama con la foto ya tomada (Blob JPEG), lista para
-// pasarse a resizeImageForAvatar_ igual que un archivo subido a mano.
+// onCaptured(blob) se llama SOLO cuando el usuario confirma la foto (Blob
+// JPEG), lista para pasarse a resizeImageForAvatar_ igual que un archivo
+// subido a mano. v30.3.2: después de capturar, se muestra el cuadro
+// congelado con "Volver a tomar"/"Confirmar" antes de llamar onCaptured —
+// antes se subía la foto en cuanto se presionaba el obturador, sin poder
+// revisarla ni repetirla si salía mal.
 function openCameraCapture_(onCaptured) {
   ensureCameraCaptureStyles_();
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1371,22 +1452,34 @@ function openCameraCapture_(onCaptured) {
   overlay.innerHTML = `
     <div class="bp-camera-card">
       <video class="bp-camera-video" autoplay playsinline muted></video>
+      <img class="bp-camera-preview" style="display:none;" alt="Foto capturada">
+      <div class="bp-camera-hint" data-cam-hint>Encuadra tu foto y presiona Capturar.</div>
       <div class="bp-camera-error" style="display:none;"></div>
       <div class="bp-camera-actions">
         <button type="button" class="btn-secondary" data-cam-cancel>Cancelar</button>
         <button type="button" class="btn-primary" data-cam-shoot disabled>📸 Capturar</button>
+        <button type="button" class="btn-secondary" data-cam-retake style="display:none;">🔄 Volver a tomar</button>
+        <button type="button" class="btn-primary" data-cam-confirm style="display:none;">✅ Confirmar</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   const video = overlay.querySelector("video");
+  const previewImgEl = overlay.querySelector(".bp-camera-preview");
+  const hint = overlay.querySelector("[data-cam-hint]");
   const errBox = overlay.querySelector(".bp-camera-error");
+  const cancelBtn = overlay.querySelector("[data-cam-cancel]");
   const shootBtn = overlay.querySelector("[data-cam-shoot]");
+  const retakeBtn = overlay.querySelector("[data-cam-retake]");
+  const confirmBtn = overlay.querySelector("[data-cam-confirm]");
   let stream = null;
+  let capturedBlob = null;
+  let capturedUrl = null;
   function cleanup() {
     if (stream) stream.getTracks().forEach(t => t.stop());
+    if (capturedUrl) URL.revokeObjectURL(capturedUrl);
     overlay.remove();
   }
-  overlay.querySelector("[data-cam-cancel]").addEventListener("click", cleanup);
+  cancelBtn.addEventListener("click", cleanup);
   navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
     .then(s => { stream = s; video.srcObject = s; shootBtn.disabled = false; })
     .catch(err => {
@@ -1400,9 +1493,34 @@ function openCameraCapture_(onCaptured) {
     canvas.height = video.videoHeight;
     canvas.getContext("2d").drawImage(video, 0, 0);
     canvas.toBlob(blob => {
-      cleanup();
-      if (blob) onCaptured(blob);
+      if (!blob) return;
+      capturedBlob = blob;
+      capturedUrl = URL.createObjectURL(blob);
+      previewImgEl.src = capturedUrl;
+      video.style.display = "none";
+      previewImgEl.style.display = "block";
+      hint.textContent = "¿Se ve bien? Confirma o vuelve a tomarla.";
+      shootBtn.style.display = "none";
+      cancelBtn.style.display = "none";
+      retakeBtn.style.display = "";
+      confirmBtn.style.display = "";
     }, "image/jpeg", 0.92);
+  });
+  retakeBtn.addEventListener("click", () => {
+    if (capturedUrl) { URL.revokeObjectURL(capturedUrl); capturedUrl = null; }
+    capturedBlob = null;
+    previewImgEl.style.display = "none";
+    video.style.display = "block";
+    hint.textContent = "Encuadra tu foto y presiona Capturar.";
+    shootBtn.style.display = "";
+    cancelBtn.style.display = "";
+    retakeBtn.style.display = "none";
+    confirmBtn.style.display = "none";
+  });
+  confirmBtn.addEventListener("click", () => {
+    const blob = capturedBlob;
+    cleanup();
+    if (blob) onCaptured(blob);
   });
 }
 
