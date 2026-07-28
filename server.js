@@ -609,6 +609,22 @@ app.post("/api/account/doctor-title", requireRole("doctor"), asyncRoute(async (r
   res.json(await callSheetsApi(null, { action: "update_doctor_title", id: req.session.doctorId, title: req.body.title }));
 }));
 
+// ---- Catálogo de médicos (v30.3) ----
+// El médico actualiza su propia ficha del catálogo. La lista en sí es
+// pública a propósito (sin requireAnyRole/requireRole): tiene que verse
+// igual en index.html, doctor.html y también en familia.html, que no tiene
+// sesión de ningún tipo.
+app.post("/api/account/doctor-catalog", requireRole("doctor"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "update_doctor_catalog_profile", id: req.session.doctorId,
+    catalog_opt_in: req.body.catalog_opt_in, specialty: req.body.specialty,
+    catalog_bio: req.body.catalog_bio, catalog_contact: req.body.catalog_contact, catalog_city: req.body.catalog_city,
+  }));
+}));
+app.get("/api/doctor-catalog", asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_doctor_catalog" }));
+}));
+
 // Perfil público del paciente ligado a la sesión (paciente viendo el suyo, o
 // médico viendo el de su paciente asignado).
 app.get("/api/patient", requireAnyRole, asyncRoute(async (req, res) => {

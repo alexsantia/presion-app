@@ -536,6 +536,160 @@ function ensureHabitStyles_() {
   document.head.appendChild(style);
 }
 
+// ---- Acerca de (v30.3) ----
+// Historial de versiones, mostrado igual en las tres vistas (paciente,
+// médico, familia). En vez de depender de qué sistema de modales tenga
+// cada página (index.html sí tiene uno, doctor.html y familia.html no), se
+// dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
+// sola vez, así funciona igual sin importar desde dónde se llame.
+const APP_VERSION_HISTORY = [
+  { version: "30.3", changes: [
+    "Botón para tomar la foto de perfil directo con la cámara.",
+    "Esta sección de Acerca de, con el historial de versiones.",
+    "Catálogo de médicos por especialidad, con publicación opcional para cada médico.",
+  ] },
+  { version: "30.2", changes: [
+    "Botón de prueba para diagnosticar las notificaciones push.",
+  ] },
+  { version: "30.1", changes: [
+    "El menú y los recuadros de ayuda ya no se cortan en pantallas angostas.",
+    "Nueva sección de Malos hábitos.",
+    "La racha de días seguidos con nuevo diseño.",
+    "Las tablas ahora muestran 10 lecturas por página de entrada.",
+  ] },
+  { version: "30", changes: [
+    "Las reacciones aparecen debajo de cada comentario.",
+    "Gráfica de Estadísticas por franja horaria del día.",
+    "Invitaciones a tu médico por correo electrónico.",
+    "Fotos de perfil.",
+    "Panel de administrador.",
+  ] },
+  { version: "29", changes: [
+    "Sección de Estadísticas.",
+    "Notificaciones push y contador de pendientes en el ícono de la app.",
+    "Mejoras de uso en pantallas de celular.",
+  ] },
+  { version: "28", changes: [
+    "Los cambios de tu médico o tu familia aparecen solos, sin recargar.",
+    "Respaldo y restauración de tus datos.",
+    "Reacciones con iconos en lecturas y comentarios.",
+  ] },
+];
+function ensureAboutStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-about-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-about-styles";
+  style.textContent = `
+    .bp-about-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:flex; align-items:center; justify-content:center; z-index:200; padding:16px; box-sizing:border-box; }
+    .bp-about-card { background:#fff; border-radius:14px; max-width:380px; width:100%; max-height:85vh; overflow-y:auto; padding:22px; box-shadow:0 10px 40px rgba(0,0,0,0.25); }
+    .bp-about-card h2 { margin:0 0 4px; font-size:19px; }
+    .bp-about-version { font-size:13px; color:#666; margin-bottom:14px; }
+    .bp-about-meta { font-size:13px; margin-bottom:16px; line-height:1.5; }
+    .bp-about-history h3 { font-size:13px; margin:14px 0 6px; }
+    .bp-about-entry { margin-bottom:10px; }
+    .bp-about-entry-version { font-weight:650; font-size:13px; }
+    .bp-about-entry ul { margin:4px 0 0; padding-left:18px; font-size:12.5px; }
+    .bp-about-close { margin-top:14px; width:100%; }
+  `;
+  document.head.appendChild(style);
+}
+function showAboutOverlay_(currentVersion) {
+  ensureAboutStyles_();
+  const overlay = document.createElement("div");
+  overlay.className = "bp-about-overlay";
+  const historyHtml = APP_VERSION_HISTORY.map(v => `
+    <div class="bp-about-entry">
+      <div class="bp-about-entry-version">v${escapeHtml_(v.version)}</div>
+      <ul>${v.changes.map(c => `<li>${escapeHtml_(c)}</li>`).join("")}</ul>
+    </div>`).join("");
+  overlay.innerHTML = `
+    <div class="bp-about-card">
+      <h2>Reigning Blood Pressure App</h2>
+      <div class="bp-about-version">Versión ${escapeHtml_(currentVersion)}</div>
+      <div class="bp-about-meta">Desarrollado por <strong>Empresso Tech</strong><br>Autor: Alex Santiago</div>
+      <div class="bp-about-history">
+        <h3>Historial de versiones</h3>
+        ${historyHtml}
+      </div>
+      <button type="button" class="btn-secondary bp-about-close">Cerrar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+  overlay.querySelector(".bp-about-close").addEventListener("click", close);
+}
+function wireAboutTrigger(triggerEl, currentVersion) {
+  if (!triggerEl) return;
+  triggerEl.addEventListener("click", e => {
+    e.preventDefault();
+    showAboutOverlay_(currentVersion);
+  });
+}
+
+// ---- Catálogo de médicos (v30.3) ----
+// Cada médico decide, por su cuenta, si publica su ficha en este catálogo
+// (nombre, especialidad, una breve descripción, contacto y ciudad). Se
+// muestra igual en las 3 vistas: index.html (paciente), doctor.html
+// (médico, para poder referir a otro especialista) y familia.html (público,
+// sin sesión).
+const DOCTOR_SPECIALTIES = [
+  "Cardiología", "Medicina Interna", "Medicina Familiar", "Nefrología",
+  "Endocrinología", "Geriatría", "Nutrición", "Otro",
+];
+function ensureDoctorCatalogStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-catalog-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-catalog-styles";
+  style.textContent = `
+    .catalog-group { margin-bottom: 18px; }
+    .catalog-specialty { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin: 0 0 8px; }
+    .catalog-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .catalog-card:last-child { border-bottom: none; }
+    .catalog-card-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--border, #E2E2E2); flex-shrink: 0; }
+    .catalog-card-body { flex: 1; min-width: 0; }
+    .catalog-card-name { font-weight: 650; font-size: 13.5px; }
+    .catalog-card-bio { font-size: 13px; margin-top: 2px; }
+    .catalog-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  `;
+  document.head.appendChild(style);
+}
+function doctorCatalogCardHTML_(d) {
+  return `
+    <div class="catalog-card">
+      <img class="catalog-card-avatar" src="${avatarUrl("doctor", d.id)}" alt="" onerror="this.style.visibility='hidden'">
+      <div class="catalog-card-body">
+        <div class="catalog-card-name">${escapeHtml_(d.title || "Dr(a).")} ${escapeHtml_(d.name)}</div>
+        ${d.catalog_bio ? `<div class="catalog-card-bio">${escapeHtml_(d.catalog_bio)}</div>` : ""}
+        <div class="catalog-card-meta">${[d.catalog_city, d.catalog_contact].filter(Boolean).map(escapeHtml_).join(" · ")}</div>
+      </div>
+    </div>`;
+}
+function renderDoctorCatalogHTML(doctors, specialtyFilter) {
+  ensureDoctorCatalogStyles_();
+  const list = specialtyFilter ? (doctors || []).filter(d => d.specialty === specialtyFilter) : (doctors || []);
+  if (!list.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">${specialtyFilter ? "No hay médicos publicados en esta especialidad todavía." : "Todavía no hay médicos publicados en el catálogo."}</div>`;
+  }
+  const groups = {};
+  list.forEach(d => { (groups[d.specialty || "Otro"] = groups[d.specialty || "Otro"] || []).push(d); });
+  return Object.keys(groups).sort().map(spec => `
+    <div class="catalog-group">
+      <h3 class="catalog-specialty">${escapeHtml_(spec)}</h3>
+      ${groups[spec].map(doctorCatalogCardHTML_).join("")}
+    </div>`).join("");
+}
+// Llena un <select> con las especialidades presentes en los datos (más
+// "Todas") y vuelve a dibujar la lista cada vez que cambia.
+function wireDoctorCatalogFilter(selectEl, containerEl, doctors) {
+  if (!selectEl || !containerEl) return;
+  const present = [...new Set((doctors || []).map(d => d.specialty || "Otro"))].sort();
+  selectEl.innerHTML = `<option value="">Todas las especialidades</option>` +
+    present.map(s => `<option value="${escapeHtml_(s)}">${escapeHtml_(s)}</option>`).join("");
+  const redraw = () => { containerEl.innerHTML = renderDoctorCatalogHTML(doctors, selectEl.value || null); };
+  selectEl.addEventListener("change", redraw);
+  redraw();
+}
+
 // ---- Utilidades varias ----
 function escapeHtml_(s) {
   return String(s == null ? "" : s)
@@ -1177,19 +1331,23 @@ function resizeImageForAvatar_(file, maxDim, quality) {
 }
 
 // Conecta un <input type="file"> con la subida/borrado de foto de perfil.
-// opts: { fileInput, previewImg, removeBtn, accountType, accountId, onStatus }
+// opts: { fileInput, cameraInput, previewImg, removeBtn, accountType,
+// accountId, onStatus } — cameraInput es opcional (v30.3): un segundo
+// <input type="file" capture="user"> que abre la cámara del dispositivo
+// directamente en vez de la galería, para el botón "Tomar foto". Ambos
+// inputs comparten la misma lógica de subida.
 // onStatus(kind, message): kind "loading" | "success" | "error", para que
 // cada página lo muestre con su propio setStatus().
 function wireAvatarUploader(opts) {
-  const { fileInput, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
-  if (!fileInput) return;
+  const { fileInput, cameraInput, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
+  if (!fileInput && !cameraInput) return;
   function refreshPreview() {
     if (previewImg) previewImg.src = avatarUrl(accountType, accountId, Date.now());
   }
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files && fileInput.files[0];
+  async function handleFileSelected(input) {
+    const file = input.files && input.files[0];
     if (!file) return;
-    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); fileInput.value = ""; return; }
+    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); input.value = ""; return; }
     try {
       onStatus && onStatus("loading", "Subiendo foto…");
       const { base64, mime } = await resizeImageForAvatar_(file, 256, 0.85);
@@ -1204,9 +1362,11 @@ function wireAvatarUploader(opts) {
     } catch (err) {
       onStatus && onStatus("error", err.message);
     } finally {
-      fileInput.value = "";
+      input.value = "";
     }
-  });
+  }
+  if (fileInput) fileInput.addEventListener("change", () => handleFileSelected(fileInput));
+  if (cameraInput) cameraInput.addEventListener("change", () => handleFileSelected(cameraInput));
   if (removeBtn) {
     removeBtn.addEventListener("click", async () => {
       try {

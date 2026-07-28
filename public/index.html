@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.2"></script>
+<script src="/shared/common.js?v=30.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -258,6 +258,7 @@
         <button type="button" class="hamburger-item" data-open-modal="accountModal">👤 Cuenta</button>
         <button type="button" class="hamburger-item" data-open-modal="paramsModal">🧪 Parámetros</button>
         <button type="button" class="hamburger-item" data-open-modal="settingsModal">⚙️ Ajustes</button>
+        <button type="button" class="hamburger-item" id="aboutMenuItem">ℹ️ Acerca de</button>
       </div>
     </div>
     <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
@@ -288,6 +289,7 @@
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -513,7 +515,18 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.2</footer>
+<div id="tabCatalogo" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Catálogo de médicos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Médicos que decidieron publicar sus datos aquí, organizados por especialidad. Esto no reemplaza vincular a tu propio médico en Compartir Mediciones.</p>
+    <div style="margin-bottom:12px;">
+      <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+    </div>
+    <div id="catalogListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -529,6 +542,8 @@
       <div>
         <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
         <input type="file" id="p_avatar_input" accept="image/*" style="display:none;">
+        <label class="btn-secondary" for="p_avatar_camera" style="cursor:pointer; display:inline-block; margin-left:6px;">📷 Tomar foto</label>
+        <input type="file" id="p_avatar_camera" accept="image/*" capture="user" style="display:none;">
         <button type="button" class="btn-mini danger" id="p_avatar_remove" style="margin-left:6px;">Quitar</button>
       </div>
     </div>
@@ -849,6 +864,7 @@ async function loadAccount() {
       avatarWired = true;
       wireAvatarUploader({
         fileInput: document.getElementById("p_avatar_input"),
+        cameraInput: document.getElementById("p_avatar_camera"),
         previewImg: document.getElementById("p_avatar_preview"),
         removeBtn: document.getElementById("p_avatar_remove"),
         accountType: "patient",
@@ -960,6 +976,11 @@ menuBtn.addEventListener("click", e => {
   if (!open) positionHamburgerMenu_();
 });
 document.addEventListener("click", () => { hamburgerMenu.style.display = "none"; });
+document.getElementById("aboutMenuItem").addEventListener("click", e => {
+  e.stopPropagation();
+  hamburgerMenu.style.display = "none";
+  showAboutOverlay_("30.3");
+});
 
 function openModal(id) {
   hamburgerMenu.style.display = "none";
@@ -985,6 +1006,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
+    document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
   });
 });
 
@@ -1990,6 +2012,14 @@ document.getElementById("habitsListWrap").addEventListener("click", async e => {
   }
 });
 loadHabits();
+
+// ---- Catálogo de médicos (v30.3) ----
+async function loadDoctorCatalog() {
+  let doctors = [];
+  try { doctors = await apiGet("/api/doctor-catalog"); } catch (err) { doctors = []; }
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+}
+loadDoctorCatalog();
 
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta

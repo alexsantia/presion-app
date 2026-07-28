@@ -274,6 +274,8 @@ function doctorPublic(row) {
   return {
     id: row.id, name: row.name, email: row.email, patient_id: row.patient_id,
     title: row.title || DEFAULT_DOCTOR_TITLE, avatar_mime: row.avatar_mime || null, suspended: !!row.suspended,
+    catalog_opt_in: !!row.catalog_opt_in, specialty: row.specialty || "",
+    catalog_bio: row.catalog_bio || "", catalog_contact: row.catalog_contact || "", catalog_city: row.catalog_city || "",
   };
 }
 function doctorDisplayName(d) {
@@ -283,7 +285,8 @@ function doctorDisplayName(d) {
 }
 // avatar_data (bytea) deliberadamente fuera de este SELECT por lo mismo que
 // en pacientes: pesado y casi nunca hace falta junto con el resto de la fila.
-const DOCTOR_SELECT = `SELECT id, patient_id, name, email, password_hash, created_at, title, avatar_mime, suspended FROM medicos`;
+const DOCTOR_SELECT = `SELECT id, patient_id, name, email, password_hash, created_at, title, avatar_mime, suspended,
+  catalog_opt_in, specialty, catalog_bio, catalog_contact, catalog_city FROM medicos`;
 async function findDoctorByEmail(email) {
   const { rows } = await pool.query(`${DOCTOR_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
   return rows[0] || null;
@@ -302,6 +305,32 @@ async function listDoctorsForPatient(patientId) {
 async function countDoctorsForPatient(patientId) {
   const { rows } = await pool.query(`SELECT count(*)::int AS c FROM medicos WHERE patient_id = $1`, [patientId]);
   return rows[0].c;
+}
+// Catálogo público de médicos (v30.3). Como cada cuenta de médico está
+// ligada a un solo paciente, un médico real con varios pacientes en la app
+// tendría una cuenta por cada uno; si publica el catálogo en más de una
+// (mismo correo), aquí se deduplica dejando solo la más reciente, para que
+// no aparezca repetido.
+async function listDoctorCatalog() {
+  const { rows } = await pool.query(
+    `SELECT id, name, email, title, specialty, catalog_bio, catalog_contact, catalog_city, avatar_mime, created_at
+     FROM medicos WHERE catalog_opt_in = true ORDER BY created_at DESC`
+  );
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {
+    const key = String(r.email).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      id: r.id, name: r.name, title: r.title || DEFAULT_DOCTOR_TITLE,
+      specialty: r.specialty || "Otro", catalog_bio: r.catalog_bio || "",
+      catalog_contact: r.catalog_contact || "", catalog_city: r.catalog_city || "",
+      avatar_mime: r.avatar_mime || null,
+    });
+  }
+  out.sort((a, b) => a.specialty.localeCompare(b.specialty) || a.name.localeCompare(b.name));
+  return out;
 }
 
 // ---- MedicoInvites ----
@@ -633,6 +662,9 @@ async function handleGet(params) {
   if (action === "list_habits") {
     return { ok: true, data: await listHabits(params.patient_id) };
   }
+  if (action === "list_doctor_catalog") {
+    return { ok: true, data: await listDoctorCatalog() };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -935,6 +967,16 @@ async function handlePost(body) {
     const title = VALID_DOCTOR_TITLES.indexOf(body.title) !== -1 ? body.title : DEFAULT_DOCTOR_TITLE;
     await pool.query(`UPDATE medicos SET title = $1 WHERE id = $2`, [title, body.id]);
     return { ok: true, title };
+  }
+  // v30.3: el médico decide, por su cuenta, si se publica en el catálogo.
+  if (body.action === "update_doctor_catalog_profile") {
+    const d = await findDoctorById(body.id);
+    if (!d) return { ok: false, error: "no encontrado" };
+    await pool.query(
+      `UPDATE medicos SET catalog_opt_in = $1, specialty = $2, catalog_bio = $3, catalog_contact = $4, catalog_city = $5 WHERE id = $6`,
+      [!!body.catalog_opt_in, body.specialty || "", body.catalog_bio || "", body.catalog_contact || "", body.catalog_city || "", body.id]
+    );
+    return { ok: true };
   }
 
   // ---- PasswordResets ----

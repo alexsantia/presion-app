@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.2"></script>
+<script src="/shared/common.js?v=30.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -322,6 +322,8 @@
     <div>
       <label class="btn-secondary" for="doc_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
       <input type="file" id="doc_avatar_input" accept="image/*" style="display:none;">
+      <label class="btn-secondary" for="doc_avatar_camera" style="cursor:pointer; display:inline-block; margin-left:6px;">📷 Tomar foto</label>
+      <input type="file" id="doc_avatar_camera" accept="image/*" capture="user" style="display:none;">
       <button type="button" class="btn-mini danger" id="doc_avatar_remove" style="margin-left:6px;">Quitar</button>
     </div>
   </div>
@@ -339,6 +341,31 @@
     </div>
     <button type="submit" class="btn-primary" style="justify-self:start;">Guardar</button>
   </form>
+</div>
+
+<div class="section section-password">
+  <h2>Catálogo de médicos</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px; max-width:440px;">Si activas esto, tus datos se muestran públicamente en un catálogo por especialidad, visible para pacientes, otros médicos, y en el enlace de familia. Es opcional y lo puedes desactivar cuando quieras.</p>
+  <form class="pw-form" id="doctorCatalogForm">
+    <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="cat_opt_in"> Publicarme en el catálogo de médicos</label>
+    <div class="field"><label>Especialidad</label>
+      <select id="cat_specialty" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+    </div>
+    <div class="field"><label>Ciudad</label><input type="text" id="cat_city"></div>
+    <div class="field"><label>Descripción breve</label>
+      <textarea id="cat_bio" rows="2" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+    </div>
+    <div class="field"><label>Contacto (teléfono, correo o WhatsApp)</label><input type="text" id="cat_contact"></div>
+    <button type="submit" class="btn-primary" style="justify-self:start;">Guardar</button>
+  </form>
+</div>
+
+<div class="section">
+  <h2>Explorar el catálogo</h2>
+  <div style="margin-bottom:12px;">
+    <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+  </div>
+  <div id="catalogListWrap"></div>
 </div>
 
 <div class="section section-password">
@@ -384,7 +411,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.2</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3</button></footer>
 
 <script>
 let chartInstance = null;
@@ -524,10 +551,16 @@ async function loadDoctorAccount() {
   try {
     currentDoctorAccount = await apiGet("/api/account");
     document.getElementById("doctorTitleSelect").value = currentDoctorAccount.title || "Dr(a).";
+    document.getElementById("cat_opt_in").checked = !!currentDoctorAccount.catalog_opt_in;
+    document.getElementById("cat_specialty").value = currentDoctorAccount.specialty || "Otro";
+    document.getElementById("cat_city").value = currentDoctorAccount.catalog_city || "";
+    document.getElementById("cat_bio").value = currentDoctorAccount.catalog_bio || "";
+    document.getElementById("cat_contact").value = currentDoctorAccount.catalog_contact || "";
     if (!doctorAvatarWired) {
       doctorAvatarWired = true;
       wireAvatarUploader({
         fileInput: document.getElementById("doc_avatar_input"),
+        cameraInput: document.getElementById("doc_avatar_camera"),
         previewImg: document.getElementById("doc_avatar_preview"),
         removeBtn: document.getElementById("doc_avatar_remove"),
         accountType: "doctor",
@@ -548,6 +581,31 @@ document.getElementById("doctorTitleForm").addEventListener("submit", async e =>
     setTimeout(() => setStatus(null), 1500);
   } catch (err) { setStatus("error", err.message); }
 });
+
+// ---- Catálogo de médicos (v30.3) ----
+document.getElementById("cat_specialty").innerHTML = DOCTOR_SPECIALTIES.map(s => `<option value="${s}">${s}</option>`).join("");
+document.getElementById("doctorCatalogForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    setStatus("loading", "Guardando…");
+    await apiPost("/api/account/doctor-catalog", {
+      catalog_opt_in: document.getElementById("cat_opt_in").checked,
+      specialty: document.getElementById("cat_specialty").value,
+      catalog_city: document.getElementById("cat_city").value.trim(),
+      catalog_bio: document.getElementById("cat_bio").value.trim(),
+      catalog_contact: document.getElementById("cat_contact").value.trim(),
+    });
+    setStatus("success", "Catálogo actualizado.");
+    setTimeout(() => setStatus(null), 1500);
+    loadDoctorCatalog();
+  } catch (err) { setStatus("error", err.message); }
+});
+async function loadDoctorCatalog() {
+  let doctors = [];
+  try { doctors = await apiGet("/api/doctor-catalog"); } catch (err) { doctors = []; }
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+}
+loadDoctorCatalog();
 
 // v27: si aparece una notificación nueva (sin leer) que no estaba en la
 // última consulta, suena un aviso. La primera carga de la página nunca
@@ -863,6 +921,8 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
+
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3");
 
 loadPatient();
 loadAndRender();

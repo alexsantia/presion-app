@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.2"></script>
+<script src="/shared/common.js?v=30.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -218,7 +218,16 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.2</footer>
+<div class="section">
+  <h2>Catálogo de médicos</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Médicos que decidieron publicar sus datos aquí, organizados por especialidad.</p>
+  <div style="margin-bottom:12px;">
+    <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+  </div>
+  <div id="catalogListWrap"></div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -527,6 +536,18 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3");
+
+// ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
+(async () => {
+  let doctors = [];
+  try {
+    const resp = await fetch("/api/doctor-catalog");
+    const json = await resp.json();
+    if (json.ok) doctors = json.data;
+  } catch (err) { doctors = []; }
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+})();
 wireReactionBars(document.getElementById("readingsBody"), { onReact: toggleReaction });
 load();
 

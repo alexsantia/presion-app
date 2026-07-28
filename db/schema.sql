@@ -207,3 +207,17 @@ CREATE TABLE IF NOT EXISTS malos_habitos (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_malos_habitos_patient ON malos_habitos(patient_id, fecha DESC);
+
+-- v30.3: Catálogo de médicos por especialidad (monetización). Un médico que
+-- se enrola decide, por su cuenta, si publica estos datos en un catálogo
+-- visible para cualquiera (paciente, otro médico, o un visitante del enlace
+-- de familia). OJO: en este esquema cada cuenta de médico está ligada a un
+-- solo paciente (medicos.patient_id NOT NULL), así que un médico real con
+-- varios pacientes en la app tendría una cuenta por cada uno; si activa el
+-- catálogo en más de una, se deduplica por correo al listar (ver
+-- listDoctorCatalog en db-postgres.js) para no mostrarlo repetido.
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_opt_in boolean NOT NULL DEFAULT false;
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS specialty text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_bio text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_contact text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_city text NOT NULL DEFAULT '';
