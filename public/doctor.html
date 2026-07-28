@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.3"></script>
+<script src="/shared/common.js?v=30.3.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -322,8 +322,7 @@
     <div>
       <label class="btn-secondary" for="doc_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
       <input type="file" id="doc_avatar_input" accept="image/*" style="display:none;">
-      <label class="btn-secondary" for="doc_avatar_camera" style="cursor:pointer; display:inline-block; margin-left:6px;">📷 Tomar foto</label>
-      <input type="file" id="doc_avatar_camera" accept="image/*" capture="user" style="display:none;">
+      <button type="button" class="btn-secondary" id="doc_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
       <button type="button" class="btn-mini danger" id="doc_avatar_remove" style="margin-left:6px;">Quitar</button>
     </div>
   </div>
@@ -411,7 +410,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3.1</button></footer>
 
 <script>
 let chartInstance = null;
@@ -560,7 +559,7 @@ async function loadDoctorAccount() {
       doctorAvatarWired = true;
       wireAvatarUploader({
         fileInput: document.getElementById("doc_avatar_input"),
-        cameraInput: document.getElementById("doc_avatar_camera"),
+        cameraButton: document.getElementById("doc_avatar_camera"),
         previewImg: document.getElementById("doc_avatar_preview"),
         removeBtn: document.getElementById("doc_avatar_remove"),
         accountType: "doctor",
@@ -922,7 +921,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3.1");
 
 loadPatient();
 loadAndRender();

@@ -543,6 +543,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.3.1", changes: [
+    "El botón de Tomar foto ahora abre la cámara de verdad en cualquier navegador (antes en Mac/PC solo abría el explorador de archivos).",
+  ] },
   { version: "30.3", changes: [
     "Botón para tomar la foto de perfil directo con la cámara.",
     "Esta sección de Acerca de, con el historial de versiones.",
@@ -1330,24 +1333,95 @@ function resizeImageForAvatar_(file, maxDim, quality) {
   });
 }
 
-// Conecta un <input type="file"> con la subida/borrado de foto de perfil.
-// opts: { fileInput, cameraInput, previewImg, removeBtn, accountType,
-// accountId, onStatus } — cameraInput es opcional (v30.3): un segundo
-// <input type="file" capture="user"> que abre la cámara del dispositivo
-// directamente en vez de la galería, para el botón "Tomar foto". Ambos
-// inputs comparten la misma lógica de subida.
+// ---- Captura de foto con la cámara (v30.3.1) ----
+// El atributo capture="user" de <input type="file"> solo abre la cámara en
+// navegadores móviles (iOS/Android); en escritorio (Mac, Windows) los
+// navegadores lo ignoran por completo y muestran el selector de archivos de
+// siempre, sin ninguna forma de detectarlo de antemano — no es un bug de
+// esta app, es que la especificación deja "capture" como una simple pista
+// que el navegador puede ignorar. Por eso el botón "Tomar foto" ya NO usa
+// un input de archivo: pide la cámara directamente con getUserMedia,
+// muestra una vista previa en vivo en un recuadro propio, y el usuario
+// captura el cuadro exacto que quiera. Esto funciona igual en escritorio y
+// en móvil, sin depender de qué decida el navegador.
+function ensureCameraCaptureStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-camera-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-camera-styles";
+  style.textContent = `
+    .bp-camera-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:250; padding:16px; box-sizing:border-box; }
+    .bp-camera-card { background:#fff; border-radius:14px; padding:16px; max-width:420px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,0.3); box-sizing:border-box; }
+    .bp-camera-video { width:100%; border-radius:10px; background:#000; display:block; max-height:60vh; }
+    .bp-camera-actions { display:flex; gap:8px; margin-top:12px; }
+    .bp-camera-actions button { flex:1; }
+    .bp-camera-error { font-size:13px; color:#A6534B; margin-top:10px; }
+  `;
+  document.head.appendChild(style);
+}
+// onCaptured(blob) se llama con la foto ya tomada (Blob JPEG), lista para
+// pasarse a resizeImageForAvatar_ igual que un archivo subido a mano.
+function openCameraCapture_(onCaptured) {
+  ensureCameraCaptureStyles_();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Este navegador no permite abrir la cámara desde aquí. Usa "Subir foto" en su lugar.');
+    return;
+  }
+  const overlay = document.createElement("div");
+  overlay.className = "bp-camera-overlay";
+  overlay.innerHTML = `
+    <div class="bp-camera-card">
+      <video class="bp-camera-video" autoplay playsinline muted></video>
+      <div class="bp-camera-error" style="display:none;"></div>
+      <div class="bp-camera-actions">
+        <button type="button" class="btn-secondary" data-cam-cancel>Cancelar</button>
+        <button type="button" class="btn-primary" data-cam-shoot disabled>📸 Capturar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const video = overlay.querySelector("video");
+  const errBox = overlay.querySelector(".bp-camera-error");
+  const shootBtn = overlay.querySelector("[data-cam-shoot]");
+  let stream = null;
+  function cleanup() {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    overlay.remove();
+  }
+  overlay.querySelector("[data-cam-cancel]").addEventListener("click", cleanup);
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false })
+    .then(s => { stream = s; video.srcObject = s; shootBtn.disabled = false; })
+    .catch(err => {
+      errBox.style.display = "block";
+      errBox.textContent = "No se pudo abrir la cámara: " + (err && err.message ? err.message : "revisa el permiso de cámara de tu navegador para este sitio.");
+    });
+  shootBtn.addEventListener("click", () => {
+    if (!video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      cleanup();
+      if (blob) onCaptured(blob);
+    }, "image/jpeg", 0.92);
+  });
+}
+
+// Conecta un <input type="file"> y/o un botón de "Tomar foto" con la
+// subida/borrado de foto de perfil.
+// opts: { fileInput, cameraButton, previewImg, removeBtn, accountType,
+// accountId, onStatus } — cameraButton es un <button> normal (v30.3.1, ya no
+// un <input capture=...>, ver openCameraCapture_ arriba). Ambos caminos
+// comparten la misma lógica de redimensionar y subir.
 // onStatus(kind, message): kind "loading" | "success" | "error", para que
 // cada página lo muestre con su propio setStatus().
 function wireAvatarUploader(opts) {
-  const { fileInput, cameraInput, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
-  if (!fileInput && !cameraInput) return;
+  const { fileInput, cameraButton, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
+  if (!fileInput && !cameraButton) return;
   function refreshPreview() {
     if (previewImg) previewImg.src = avatarUrl(accountType, accountId, Date.now());
   }
-  async function handleFileSelected(input) {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); input.value = ""; return; }
+  async function uploadFile(file) {
+    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); return; }
     try {
       onStatus && onStatus("loading", "Subiendo foto…");
       const { base64, mime } = await resizeImageForAvatar_(file, 256, 0.85);
@@ -1361,12 +1435,14 @@ function wireAvatarUploader(opts) {
       onStatus && onStatus("success", "Foto de perfil actualizada.");
     } catch (err) {
       onStatus && onStatus("error", err.message);
-    } finally {
-      input.value = "";
     }
   }
-  if (fileInput) fileInput.addEventListener("change", () => handleFileSelected(fileInput));
-  if (cameraInput) cameraInput.addEventListener("change", () => handleFileSelected(cameraInput));
+  if (fileInput) fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = "";
+    if (file) uploadFile(file);
+  });
+  if (cameraButton) cameraButton.addEventListener("click", () => openCameraCapture_(uploadFile));
   if (removeBtn) {
     removeBtn.addEventListener("click", async () => {
       try {

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.3"></script>
+<script src="/shared/common.js?v=30.3.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -526,7 +526,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3.1</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -542,8 +542,7 @@
       <div>
         <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
         <input type="file" id="p_avatar_input" accept="image/*" style="display:none;">
-        <label class="btn-secondary" for="p_avatar_camera" style="cursor:pointer; display:inline-block; margin-left:6px;">📷 Tomar foto</label>
-        <input type="file" id="p_avatar_camera" accept="image/*" capture="user" style="display:none;">
+        <button type="button" class="btn-secondary" id="p_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
         <button type="button" class="btn-mini danger" id="p_avatar_remove" style="margin-left:6px;">Quitar</button>
       </div>
     </div>
@@ -864,7 +863,7 @@ async function loadAccount() {
       avatarWired = true;
       wireAvatarUploader({
         fileInput: document.getElementById("p_avatar_input"),
-        cameraInput: document.getElementById("p_avatar_camera"),
+        cameraButton: document.getElementById("p_avatar_camera"),
         previewImg: document.getElementById("p_avatar_preview"),
         removeBtn: document.getElementById("p_avatar_remove"),
         accountType: "patient",
@@ -979,7 +978,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.3");
+  showAboutOverlay_("30.3.1");
 });
 
 function openModal(id) {
