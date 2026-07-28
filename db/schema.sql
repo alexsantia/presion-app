@@ -191,3 +191,19 @@ CREATE TABLE IF NOT EXISTS support_ticket_messages (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket ON support_ticket_messages(ticket_id);
+
+-- v30.1: Malos hábitos. valor_numero cubre lo que se cuenta (copas, horas de
+-- sueño continuo, cigarrillos, etc.) y valor_texto lo que se describe (tipo
+-- de bebida, qué se comió); ninguno de los dos es obligatorio porque no
+-- todos los tipos de hábito usan ambos campos.
+CREATE TABLE IF NOT EXISTS malos_habitos (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  tipo text NOT NULL,
+  fecha date NOT NULL,
+  valor_numero numeric,
+  valor_texto text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_malos_habitos_patient ON malos_habitos(patient_id, fecha DESC);

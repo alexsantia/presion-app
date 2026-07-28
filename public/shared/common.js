@@ -376,6 +376,27 @@ function ensureLevelTooltipStyles_() {
   document.head.appendChild(style);
   wireLevelTooltips_();
 }
+// Ajusta la posición horizontal de un tooltip centrado (translateX(-50%))
+// para que nunca quede cortado ni ilegible cerca del borde de la pantalla,
+// en desktop o en móvil (v30.1). El tooltip debe ya estar visible/medible
+// (visibility:hidden sí se puede medir; display:none no) antes de llamar
+// esta función. verticalTransform es el componente vertical que ya traía
+// el tooltip (por ejemplo "translateY(0)"), si aplica.
+function keepTooltipInViewport_(tooltip, verticalTransform) {
+  if (!tooltip || typeof window === "undefined") return;
+  const vert = verticalTransform || "";
+  tooltip.style.transform = `translateX(-50%) ${vert}`.trim();
+  const margin = 8;
+  const rect = tooltip.getBoundingClientRect();
+  const overflowRight = rect.right - window.innerWidth + margin;
+  const overflowLeft = margin - rect.left;
+  let shift = 0;
+  if (overflowRight > 0) shift = -overflowRight;
+  else if (overflowLeft > 0) shift = overflowLeft;
+  if (shift) {
+    tooltip.style.transform = `translateX(calc(-50% + ${shift}px)) ${vert}`.trim();
+  }
+}
 function wireLevelTooltips_() {
   if (typeof document === "undefined" || wireLevelTooltips_._wired) return;
   wireLevelTooltips_._wired = true;
@@ -387,17 +408,15 @@ function wireLevelTooltips_() {
     const willOpen = !badge.classList.contains("tt-open");
     badge.classList.toggle("tt-open", willOpen);
     badge.setAttribute("aria-expanded", String(willOpen));
-    if (willOpen) {
-      const tip = badge.querySelector(".lvl-tooltip");
-      if (tip) {
-        tip.style.transform = "translateX(-50%) translateY(0)";
-        const rect = tip.getBoundingClientRect();
-        const overflowRight = rect.right - window.innerWidth + 8;
-        const overflowLeft = -rect.left + 8;
-        if (overflowRight > 0) tip.style.transform = `translateX(calc(-50% - ${overflowRight}px)) translateY(0)`;
-        else if (overflowLeft > 0) tip.style.transform = `translateX(calc(-50% + ${overflowLeft}px)) translateY(0)`;
-      }
-    }
+    if (willOpen) keepTooltipInViewport_(badge.querySelector(".lvl-tooltip"), "translateY(0)");
+  });
+  // En desktop (con mouse real) el tooltip también se abre por :hover puro,
+  // sin pasar por el click de arriba, así que aquí se reajusta la posición
+  // en cuanto el cursor entra al badge.
+  document.addEventListener("mouseover", (e) => {
+    const badge = e.target.closest(".lvl-badge");
+    if (!badge) return;
+    keepTooltipInViewport_(badge.querySelector(".lvl-tooltip"), "translateY(0)");
   });
 }
 function levelLadderHTML(currentDays) {
@@ -433,14 +452,88 @@ function streakLevelHTML(streak) {
       <div style="display:flex; gap:14px; align-items:stretch; flex-wrap:wrap;">
         <div class="card" style="flex:0 0 auto; min-width:130px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
           <div style="font-size:26px;">🔥</div>
-          <div style="font-size:22px; font-weight:650;">${streak.current}</div>
-          <div style="font-size:11px; color:var(--text-muted);">día${streak.current === 1 ? "" : "s"} seguidos</div>
+          <div style="font-weight:700; font-size:13px; letter-spacing:.2px; margin-top:2px;">Racha</div>
+          <div style="font-size:13px;">de <span style="font-size:22px; font-weight:650;">${streak.current}</span> día${streak.current === 1 ? "" : "s"} seguidos</div>
           ${streak.longest > streak.current ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">récord: ${streak.longest}</div>` : ""}
         </div>
         <div style="flex:1; min-width:220px;">${levelHtml}</div>
       </div>
       ${levelLadderHTML(streak.current)}
     </div>`;
+}
+
+// ---- Malos hábitos (v30.1) ----
+// Catálogo de tipos de mal hábito, compartido entre el formulario de
+// registro y el listado de historial. Cada tipo define qué campo numérico
+// (si aplica) y qué campo de texto se le pide al paciente, según lo que
+// tenga sentido registrar en cada caso: para alcohol, cuántas copas y de
+// qué bebida; para desvelo, horas de sueño continuo; para alimentación o
+// sal en exceso, una descripción libre de lo que se comió; etc.
+const HABIT_TYPES = [
+  { key: "alimentacion", label: "Alimentación", icon: "🍔",
+    numberField: null,
+    textField: { label: "Alimentos no saludables", placeholder: "Ej. hamburguesa, papas fritas, refresco" } },
+  { key: "alcohol", label: "Alcohol", icon: "🍷",
+    numberField: { label: "Copas", unit: "copas", placeholder: "Ej. 2", step: "1", min: "0" },
+    textField: { label: "Tipo de bebida", placeholder: "Ej. cerveza, vino, tequila" } },
+  { key: "tabaco", label: "Tabaco", icon: "🚬",
+    numberField: { label: "Cigarrillos", unit: "cigarrillos", placeholder: "Ej. 5", step: "1", min: "0" },
+    textField: { label: "Notas (opcional)", placeholder: "" } },
+  { key: "desvelo", label: "Desvelo", icon: "🌙",
+    numberField: { label: "Horas de sueño continuo", unit: "horas de sueño", placeholder: "Ej. 4.5", step: "0.5", min: "0", max: "24" },
+    textField: { label: "Notas (opcional)", placeholder: "" } },
+  { key: "sal", label: "Sal en exceso", icon: "🧂",
+    numberField: null,
+    textField: { label: "¿Qué comiste con exceso de sal?", placeholder: "Ej. sopa instantánea, embutidos" } },
+  { key: "sedentarismo", label: "Sedentarismo", icon: "🛋️",
+    numberField: { label: "Horas sin actividad física", unit: "horas sedentario", placeholder: "Ej. 8", step: "0.5", min: "0", max: "24" },
+    textField: { label: "Notas (opcional)", placeholder: "" } },
+  { key: "otro", label: "Otro", icon: "📝",
+    numberField: { label: "Valor (opcional)", unit: "", placeholder: "", step: "0.1" },
+    textField: { label: "Descripción", placeholder: "Describe el hábito" } },
+];
+function habitTypeByKey_(key) {
+  return HABIT_TYPES.find(h => h.key === key) || HABIT_TYPES[HABIT_TYPES.length - 1];
+}
+function habitEntryHTML_(h) {
+  const type = habitTypeByKey_(h.tipo);
+  const parts = [];
+  if (h.valor_numero != null && h.valor_numero !== "") {
+    const unit = type.numberField ? type.numberField.unit : "";
+    parts.push(`${h.valor_numero}${unit ? " " + unit : ""}`);
+  }
+  if (h.valor_texto) parts.push(escapeHtml_(h.valor_texto));
+  return `
+    <div class="habit-entry" data-habit-id="${h.id}">
+      <div class="habit-entry-icon">${type.icon}</div>
+      <div class="habit-entry-body">
+        <div class="habit-entry-title">${type.label}</div>
+        <div class="habit-entry-detail">${parts.join(" · ") || "(sin detalle)"}</div>
+        <div class="habit-entry-date">${fmtDate(h.fecha)}</div>
+      </div>
+      <button type="button" class="btn-mini danger habit-delete-btn" data-habit-id="${h.id}">Eliminar</button>
+    </div>`;
+}
+function renderHabitsListHTML(habits) {
+  if (!habits || !habits.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no has registrado ningún mal hábito.</div>`;
+  }
+  return habits.map(habitEntryHTML_).join("");
+}
+function ensureHabitStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-habit-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-habit-styles";
+  style.textContent = `
+    .habit-entry { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+    .habit-entry:last-child { border-bottom:none; }
+    .habit-entry-icon { font-size:20px; line-height:1; padding-top:2px; }
+    .habit-entry-body { flex:1; min-width:0; }
+    .habit-entry-title { font-weight:650; font-size:13.5px; }
+    .habit-entry-detail { font-size:13px; color:var(--text); margin-top:1px; }
+    .habit-entry-date { font-size:11px; color:var(--text-muted); margin-top:2px; }
+  `;
+  document.head.appendChild(style);
 }
 
 // ---- Utilidades varias ----
@@ -584,10 +677,10 @@ function wireMedAdBadge(badgeId) {
       e.stopPropagation();
       const wasOpen = tooltip.classList.contains("show");
       closeAll();
-      if (!wasOpen) tooltip.classList.add("show");
+      if (!wasOpen) { tooltip.classList.add("show"); keepTooltipInViewport_(tooltip); }
     });
   } else {
-    const show = () => { closeAll(); tooltip.classList.add("show"); };
+    const show = () => { closeAll(); tooltip.classList.add("show"); keepTooltipInViewport_(tooltip); };
     const hide = () => tooltip.classList.remove("show");
     badge.addEventListener("mouseenter", show);
     badge.addEventListener("mouseleave", hide);

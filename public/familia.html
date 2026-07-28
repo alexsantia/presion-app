@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30"></script>
+<script src="/shared/common.js?v=30.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -178,8 +178,8 @@
     <div class="pagination-controls">
       <label>Por página
         <select id="pageSizeSelect">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
           <option value="30">30</option>
         </select>
       </label>
@@ -218,7 +218,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.1</footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -226,7 +226,7 @@ let chartInstance = null;
 let currentData = [];
 let currentPatient = null;
 let currentPage = 1;
-let pageSize = 20;
+let pageSize = 10;
 let chartGranularity = "week";
 let chartDay = todayStr();
 let currentReactions = [];

@@ -526,6 +526,16 @@ app.delete("/api/readings/:id", requireRole("patient"), asyncRoute(async (req, r
   res.json(await callSheetsApi(null, { action: "delete", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
+app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_habits", patient_id: req.session.patientId }));
+}));
+app.post("/api/habits", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_habit", patient_id: req.session.patientId, ...req.body }));
+}));
+app.delete("/api/habits/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_habit", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
 app.get("/api/comments", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_comments", patient_id: req.session.patientId }));
 }));

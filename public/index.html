@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30"></script>
+<script src="/shared/common.js?v=30.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -287,6 +287,7 @@
 <div class="page-tabs">
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -398,8 +399,8 @@
     <div class="pagination-controls">
       <label>Por página
         <select id="pageSizeSelect">
-          <option value="10">10</option>
-          <option value="20" selected>20</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
           <option value="30">30</option>
         </select>
       </label>
@@ -478,7 +479,41 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30</footer>
+<div id="tabHabitos" class="tab-panel" style="display:none;">
+  <div class="section section-add">
+    <h2>Registrar mal hábito</h2>
+    <form class="add-form" id="habitForm">
+      <div>
+        <label>Tipo</label>
+        <select id="h_tipo">
+          <option value="alimentacion">🍔 Alimentación</option>
+          <option value="alcohol">🍷 Alcohol</option>
+          <option value="tabaco">🚬 Tabaco</option>
+          <option value="desvelo">🌙 Desvelo</option>
+          <option value="sal">🧂 Sal en exceso</option>
+          <option value="sedentarismo">🛋️ Sedentarismo</option>
+          <option value="otro">📝 Otro</option>
+        </select>
+      </div>
+      <div><label>Fecha</label><input type="date" id="h_fecha" required></div>
+      <div id="h_number_field" style="display:none;">
+        <label id="h_number_label"></label>
+        <input type="number" id="h_valor_numero">
+      </div>
+      <div class="full" id="h_text_field">
+        <label id="h_text_label"></label>
+        <input type="text" id="h_valor_texto">
+      </div>
+      <div class="row-actions"><button type="submit" class="btn-primary">Registrar</button></div>
+    </form>
+  </div>
+  <div class="section">
+    <h2>Historial</h2>
+    <div id="habitsListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.1</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -924,6 +959,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
     document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
+    document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
   });
 });
 
@@ -980,7 +1016,7 @@ document.getElementById("paramsForm").addEventListener("submit", async e => {
 const settingsUnitsEl = document.getElementById("setting_units");
 const settingsPageSizeEl = document.getElementById("setting_pagesize");
 settingsUnitsEl.value = getUnitPref();
-settingsPageSizeEl.value = localStorage.getItem("bp_page_size") || "20";
+settingsPageSizeEl.value = localStorage.getItem("bp_page_size") || "10";
 settingsUnitsEl.addEventListener("change", () => {
   localStorage.setItem("bp_units", settingsUnitsEl.value);
   fillParamsForm();
@@ -1391,7 +1427,7 @@ function renderStreak() {
 
 // ---- Paginación de la tabla ----
 let currentPage = 1;
-let pageSize = Number(localStorage.getItem("bp_page_size")) || 20;
+let pageSize = Number(localStorage.getItem("bp_page_size")) || 10;
 document.getElementById("pageSizeSelect").value = String(pageSize);
 
 // ---- Mostrar/ocultar columnas del Historial de lecturas (v25) ----
@@ -1869,6 +1905,67 @@ loadReactions().then(() => {
 });
 loadDoctorsAndInvites();
 
+// ---- Malos hábitos (v30.1) ----
+let currentHabits = [];
+function fillHabitFormFields_() {
+  ensureHabitStyles_();
+  const type = habitTypeByKey_(document.getElementById("h_tipo").value);
+  const numberWrap = document.getElementById("h_number_field");
+  const numberInput = document.getElementById("h_valor_numero");
+  if (type.numberField) {
+    numberWrap.style.display = "";
+    document.getElementById("h_number_label").textContent = type.numberField.label;
+    numberInput.placeholder = type.numberField.placeholder || "";
+    numberInput.step = type.numberField.step || "any";
+    if (type.numberField.min != null) numberInput.min = type.numberField.min; else numberInput.removeAttribute("min");
+    if (type.numberField.max != null) numberInput.max = type.numberField.max; else numberInput.removeAttribute("max");
+  } else {
+    numberWrap.style.display = "none";
+    numberInput.value = "";
+  }
+  document.getElementById("h_text_label").textContent = type.textField.label;
+  document.getElementById("h_valor_texto").placeholder = type.textField.placeholder || "";
+}
+document.getElementById("h_tipo").addEventListener("change", fillHabitFormFields_);
+document.getElementById("h_fecha").value = todayStr();
+fillHabitFormFields_();
+async function loadHabits() {
+  ensureHabitStyles_();
+  try { currentHabits = await apiGet("/api/habits"); } catch (err) { currentHabits = []; }
+  document.getElementById("habitsListWrap").innerHTML = renderHabitsListHTML(currentHabits);
+}
+document.getElementById("habitForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const fecha = document.getElementById("h_fecha").value;
+  if (!fecha) return;
+  const valorNumeroRaw = document.getElementById("h_valor_numero").value;
+  try {
+    await apiPost("/api/habits", {
+      tipo: document.getElementById("h_tipo").value,
+      fecha,
+      valor_numero: valorNumeroRaw !== "" ? Number(valorNumeroRaw) : null,
+      valor_texto: document.getElementById("h_valor_texto").value.trim(),
+    });
+    document.getElementById("h_valor_numero").value = "";
+    document.getElementById("h_valor_texto").value = "";
+    await loadHabits();
+  } catch (err) {
+    alert("No se pudo registrar el hábito: " + err.message);
+  }
+});
+document.getElementById("habitsListWrap").addEventListener("click", async e => {
+  const btn = e.target.closest(".habit-delete-btn");
+  if (!btn) return;
+  if (!confirm("¿Eliminar este registro?")) return;
+  try {
+    await apiDelete(`/api/habits/${btn.dataset.habitId}`);
+    await loadHabits();
+  } catch (err) {
+    alert("No se pudo eliminar: " + err.message);
+  }
+});
+loadHabits();
+
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
 // misma cuenta abierta en más de un dispositivo, o mientras tu médico
@@ -1876,6 +1973,7 @@ loadDoctorsAndInvites();
 connectRealtime("/api/stream", kind => {
   if (kind === "reading") loadAndRender();
   if (kind === "comment") loadComments();
+  if (kind === "habit") loadHabits();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

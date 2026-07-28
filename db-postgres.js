@@ -212,6 +212,22 @@ async function listReadings(patientId) {
   return rows.map(readingRowToObject);
 }
 
+// ---- Malos hábitos (v30.1) ----
+const HABIT_TYPE_KEYS = ["alimentacion", "alcohol", "tabaco", "desvelo", "sal", "sedentarismo", "otro"];
+async function listHabits(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, tipo, to_char(fecha, 'YYYY-MM-DD') AS fecha, valor_numero, valor_texto, created_at
+     FROM malos_habitos WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(r => ({
+    id: r.id, patient_id: r.patient_id, tipo: r.tipo, fecha: r.fecha,
+    valor_numero: r.valor_numero != null ? Number(r.valor_numero) : null,
+    valor_texto: r.valor_texto || "",
+    created_at: new Date(r.created_at).toISOString(),
+  }));
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -576,6 +592,9 @@ async function handleGet(params) {
   if (action === "list_reactions") {
     return { ok: true, data: await listReactions(params.patient_id) };
   }
+  if (action === "list_habits") {
+    return { ok: true, data: await listHabits(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -687,6 +706,26 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM lecturas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "reading");
+    return { ok: true };
+  }
+
+  // ---- Malos hábitos (v30.1) ----
+  if (body.action === "add_habit") {
+    const tipo = HABIT_TYPE_KEYS.includes(body.tipo) ? body.tipo : "otro";
+    if (!body.fecha) return { ok: false, error: "falta la fecha" };
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO malos_habitos (id, patient_id, tipo, fecha, valor_numero, valor_texto, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+      [id, body.patient_id, tipo, body.fecha, num(body.valor_numero), body.valor_texto || "", now]
+    );
+    emitChange(body.patient_id, "habit");
+    return { ok: true, id };
+  }
+  if (body.action === "delete_habit") {
+    const { rowCount } = await pool.query(`DELETE FROM malos_habitos WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "habit");
     return { ok: true };
   }
 
