@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.1"></script>
+<script src="/shared/common.js?v=30.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -513,7 +513,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.2</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -656,6 +656,10 @@
     <div class="modal-section-title">Notificaciones</div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Si anclas esta app a tu pantalla de inicio, puedes recibir avisos del sistema aunque la tengas cerrada, y ver cuántas tienes pendientes en el ícono.</p>
     <button type="button" class="btn-secondary" id="pushToggleBtn" disabled>Cargando…</button>
+    <div class="settings-actions" style="margin-top:8px;">
+      <button type="button" class="btn-secondary" id="pushTestBtn">🔔 Enviar notificación de prueba</button>
+    </div>
+    <div id="pushTestResult" style="font-size:12.5px; margin-top:6px; white-space:pre-wrap;"></div>
 
     <div class="modal-section-title">Respaldo y restauración</div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">A diferencia del CSV de arriba (solo para ver tus lecturas en Excel), este respaldo guarda absolutamente todo — lecturas, comentarios y reacciones — para poder restaurarlo tal cual, tú mismo, si algo sale mal.</p>
@@ -2025,6 +2029,32 @@ connectRealtime("/api/stream", kind => {
     finally { btn.disabled = false; }
   });
 })();
+
+// v30.1: botón de diagnóstico. Manda un push de prueba a esta cuenta y
+// muestra el resultado exacto que regresa el servidor (si VAPID está
+// configurado, cuántas suscripciones hay guardadas, y si el envío falló,
+// con qué código), directamente en pantalla, sin tener que revisar los
+// logs de Render.
+document.getElementById("pushTestBtn").addEventListener("click", async () => {
+  const out = document.getElementById("pushTestResult");
+  out.textContent = "Enviando…";
+  try {
+    const data = await apiPost("/api/push/test", {});
+    const d = data.data;
+    if (!d.push_enabled) {
+      out.textContent = "El servidor no tiene configuradas las llaves VAPID (RESEND aparte, esto es otra cosa): no puede mandar ningún push todavía, sin importar lo que hagas desde el celular.";
+    } else if (d.subscriptions_count === 0) {
+      out.textContent = "El servidor no tiene ninguna suscripción push guardada para tu cuenta. Activa las notificaciones con el botón de arriba primero.";
+    } else {
+      const lines = d.results.map(r => r.success
+        ? `✓ enviado OK a suscripción ...${r.endpoint_tail}`
+        : `✗ falló (...${r.endpoint_tail}): ${r.status != null ? "código " + r.status + " — " : ""}${r.error}`);
+      out.textContent = `${d.subscriptions_count} suscripción(es) guardada(s).\n` + lines.join("\n");
+    }
+  } catch (err) {
+    out.textContent = "Error al pedir la prueba: " + err.message;
+  }
+});
 </script>
 </body>
 </html>

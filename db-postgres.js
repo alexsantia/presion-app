@@ -396,6 +396,44 @@ async function sendPushToRecipient_(recipientType, recipientId, payload) {
     }
   }
 }
+// Diagnóstico bajo demanda (v30.1): a diferencia de sendPushToRecipient_
+// (que nunca truena y no reporta detalle porque se dispara solo, en medio
+// de otra acción), esta función SÍ regresa el resultado exacto de cada
+// intento de envío, para poder ver desde la app (sin tocar los logs de
+// Render) si: (a) VAPID está configurado en el servidor, (b) hay alguna
+// suscripción guardada para esta cuenta, y (c) si el envío en sí falla, con
+// qué código/mensaje exacto del servicio de push (por ejemplo 410 si la
+// suscripción ya expiró, o un error de credenciales VAPID).
+async function testPushForRecipient(recipientType, recipientId) {
+  if (!pushEnabled) {
+    return { push_enabled: false, subscriptions_count: 0, results: [] };
+  }
+  const subs = await listPushSubscriptions(recipientType, recipientId);
+  const count = await countUnreadNotifications(recipientType, recipientId).catch(() => 0);
+  const payload = JSON.stringify({
+    title: "Reigning Blood Pressure App",
+    body: "Notificación de prueba: si la ves, el push funciona correctamente.",
+    count,
+  });
+  const results = [];
+  for (const s of subs) {
+    try {
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
+      results.push({ endpoint_tail: s.endpoint.slice(-24), success: true });
+    } catch (err) {
+      results.push({
+        endpoint_tail: s.endpoint.slice(-24),
+        success: false,
+        status: err && err.statusCode != null ? err.statusCode : null,
+        error: err && err.body ? String(err.body) : (err && err.message ? err.message : String(err)),
+      });
+      if (err && (err.statusCode === 404 || err.statusCode === 410)) {
+        await deletePushSubscription(s.endpoint).catch(() => {});
+      }
+    }
+  }
+  return { push_enabled: true, subscriptions_count: subs.length, results };
+}
 async function createNotification(recipientType, recipientId, type, message, relatedId) {
   if (!recipientId) return;
   await pool.query(
@@ -707,6 +745,11 @@ async function handlePost(body) {
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "reading");
     return { ok: true };
+  }
+
+  // ---- Diagnóstico de push (v30.1) ----
+  if (body.action === "test_push") {
+    return { ok: true, data: await testPushForRecipient(body.recipient_type, body.recipient_id) };
   }
 
   // ---- Malos hábitos (v30.1) ----

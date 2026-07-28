@@ -802,6 +802,16 @@ if (DB_BACKEND === "postgres") {
     const result = await callSheetsApi(null, { action: "delete_push_subscription", endpoint: req.body.endpoint });
     res.json(result);
   }));
+  // v30.1: diagnóstico bajo demanda. Manda un push de prueba a esta cuenta y
+  // regresa el resultado exacto (si VAPID está configurado, cuántas
+  // suscripciones hay guardadas, y si el envío falló, con qué código),
+  // para no depender de revisar los logs de Render a ciegas.
+  app.post("/api/push/test", requireAnyRole, asyncRoute(async (req, res) => {
+    const recipientType = req.session.role;
+    const recipientId = req.session.role === "patient" ? req.session.patientId : req.session.doctorId;
+    const result = await callSheetsApi(null, { action: "test_push", recipient_type: recipientType, recipient_id: recipientId });
+    res.json(result);
+  }));
 
   // ---- Foto de perfil (v30) — solo con backend Postgres ----
   // Subir/borrar siempre usa la cuenta de la sesión (nunca un id que mande
