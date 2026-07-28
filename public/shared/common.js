@@ -451,8 +451,8 @@ function streakLevelHTML(streak) {
     <div>
       <div style="display:flex; gap:14px; align-items:stretch; flex-wrap:wrap;">
         <div class="card" style="flex:0 0 auto; min-width:130px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
-          <div style="font-size:26px;">🔥</div>
-          <div style="font-weight:700; font-size:13px; letter-spacing:.2px; margin-top:2px;">Racha</div>
+          <div style="font-weight:700; font-size:13px; letter-spacing:.2px;">Racha</div>
+          <div style="font-size:26px; margin-top:2px;">🔥</div>
           <div style="font-size:13px;">de <span style="font-size:22px; font-weight:650;">${streak.current}</span> día${streak.current === 1 ? "" : "s"} seguidos</div>
           ${streak.longest > streak.current ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">récord: ${streak.longest}</div>` : ""}
         </div>

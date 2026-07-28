@@ -928,11 +928,32 @@ document.getElementById("emailForm").addEventListener("submit", async e => {
 // ---- Menú hamburguesa y modales (Cuenta / Parámetros / Ajustes) ----
 const menuBtn = document.getElementById("menuBtn");
 const hamburgerMenu = document.getElementById("hamburgerMenu");
+// v30.1: en pantallas angostas el botón del menú puede quedar cerca del
+// borde izquierdo (no siempre está empujado a la derecha, que era el único
+// caso que se corrigió en v29). El menú usaba "right:0" fijo, así que su
+// ancho completo se dibujaba hacia la izquierda del botón y se salía del
+// viewport por ese lado, quedando cortado e ilegible. Aquí se mide su
+// posición real cada vez que se abre y se ajusta con "left" en píxeles para
+// que quede siempre completo dentro de la pantalla, sin importar de qué
+// lado esté el botón.
+function positionHamburgerMenu_() {
+  const wrap = menuBtn.closest(".hamburger-wrap");
+  const wrapRect = wrap.getBoundingClientRect();
+  const margin = 8;
+  const menuWidth = hamburgerMenu.offsetWidth || 190;
+  let desiredLeft = wrapRect.right - menuWidth; // comportamiento original: pegado al borde derecho del botón
+  if (desiredLeft < margin) desiredLeft = margin;
+  const maxLeft = window.innerWidth - menuWidth - margin;
+  if (desiredLeft > maxLeft) desiredLeft = Math.max(margin, maxLeft);
+  hamburgerMenu.style.right = "auto";
+  hamburgerMenu.style.left = `${desiredLeft - wrapRect.left}px`;
+}
 menuBtn.addEventListener("click", e => {
   e.stopPropagation();
   const open = hamburgerMenu.style.display !== "none";
   hamburgerMenu.style.display = open ? "none" : "block";
   menuBtn.setAttribute("aria-expanded", String(!open));
+  if (!open) positionHamburgerMenu_();
 });
 document.addEventListener("click", () => { hamburgerMenu.style.display = "none"; });
 
