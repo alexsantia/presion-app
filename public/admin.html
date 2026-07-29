@@ -104,8 +104,16 @@
 <div class="panel" id="panel-mensajes">
   <div class="section">
     <h2>Nuevo mensaje general</h2>
-    <p style="font-size:13px;color:var(--text-muted);margin-top:-6px;">Lo verán todos los pacientes y médicos con sesión iniciada, hasta que lo desactives.</p>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:-6px;">Elige a quién va dirigido. Se queda visible hasta que lo desactives.</p>
     <form id="broadcastForm">
+      <div class="field"><label>Enviar a</label>
+        <select id="bc_audience">
+          <option value="all">Todos (paciente, médico y familia)</option>
+          <option value="patient">Solo interfaz de paciente</option>
+          <option value="doctor">Solo interfaz de médico</option>
+          <option value="family">Solo enlace de familia y amigos</option>
+        </select>
+      </div>
       <div class="field"><label>Título</label><input type="text" id="bc_title" required></div>
       <div class="field"><label>Mensaje</label><textarea id="bc_body" rows="3"></textarea></div>
       <button type="submit" class="btn-primary">Publicar</button>
@@ -232,6 +240,7 @@ document.getElementById("panel-cuentas").addEventListener("click", async e => {
 });
 
 // ---- Mensajes ----
+const BROADCAST_AUDIENCE_LABELS = { all: "Todos", patient: "Paciente", doctor: "Médico", family: "Familia y amigos" };
 async function loadBroadcasts() {
   try {
     const data = await apiGet("/api/admin/broadcasts");
@@ -239,7 +248,7 @@ async function loadBroadcasts() {
     wrap.innerHTML = data.map(b => `
       <div class="broadcast-row">
         <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">
-          <div><strong>${b.title}</strong><div style="font-size:12px;color:var(--text-muted);">${fmtDateTime(b.created_at)}</div></div>
+          <div><strong>${b.title}</strong><div style="font-size:12px;color:var(--text-muted);">${fmtDateTime(b.created_at)} · Para: ${BROADCAST_AUDIENCE_LABELS[b.audience] || "Todos"}</div></div>
           <div>
             <span class="badge-pill ${b.active ? "ok" : "closed"}">${b.active ? "Activo" : "Inactivo"}</span>
             ${b.active ? `<button type="button" class="btn-mini" data-deactivate="${b.id}" style="margin-left:8px;">Desactivar</button>` : ""}
@@ -254,7 +263,11 @@ document.getElementById("broadcastForm").addEventListener("submit", async e => {
   e.preventDefault();
   try {
     setStatus("loading", "Publicando…");
-    await apiPost("/api/admin/broadcasts", { title: document.getElementById("bc_title").value, body: document.getElementById("bc_body").value });
+    await apiPost("/api/admin/broadcasts", {
+      title: document.getElementById("bc_title").value,
+      body: document.getElementById("bc_body").value,
+      audience: document.getElementById("bc_audience").value,
+    });
     document.getElementById("broadcastForm").reset();
     setStatus("success", "Mensaje publicado.");
     setTimeout(() => setStatus(null), 1500);

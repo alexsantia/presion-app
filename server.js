@@ -428,12 +428,14 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const patient = patientResult.data;
   const readingsResult = await callSheetsApi({ action: "list", patient_id: patient.id });
   const reactionsResult = await callSheetsApi({ action: "list_reactions", patient_id: patient.id });
+  const broadcastsResult = await callSheetsApi({ action: "get_active_broadcasts", audience: "family" });
   res.json({
     ok: true,
     data: {
-      patient: { name: patient.name, birthdate: patient.birthdate, med_brand: patient.med_brand, med_mg: patient.med_mg },
+      patient: { id: patient.id, name: patient.name, birthdate: patient.birthdate, med_brand: patient.med_brand, med_mg: patient.med_mg },
       readings: readingsResult.ok ? readingsResult.data : [],
       reactions: reactionsResult.ok ? reactionsResult.data : [],
+      broadcasts: broadcastsResult.ok ? broadcastsResult.data : [],
     },
   });
 }));
@@ -493,7 +495,7 @@ app.get("/api/admin/broadcasts", requireRole("admin"), asyncRoute(async (req, re
 }));
 app.post("/api/admin/broadcasts", requireRole("admin"), asyncRoute(async (req, res) => {
   if (!req.body.title || !String(req.body.title).trim()) return res.status(400).json({ ok: false, error: "escribe un título" });
-  res.json(await callSheetsApi(null, { action: "create_broadcast", title: req.body.title, body: req.body.body || "" }));
+  res.json(await callSheetsApi(null, { action: "create_broadcast", title: req.body.title, body: req.body.body || "", audience: req.body.audience || "all" }));
 }));
 app.post("/api/admin/broadcasts/:id/deactivate", requireRole("admin"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "deactivate_broadcast", id: req.params.id }));
@@ -754,7 +756,7 @@ app.post("/api/account/restore", requireRole("patient"), asyncRoute(async (req, 
 // Cualquier paciente o médico con sesión puede ver los mensajes activos;
 // no hay nada sensible aquí, es lo mismo para todos.
 app.get("/api/broadcasts", requireAnyRole, asyncRoute(async (req, res) => {
-  res.json(await callSheetsApi({ action: "get_active_broadcasts" }));
+  res.json(await callSheetsApi({ action: "get_active_broadcasts", audience: req.session.role }));
 }));
 
 // ---- Tickets de soporte (v30) ----

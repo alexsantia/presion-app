@@ -545,6 +545,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.5", changes: [
+    "El botón de ver/ocultar contraseña ya no se encima con el texto en las pantallas de acceso.",
+    "Los mensajes generales del administrador ahora se pueden dirigir solo a paciente, solo a médico, o solo al enlace de familia y amigos.",
+    "El enlace de familia y amigos ahora también muestra estos mensajes generales.",
+  ] },
   { version: "30.4", changes: [
     "Nueva sección de Síntomas diarios, con síntoma, fecha, hora y descripción.",
     "Foto de perfil visible debajo del encabezado en las vistas de paciente y de familia.",
@@ -1638,31 +1643,43 @@ function ensureBroadcastStyles_() {
   `;
   document.head.appendChild(style);
 }
-async function wireBroadcastBanner(containerEl) {
+// Dibuja los mensajes generales activos ya obtenidos (sin volver a pedirlos)
+// dentro de containerEl, respetando los que la persona ya cerró en este
+// navegador. Lo usan tanto wireBroadcastBanner (paciente/médico, con sesión)
+// como familia.html (sin sesión, los mensajes llegan junto con los demás
+// datos del enlace de solo lectura).
+function renderBroadcastsIntoContainer_(containerEl, broadcasts) {
   if (!containerEl) return;
   ensureBroadcastStyles_();
   const dismissedKey = "bp_dismissed_broadcasts";
   const dismissed = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
+  const toShow = (broadcasts || []).filter(b => dismissed.indexOf(b.id) === -1);
+  containerEl.innerHTML = toShow.map(b => `
+    <div class="bp-broadcast" data-id="${b.id}">
+      <div class="bp-broadcast-body"><strong>📣 ${b.title}</strong>${b.body || ""}</div>
+      <button type="button" class="bp-broadcast-close" data-dismiss="${b.id}" aria-label="Cerrar">✕</button>
+    </div>`).join("");
+  containerEl.querySelectorAll("[data-dismiss]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.dismiss;
+      const list = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
+      list.push(id);
+      localStorage.setItem(dismissedKey, JSON.stringify(list));
+      btn.closest(".bp-broadcast").remove();
+    });
+  });
+}
+async function wireBroadcastBanner(containerEl) {
+  if (!containerEl) return;
   try {
     const resp = await fetch("/api/broadcasts");
     const json = await resp.json();
     if (!json.ok) return;
-    const toShow = (json.data || []).filter(b => dismissed.indexOf(b.id) === -1);
-    containerEl.innerHTML = toShow.map(b => `
-      <div class="bp-broadcast" data-id="${b.id}">
-        <div class="bp-broadcast-body"><strong>📣 ${b.title}</strong>${b.body || ""}</div>
-        <button type="button" class="bp-broadcast-close" data-dismiss="${b.id}" aria-label="Cerrar">✕</button>
-      </div>`).join("");
-    containerEl.querySelectorAll("[data-dismiss]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const id = btn.dataset.dismiss;
-        const list = JSON.parse(localStorage.getItem(dismissedKey) || "[]");
-        list.push(id);
-        localStorage.setItem(dismissedKey, JSON.stringify(list));
-        btn.closest(".bp-broadcast").remove();
-      });
-    });
+    renderBroadcastsIntoContainer_(containerEl, json.data || []);
   } catch (err) { /* silencioso: un aviso que no cargó no debe romper la página */ }
+}
+function renderBroadcastBannerFromList(containerEl, broadcasts) {
+  renderBroadcastsIntoContainer_(containerEl, broadcasts);
 }
 
 // ---- Tickets de soporte (v30) ----
@@ -1771,10 +1788,11 @@ function ensurePasswordToggleStyles_() {
   style.id = "bp-pw-toggle-styles";
   style.textContent = `
     .pw-field { position: relative; }
-    .pw-field input { padding-right: 38px; }
-    .pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    .pw-field input { padding-right: 44px !important; }
+    .pw-toggle { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+      width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
       background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
-      padding: 6px; color: var(--text-muted); }
+      padding: 0; color: var(--text-muted); }
     .pw-toggle:hover { color: var(--text); }
   `;
   document.head.appendChild(style);

@@ -170,6 +170,9 @@ CREATE TABLE IF NOT EXISTS broadcast_messages (
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+-- v30.5: elegir a quién va dirigido cada mensaje general (todas las
+-- interfaces, o solo pacientes / médicos / familia y amigos).
+ALTER TABLE broadcast_messages ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'all';
 
 CREATE TABLE IF NOT EXISTS support_tickets (
   id uuid PRIMARY KEY,

@@ -42,12 +42,17 @@ body {
 .auth-card .switch a { color: var(--accent); text-decoration: none; font-weight: 600; }
 .auth-card .switch a:hover { text-decoration: underline; }
 
-/* v29: icono de ojo para mostrar/ocultar contraseña (ver auth.js) */
+/* v29: icono de ojo para mostrar/ocultar contraseña (ver auth.js).
+   v30.5: el botón tenía un ancho variable según cómo el sistema dibujara el
+   emoji, y a veces se comía unos pixeles del texto de la contraseña. Ahora
+   el botón tiene un tamaño fijo y el input reserva más espacio del que
+   necesita, para que nunca se toquen. */
 .pw-field { position: relative; }
-.pw-field input { padding-right: 38px; }
+.pw-field input { padding-right: 44px !important; }
 .pw-toggle {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
-  padding: 6px; color: var(--text-muted);
+  padding: 0; color: var(--text-muted);
 }
 .pw-toggle:hover { color: var(--text); }

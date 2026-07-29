@@ -587,12 +587,19 @@ async function usageStats() {
   ]);
   return { patients, doctors, readings, comments, reactions, openTickets, newPatients7d, newPatients30d, pushSubs };
 }
+const BROADCAST_AUDIENCES = ["all", "patient", "doctor", "family"];
 async function listBroadcasts() {
   const { rows } = await pool.query(`SELECT * FROM broadcast_messages ORDER BY created_at DESC`);
-  return rows.map(r => ({ id: r.id, title: r.title, body: r.body, active: !!r.active, created_at: new Date(r.created_at).toISOString() }));
+  return rows.map(r => ({ id: r.id, title: r.title, body: r.body, active: !!r.active, audience: r.audience || "all", created_at: new Date(r.created_at).toISOString() }));
 }
-async function listActiveBroadcasts() {
-  const { rows } = await pool.query(`SELECT * FROM broadcast_messages WHERE active = true ORDER BY created_at DESC`);
+// audience: para quién se está pidiendo la lista ("patient", "doctor" o
+// "family"). Un mensaje se ve si es para "all" o coincide exactamente con
+// quien pregunta; así un mismo mensaje puede dirigirse solo a una interfaz.
+async function listActiveBroadcasts(audience) {
+  const { rows } = await pool.query(
+    `SELECT * FROM broadcast_messages WHERE active = true AND (audience = 'all' OR audience = $1) ORDER BY created_at DESC`,
+    [audience || "all"]
+  );
   return rows.map(r => ({ id: r.id, title: r.title, body: r.body, created_at: new Date(r.created_at).toISOString() }));
 }
 async function findTicketById(id) {
@@ -733,7 +740,7 @@ async function handleGet(params) {
     return { ok: true, data: await listBroadcasts() };
   }
   if (action === "get_active_broadcasts") {
-    return { ok: true, data: await listActiveBroadcasts() };
+    return { ok: true, data: await listActiveBroadcasts(params.audience) };
   }
   if (action === "list_my_tickets") {
     return { ok: true, data: await listTicketsForAccount(params.account_type, params.account_id) };
@@ -1253,8 +1260,9 @@ async function handlePost(body) {
     return { ok: true };
   }
   if (body.action === "create_broadcast") {
+    const audience = BROADCAST_AUDIENCES.includes(body.audience) ? body.audience : "all";
     const id = uuid();
-    await pool.query(`INSERT INTO broadcast_messages (id, title, body, active, created_at) VALUES ($1,$2,$3,true,$4)`, [id, body.title, body.body || "", now]);
+    await pool.query(`INSERT INTO broadcast_messages (id, title, body, active, audience, created_at) VALUES ($1,$2,$3,true,$4,$5)`, [id, body.title, body.body || "", audience, now]);
     return { ok: true, id };
   }
   if (body.action === "deactivate_broadcast") {
