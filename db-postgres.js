@@ -228,6 +228,19 @@ async function listHabits(patientId) {
   }));
 }
 
+// ---- Síntomas diarios (v30.4) ----
+async function listSymptoms(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, sintoma, to_char(fecha, 'YYYY-MM-DD') AS fecha, to_char(hora, 'HH24:MI') AS hora, descripcion, created_at
+     FROM sintomas WHERE patient_id = $1 ORDER BY fecha DESC, hora DESC NULLS LAST, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(r => ({
+    id: r.id, patient_id: r.patient_id, sintoma: r.sintoma, fecha: r.fecha, hora: r.hora || "",
+    descripcion: r.descripcion || "", created_at: new Date(r.created_at).toISOString(),
+  }));
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -665,6 +678,9 @@ async function handleGet(params) {
   if (action === "list_doctor_catalog") {
     return { ok: true, data: await listDoctorCatalog() };
   }
+  if (action === "list_symptoms") {
+    return { ok: true, data: await listSymptoms(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -782,6 +798,25 @@ async function handlePost(body) {
   // ---- Diagnóstico de push (v30.1) ----
   if (body.action === "test_push") {
     return { ok: true, data: await testPushForRecipient(body.recipient_type, body.recipient_id) };
+  }
+
+  // ---- Síntomas diarios (v30.4) ----
+  if (body.action === "add_symptom") {
+    if (!body.fecha || !body.sintoma) return { ok: false, error: "faltan datos" };
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO sintomas (id, patient_id, sintoma, fecha, hora, descripcion, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+      [id, body.patient_id, body.sintoma, body.fecha, body.hora || null, body.descripcion || "", now]
+    );
+    emitChange(body.patient_id, "symptom");
+    return { ok: true, id };
+  }
+  if (body.action === "delete_symptom") {
+    const { rowCount } = await pool.query(`DELETE FROM sintomas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "symptom");
+    return { ok: true };
   }
 
   // ---- Malos hábitos (v30.1) ----

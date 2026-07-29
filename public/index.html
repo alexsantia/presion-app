@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.3.2"></script>
+<script src="/shared/common.js?v=30.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -266,6 +266,7 @@
   </div>
 </div>
 <div class="subtitle">Monitoreo de presión arterial, frecuencia cardiaca y peso · categorías según guía AHA (2017)</div>
+<div id="patientAvatarWrap" style="margin: 10px 0 4px;"></div>
 
 <div class="view-as-toolbar">
   <span class="view-as-label">Ver mi panel como:</span>
@@ -290,6 +291,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
   <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -519,14 +521,39 @@
   <div class="section">
     <h2>Catálogo de médicos</h2>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Médicos que decidieron publicar sus datos aquí, organizados por especialidad. Esto no reemplaza vincular a tu propio médico en Compartir Mediciones.</p>
-    <div style="margin-bottom:12px;">
+    <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
       <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      <input type="text" id="catalogSearchInput" placeholder="Buscar por nombre o contacto…" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; flex:1; min-width:180px;">
     </div>
     <div id="catalogListWrap"></div>
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.3.2</footer>
+<div id="tabSintomas" class="tab-panel" style="display:none;">
+  <div class="section section-add">
+    <h2>Registrar síntoma</h2>
+    <form class="add-form" id="symptomForm">
+      <div class="full">
+        <label>Síntoma</label>
+        <input type="text" id="sy_sintoma" list="symptomSuggestions" required placeholder="Ej. Dolor de cabeza">
+        <datalist id="symptomSuggestions"></datalist>
+      </div>
+      <div><label>Fecha</label><input type="date" id="sy_fecha" required></div>
+      <div><label>Hora</label><input type="time" id="sy_hora"></div>
+      <div class="full">
+        <label>Descripción</label>
+        <textarea id="sy_descripcion" rows="2" placeholder="Detalles del síntoma (opcional)"></textarea>
+      </div>
+      <div class="row-actions"><button type="submit" class="btn-primary">Registrar</button></div>
+    </form>
+  </div>
+  <div class="section">
+    <h2>Historial</h2>
+    <div id="symptomsListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.4</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -860,6 +887,7 @@ async function loadAccount() {
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     updateMedAdBadge();
     setAvatarFallbackInitials_(document.getElementById("p_avatar_fallback"), document.getElementById("p_avatar_preview"), currentAccount.name);
+    document.getElementById("patientAvatarWrap").innerHTML = avatarWithInitialsHTML_("patient", currentAccount.id, currentAccount.name, 56);
     if (!avatarWired) {
       avatarWired = true;
       wireAvatarUploader({
@@ -979,7 +1007,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.3.2");
+  showAboutOverlay_("30.4");
 });
 
 function openModal(id) {
@@ -1007,6 +1035,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
+    document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
   });
 });
 
@@ -2017,9 +2046,49 @@ loadHabits();
 async function loadDoctorCatalog() {
   let doctors = [];
   try { doctors = await apiGet("/api/doctor-catalog"); } catch (err) { doctors = []; }
-  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors, document.getElementById("catalogSearchInput"));
 }
 loadDoctorCatalog();
+
+// ---- Síntomas diarios (v30.4) ----
+document.getElementById("symptomSuggestions").innerHTML = SYMPTOM_SUGGESTIONS.map(s => `<option value="${s}">`).join("");
+document.getElementById("sy_fecha").value = todayStr();
+let currentSymptoms = [];
+async function loadSymptoms() {
+  try { currentSymptoms = await apiGet("/api/symptoms"); } catch (err) { currentSymptoms = []; }
+  document.getElementById("symptomsListWrap").innerHTML = renderSymptomsListHTML(currentSymptoms);
+}
+document.getElementById("symptomForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const fecha = document.getElementById("sy_fecha").value;
+  const sintoma = document.getElementById("sy_sintoma").value.trim();
+  if (!fecha || !sintoma) return;
+  try {
+    await apiPost("/api/symptoms", {
+      sintoma, fecha,
+      hora: document.getElementById("sy_hora").value,
+      descripcion: document.getElementById("sy_descripcion").value.trim(),
+    });
+    document.getElementById("sy_sintoma").value = "";
+    document.getElementById("sy_hora").value = "";
+    document.getElementById("sy_descripcion").value = "";
+    await loadSymptoms();
+  } catch (err) {
+    alert("No se pudo registrar el síntoma: " + err.message);
+  }
+});
+document.getElementById("symptomsListWrap").addEventListener("click", async e => {
+  const btn = e.target.closest(".symptom-delete-btn");
+  if (!btn) return;
+  if (!confirm("¿Eliminar este registro?")) return;
+  try {
+    await apiDelete(`/api/symptoms/${btn.dataset.symptomId}`);
+    await loadSymptoms();
+  } catch (err) {
+    alert("No se pudo eliminar: " + err.message);
+  }
+});
+loadSymptoms();
 
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
@@ -2029,6 +2098,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "reading") loadAndRender();
   if (kind === "comment") loadComments();
   if (kind === "habit") loadHabits();
+  if (kind === "symptom") loadSymptoms();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

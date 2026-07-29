@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.3.2"></script>
+<script src="/shared/common.js?v=30.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -102,6 +102,14 @@
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
   .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
 
+  /* v30.4: navegación por secciones de la página (Presión Arterial / Estadísticas / Catálogo) */
+  .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
+  .page-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+  .page-tab-btn + .page-tab-btn { margin-left: 14px; }
+  .page-tab-btn:hover { color: var(--text); }
+  .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
   /* v29: responsivo para celular */
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
   @media (max-width: 720px) { .grid { grid-template-columns: 1fr 1fr; } }
@@ -119,7 +127,15 @@
   <button class="link-btn" id="recommendLink">🔗 Recomienda esta app</button>
 </div>
 <div class="subtitle" id="subtitleText">Vista de solo lectura, compartida por el paciente</div>
+<div id="patientAvatarWrap" style="margin: 10px 0 4px;"></div>
 
+<div class="page-tabs">
+  <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
+  <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
+</div>
+
+<div id="tabPresion" class="tab-panel">
 <div id="statusBanner"></div>
 <div id="familyReactionAlert" class="family-reaction-alert" style="display:none;"></div>
 <div class="section section-streak" id="streakSection"></div>
@@ -217,17 +233,38 @@
     <div class="disclaimer" style="margin-top:6px;">ChatGPT abre con el texto ya escrito, solo falta que presiones Enter. Gemini no permite precargar el texto, así que se copia al portapapeles: pégalo (Cmd+V) en cuanto se abra.</div>
   </div>
 </div>
+</div>
+<!-- /tabPresion -->
 
+<div id="tabEstadisticas" class="tab-panel" style="display:none;">
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Comparar por franja horaria</h2>
+      <div class="chart-filter" id="statsChartFilter" role="group" aria-label="Periodo a comparar">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de las lecturas en cada franja del día, para ver si la presión cambia según la hora en que se toma.</p>
+    <div class="chart-wrap"><canvas id="statsTimeOfDayChart"></canvas></div>
+    <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
+  </div>
+</div>
+
+<div id="tabCatalogo" class="tab-panel" style="display:none;">
 <div class="section">
   <h2>Catálogo de médicos</h2>
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Médicos que decidieron publicar sus datos aquí, organizados por especialidad.</p>
-  <div style="margin-bottom:12px;">
+  <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
     <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+    <input type="text" id="catalogSearchInput" placeholder="Buscar por nombre o contacto…" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; flex:1; min-width:180px;">
   </div>
   <div id="catalogListWrap"></div>
 </div>
+</div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3.2</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.4</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -240,6 +277,19 @@ let chartGranularity = "week";
 let chartDay = todayStr();
 let currentReactions = [];
 let reactionsGrouped = {};
+let statsChartInstance = null;
+let statsChartPeriod = "month";
+
+// ---- Navegación por pestañas (v30.4) ----
+document.querySelectorAll("[data-page-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
+    document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
+    document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
+    if (btn.dataset.pageTab === "estadisticas") renderStatsChart();
+  });
+});
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
@@ -268,6 +318,7 @@ async function load() {
     const { patient, readings } = json.data;
     currentPatient = patient;
     document.getElementById("subtitleText").textContent = `Seguimiento de ${patient.name || "este paciente"}, compartido en modo de solo lectura`;
+    document.getElementById("patientAvatarWrap").innerHTML = avatarWithInitialsHTML_("patient", patient.id, patient.name || "", 56);
     const medName = medicationName(patient);
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
     updateMedAdBadge(patient);
@@ -480,6 +531,55 @@ function renderChart() {
   });
 }
 
+// ---- Estadísticas: comparación por franja horaria (v30.4) ----
+function renderStatsChart() {
+  const canvas = document.getElementById("statsTimeOfDayChart");
+  if (!canvas) return;
+  const grouped = timeOfDayComparisonData(currentData, statsChartPeriod);
+  const emptyEl = document.getElementById("statsTimeOfDayEmpty");
+  const hasData = grouped.some(g => g.sys != null || g.dia != null);
+  emptyEl.style.display = hasData ? "none" : "block";
+  canvas.style.display = hasData ? "" : "none";
+  if (statsChartInstance) { statsChartInstance.destroy(); statsChartInstance = null; }
+  if (!hasData) return;
+  const ctx = canvas.getContext("2d");
+  statsChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: grouped.map(g => g.label),
+      datasets: [
+        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9" },
+        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9" },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const point = grouped[items[0].dataIndex];
+              const parts = [];
+              if (point.hr != null) parts.push(`FC prom.: ${point.hr}`);
+              parts.push(`${point.count} lectura${point.count === 1 ? "" : "s"}`);
+              return parts;
+            },
+          },
+        },
+      },
+      scales: { y: { title: { display: true, text: "mmHg" }, beginAtZero: false } },
+    },
+  });
+}
+document.getElementById("statsChartFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  statsChartPeriod = btn.dataset.statsPeriod;
+  document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  renderStatsChart();
+});
+
 function render() {
   const data = currentData;
   const streak = computeStreak(data.map(r => r.date));
@@ -492,6 +592,7 @@ function render() {
     document.getElementById("paginationBar").style.display = "none";
     document.getElementById("summaryCards").innerHTML = "";
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    renderStatsChart();
     return;
   }
   emptyState.style.display = "none"; table.style.display = "table";
@@ -513,6 +614,7 @@ function render() {
   `;
 
   renderChart();
+  renderStatsChart();
 }
 
 document.getElementById("aiGenerateBtn").addEventListener("click", () => {
@@ -536,7 +638,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3.2");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.4");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {
@@ -546,7 +648,7 @@ wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3.2");
     const json = await resp.json();
     if (json.ok) doctors = json.data;
   } catch (err) { doctors = []; }
-  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors, document.getElementById("catalogSearchInput"));
 })();
 wireReactionBars(document.getElementById("readingsBody"), { onReact: toggleReaction });
 load();

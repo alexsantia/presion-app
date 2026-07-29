@@ -495,7 +495,8 @@ const HABIT_TYPES = [
 function habitTypeByKey_(key) {
   return HABIT_TYPES.find(h => h.key === key) || HABIT_TYPES[HABIT_TYPES.length - 1];
 }
-function habitEntryHTML_(h) {
+function habitEntryHTML_(h, opts) {
+  opts = opts || {};
   const type = habitTypeByKey_(h.tipo);
   const parts = [];
   if (h.valor_numero != null && h.valor_numero !== "") {
@@ -503,6 +504,7 @@ function habitEntryHTML_(h) {
     parts.push(`${h.valor_numero}${unit ? " " + unit : ""}`);
   }
   if (h.valor_texto) parts.push(escapeHtml_(h.valor_texto));
+  const deleteBtn = opts.readOnly ? "" : `<button type="button" class="btn-mini danger habit-delete-btn" data-habit-id="${h.id}">Eliminar</button>`;
   return `
     <div class="habit-entry" data-habit-id="${h.id}">
       <div class="habit-entry-icon">${type.icon}</div>
@@ -511,14 +513,14 @@ function habitEntryHTML_(h) {
         <div class="habit-entry-detail">${parts.join(" · ") || "(sin detalle)"}</div>
         <div class="habit-entry-date">${fmtDate(h.fecha)}</div>
       </div>
-      <button type="button" class="btn-mini danger habit-delete-btn" data-habit-id="${h.id}">Eliminar</button>
+      ${deleteBtn}
     </div>`;
 }
-function renderHabitsListHTML(habits) {
+function renderHabitsListHTML(habits, opts) {
   if (!habits || !habits.length) {
-    return `<div style="color:var(--text-muted); font-size:13px;">Aún no has registrado ningún mal hábito.</div>`;
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún mal hábito.</div>`;
   }
-  return habits.map(habitEntryHTML_).join("");
+  return habits.map(h => habitEntryHTML_(h, opts)).join("");
 }
 function ensureHabitStyles_() {
   if (typeof document === "undefined" || document.getElementById("bp-habit-styles")) return;
@@ -543,6 +545,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.4", changes: [
+    "Nueva sección de Síntomas diarios, con síntoma, fecha, hora y descripción.",
+    "Foto de perfil visible debajo del encabezado en las vistas de paciente y de familia.",
+    "Las vistas de familia y médico ahora tienen las mismas pestañas que la de paciente: Estadísticas, Malos hábitos, Catálogo de médicos y Síntomas diarios.",
+    "Buscar médico por nombre o contacto en el catálogo de médicos.",
+  ] },
   { version: "30.3.2", changes: [
     "Al tomar una foto con la cámara, ahora se puede confirmar o repetir antes de subirla.",
     "Clic en cualquier foto de perfil para verla ampliada (cuenta, médicos vinculados, catálogo de médicos).",
@@ -672,11 +680,16 @@ function doctorCatalogCardHTML_(d) {
       </div>
     </div>`;
 }
-function renderDoctorCatalogHTML(doctors, specialtyFilter) {
+// searchQuery (v30.4) busca por nombre o por el contacto que el médico
+// haya publicado (que a veces es su correo o teléfono) — nunca por el
+// correo de acceso de la cuenta, que no forma parte del catálogo público.
+function renderDoctorCatalogHTML(doctors, specialtyFilter, searchQuery) {
   ensureDoctorCatalogStyles_();
-  const list = specialtyFilter ? (doctors || []).filter(d => d.specialty === specialtyFilter) : (doctors || []);
+  let list = specialtyFilter ? (doctors || []).filter(d => d.specialty === specialtyFilter) : (doctors || []);
+  const q = (searchQuery || "").trim().toLowerCase();
+  if (q) list = list.filter(d => (d.name || "").toLowerCase().includes(q) || (d.catalog_contact || "").toLowerCase().includes(q));
   if (!list.length) {
-    return `<div style="color:var(--text-muted); font-size:13px;">${specialtyFilter ? "No hay médicos publicados en esta especialidad todavía." : "Todavía no hay médicos publicados en el catálogo."}</div>`;
+    return `<div style="color:var(--text-muted); font-size:13px;">${q || specialtyFilter ? "No se encontraron médicos con ese filtro." : "Todavía no hay médicos publicados en el catálogo."}</div>`;
   }
   const groups = {};
   list.forEach(d => { (groups[d.specialty || "Otro"] = groups[d.specialty || "Otro"] || []).push(d); });
@@ -687,15 +700,45 @@ function renderDoctorCatalogHTML(doctors, specialtyFilter) {
     </div>`).join("");
 }
 // Llena un <select> con las especialidades presentes en los datos (más
-// "Todas") y vuelve a dibujar la lista cada vez que cambia.
-function wireDoctorCatalogFilter(selectEl, containerEl, doctors) {
+// "Todas") y vuelve a dibujar la lista cada vez que cambia el filtro o la
+// búsqueda. searchInputEl es opcional (v30.4): un <input> de texto para
+// buscar por nombre o por el contacto publicado del médico.
+function wireDoctorCatalogFilter(selectEl, containerEl, doctors, searchInputEl) {
   if (!selectEl || !containerEl) return;
   const present = [...new Set((doctors || []).map(d => d.specialty || "Otro"))].sort();
   selectEl.innerHTML = `<option value="">Todas las especialidades</option>` +
     present.map(s => `<option value="${escapeHtml_(s)}">${escapeHtml_(s)}</option>`).join("");
-  const redraw = () => { containerEl.innerHTML = renderDoctorCatalogHTML(doctors, selectEl.value || null); };
+  const redraw = () => { containerEl.innerHTML = renderDoctorCatalogHTML(doctors, selectEl.value || null, searchInputEl ? searchInputEl.value : ""); };
   selectEl.addEventListener("change", redraw);
+  if (searchInputEl) searchInputEl.addEventListener("input", redraw);
   redraw();
+}
+
+// ---- Síntomas diarios (v30.4) ----
+const SYMPTOM_SUGGESTIONS = [
+  "Dolor de cabeza", "Mareo", "Palpitaciones", "Visión borrosa", "Náusea",
+  "Fatiga", "Dificultad para respirar", "Dolor en el pecho", "Zumbido en los oídos", "Otro",
+];
+function symptomEntryHTML_(s, opts) {
+  opts = opts || {};
+  const deleteBtn = opts.readOnly ? "" : `<button type="button" class="btn-mini danger symptom-delete-btn" data-symptom-id="${s.id}">Eliminar</button>`;
+  return `
+    <div class="habit-entry" data-symptom-id="${s.id}">
+      <div class="habit-entry-icon">🌡️</div>
+      <div class="habit-entry-body">
+        <div class="habit-entry-title">${escapeHtml_(s.sintoma)}</div>
+        ${s.descripcion ? `<div class="habit-entry-detail">${escapeHtml_(s.descripcion)}</div>` : ""}
+        <div class="habit-entry-date">${fmtDate(s.fecha)}${s.hora ? " · " + escapeHtml_(s.hora) : ""}</div>
+      </div>
+      ${deleteBtn}
+    </div>`;
+}
+// opts: { readOnly } — doctor.html usa readOnly:true (puede ver, no borrar).
+function renderSymptomsListHTML(symptoms, opts) {
+  if (!symptoms || !symptoms.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay síntomas registrados.</div>`;
+  }
+  return symptoms.map(s => symptomEntryHTML_(s, opts)).join("");
 }
 
 // ---- Utilidades varias ----

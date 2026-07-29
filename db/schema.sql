@@ -221,3 +221,17 @@ ALTER TABLE medicos ADD COLUMN IF NOT EXISTS specialty text NOT NULL DEFAULT '';
 ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_bio text NOT NULL DEFAULT '';
 ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_contact text NOT NULL DEFAULT '';
 ALTER TABLE medicos ADD COLUMN IF NOT EXISTS catalog_city text NOT NULL DEFAULT '';
+
+-- v30.4: Síntomas diarios. Registro simple de un síntoma puntual (no ligado
+-- a una lectura de presión), con su fecha, hora y una descripción libre.
+CREATE TABLE IF NOT EXISTS sintomas (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  sintoma text NOT NULL,
+  fecha date NOT NULL,
+  hora time,
+  descripcion text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sintomas_patient ON sintomas(patient_id, fecha DESC);

@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.3.2"></script>
+<script src="/shared/common.js?v=30.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -158,6 +158,14 @@
   .col-toggle-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; cursor: pointer; }
   .col-toggle-item:hover { background: var(--accent-soft); border-radius: 6px; }
 
+  /* v30.4: navegación por secciones de la página (Presión Arterial / Estadísticas / Malos hábitos / Catálogo / Síntomas) */
+  .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .page-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+  .page-tab-btn + .page-tab-btn { margin-left: 14px; }
+  .page-tab-btn:hover { color: var(--text); }
+  .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
   /* v29: responsivo para celular (mismo criterio que index.html: sin
      flex-wrap, .topbar-links se salía del viewport en pantallas angostas y
      empujaba los menús desplegables fuera de la vista). */
@@ -186,6 +194,15 @@
 </div>
 <div class="subtitle">Solo lectura · puedes revisar lecturas y dejar comentarios, no puedes editar ni borrar datos</div>
 
+<div class="page-tabs">
+  <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
+  <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
+</div>
+
+<div id="tabPresion" class="tab-panel">
 <div id="statusBanner"></div>
 <div id="broadcastBanner"></div>
 
@@ -311,6 +328,32 @@
   </div>
   <div id="commentsContent"></div>
 </div>
+</div>
+<!-- /tabPresion -->
+
+<div id="tabEstadisticas" class="tab-panel" style="display:none;">
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Comparar por franja horaria</h2>
+      <div class="chart-filter" id="statsChartFilter" role="group" aria-label="Periodo a comparar">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de las lecturas del paciente en cada franja del día, para ver si su presión cambia según la hora en que se toma.</p>
+    <div class="chart-wrap"><canvas id="statsTimeOfDayChart"></canvas></div>
+    <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
+  </div>
+</div>
+
+<div id="tabHabitos" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Malos hábitos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Registro que el paciente lleva de sus propios hábitos (solo lectura).</p>
+    <div id="habitsListWrap"></div>
+  </div>
+</div>
 
 <div class="section section-password">
   <h2>Foto de perfil</h2>
@@ -342,8 +385,9 @@
   </form>
 </div>
 
+<div id="tabCatalogo" class="tab-panel" style="display:none;">
 <div class="section section-password">
-  <h2>Catálogo de médicos</h2>
+  <h2>Mi perfil en el catálogo</h2>
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px; max-width:440px;">Si activas esto, tus datos se muestran públicamente en un catálogo por especialidad, visible para pacientes, otros médicos, y en el enlace de familia. Es opcional y lo puedes desactivar cuando quieras.</p>
   <form class="pw-form" id="doctorCatalogForm">
     <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="cat_opt_in"> Publicarme en el catálogo de médicos</label>
@@ -361,10 +405,21 @@
 
 <div class="section">
   <h2>Explorar el catálogo</h2>
-  <div style="margin-bottom:12px;">
+  <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
     <select id="catalogSpecialtyFilter" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+    <input type="text" id="catalogSearchInput" placeholder="Buscar por nombre o contacto…" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; flex:1; min-width:180px;">
   </div>
   <div id="catalogListWrap"></div>
+</div>
+</div>
+<!-- /tabCatalogo -->
+
+<div id="tabSintomas" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Síntomas diarios</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Síntomas que el paciente ha registrado (solo lectura).</p>
+    <div id="symptomsListWrap"></div>
+  </div>
 </div>
 
 <div class="section section-password">
@@ -410,7 +465,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.3.2</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.4</button></footer>
 
 <script>
 let chartInstance = null;
@@ -423,6 +478,23 @@ let commentDayInitialized = false;
 let notifications = [];
 let currentReactions = [];
 let reactionsGrouped = {};
+let statsChartInstance = null;
+let statsChartPeriod = "month";
+let currentHabits = [];
+let currentSymptoms = [];
+
+// ---- Navegación por pestañas (v30.4) ----
+document.querySelectorAll("[data-page-tab]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
+    document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
+    document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
+    document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
+    document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
+    if (btn.dataset.pageTab === "estadisticas") renderStatsChart();
+  });
+});
 
 function setStatus(kind, msg) {
   const el = document.getElementById("statusBanner");
@@ -603,7 +675,7 @@ document.getElementById("doctorCatalogForm").addEventListener("submit", async e 
 async function loadDoctorCatalog() {
   let doctors = [];
   try { doctors = await apiGet("/api/doctor-catalog"); } catch (err) { doctors = []; }
-  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors);
+  wireDoctorCatalogFilter(document.getElementById("catalogSpecialtyFilter"), document.getElementById("catalogListWrap"), doctors, document.getElementById("catalogSearchInput"));
 }
 loadDoctorCatalog();
 
@@ -837,6 +909,65 @@ function renderChart() {
   });
 }
 
+// ---- Estadísticas: comparación por franja horaria (v30.4) ----
+function renderStatsChart() {
+  const canvas = document.getElementById("statsTimeOfDayChart");
+  if (!canvas) return;
+  const grouped = timeOfDayComparisonData(currentData, statsChartPeriod);
+  const emptyEl = document.getElementById("statsTimeOfDayEmpty");
+  const hasData = grouped.some(g => g.sys != null || g.dia != null);
+  emptyEl.style.display = hasData ? "none" : "block";
+  canvas.style.display = hasData ? "" : "none";
+  if (statsChartInstance) { statsChartInstance.destroy(); statsChartInstance = null; }
+  if (!hasData) return;
+  const ctx = canvas.getContext("2d");
+  statsChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: grouped.map(g => g.label),
+      datasets: [
+        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9" },
+        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9" },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const point = grouped[items[0].dataIndex];
+              const parts = [];
+              if (point.hr != null) parts.push(`FC prom.: ${point.hr}`);
+              parts.push(`${point.count} lectura${point.count === 1 ? "" : "s"}`);
+              return parts;
+            },
+          },
+        },
+      },
+      scales: { y: { title: { display: true, text: "mmHg" }, beginAtZero: false } },
+    },
+  });
+}
+document.getElementById("statsChartFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  statsChartPeriod = btn.dataset.statsPeriod;
+  document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  renderStatsChart();
+});
+
+// ---- Malos hábitos y Síntomas diarios (solo lectura, v30.4) ----
+async function loadHabits() {
+  try { currentHabits = await apiGet("/api/habits"); } catch (err) { currentHabits = []; }
+  document.getElementById("habitsListWrap").innerHTML = renderHabitsListHTML(currentHabits, { readOnly: true });
+}
+async function loadSymptoms() {
+  try { currentSymptoms = await apiGet("/api/symptoms"); } catch (err) { currentSymptoms = []; }
+  document.getElementById("symptomsListWrap").innerHTML = renderSymptomsListHTML(currentSymptoms, { readOnly: true });
+}
+
 function render() {
   const data = currentData;
   const emptyState = document.getElementById("emptyState");
@@ -846,6 +977,7 @@ function render() {
     document.getElementById("paginationBar").style.display = "none";
     document.getElementById("summaryCards").innerHTML = "";
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    renderStatsChart();
     return;
   }
   emptyState.style.display = "none"; table.style.display = "table";
@@ -867,6 +999,7 @@ function render() {
   `;
 
   renderChart();
+  renderStatsChart();
 }
 
 document.getElementById("commentForm").addEventListener("submit", async e => {
@@ -922,13 +1055,15 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.3.2");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.4");
 
 loadPatient();
 loadAndRender();
 loadComments();
 loadDoctorAccount();
 loadNotifications();
+loadHabits();
+loadSymptoms();
 wireBroadcastBanner(document.getElementById("broadcastBanner"));
 wireSupportTickets({
   listEl: document.getElementById("ticketList"),
@@ -957,6 +1092,8 @@ loadReactions().then(() => {
 connectRealtime("/api/stream", kind => {
   if (kind === "reading") loadAndRender();
   if (kind === "comment") loadComments();
+  if (kind === "habit") loadHabits();
+  if (kind === "symptom") loadSymptoms();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();
