@@ -279,6 +279,25 @@ CREATE TABLE IF NOT EXISTS medicamentos (
 );
 CREATE INDEX IF NOT EXISTS idx_medicamentos_patient ON medicamentos(patient_id);
 
+-- v30.9: perfil ampliado del médico en el catálogo ("carta de presentación").
+-- Mínimo obligatorio para publicarse (validado en update_doctor_catalog_profile):
+-- especialidad, modalidad de atención y contacto. Todo lo demás es opcional,
+-- para quien quiera promocionarse más — inspirado en perfiles de médicos de
+-- hospitales grandes (formación, actividades profesionales, distinciones,
+-- asociaciones), pero como texto libre de una línea por punto en vez de
+-- tablas separadas, para no complicar el esquema.
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS consultation_mode text NOT NULL DEFAULT 'presencial';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS subspecialty text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS years_experience integer;
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS education text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS professional_activities text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS distinctions text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS associations text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS languages text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS insurances text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS website text NOT NULL DEFAULT '';
+ALTER TABLE medicos ADD COLUMN IF NOT EXISTS schedule_note text NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS medicamento_dosis (
   id uuid PRIMARY KEY,
   medication_id uuid NOT NULL REFERENCES medicamentos(id) ON DELETE CASCADE,

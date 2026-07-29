@@ -610,6 +610,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.9", changes: [
+    "Nuevo perfil ampliado para médicos en el catálogo (carta de presentación): modalidad de atención, subespecialidad, años de experiencia, idiomas, aseguradoras, formación, distinciones y más, todo opcional salvo lo mínimo para publicarse.",
+    "El filtro general de Estadísticas ahora vuelve a sincronizar todas las gráficas, incluso las que tenían su propio filtro independiente.",
+    "Revisión a fondo de las notificaciones push: mensaje claro en iPhone cuando falta anclar la app a la pantalla de inicio.",
+    "Nueva animación de 3 latidos de corazón al agregar una lectura.",
+  ] },
   { version: "30.8", changes: [
     "Nueva sección de Medicamentos: nombre, sustancia activa, miligramos, dosis y cada cuánto debe tomarse. El calendario semanal se calcula solo, a partir de la frecuencia.",
     "Recordatorio push para tomar el medicamento, con casilla para marcarlo como tomado; si no se marca, se vuelve a recordar cada 30 minutos hasta la siguiente toma.",
@@ -740,6 +746,10 @@ const DOCTOR_SPECIALTIES = [
   "Cardiología", "Medicina Interna", "Medicina Familiar", "Nefrología",
   "Endocrinología", "Geriatría", "Nutrición", "Otro",
 ];
+// v30.9: modalidad de atención — campo obligatorio para publicarse, junto
+// con especialidad y contacto (lo mínimo para que alguien sepa si le sirve
+// este médico antes de contactarlo).
+const CONSULTATION_MODE_LABELS = { presencial: "📍 Presencial", virtual: "💻 Virtual", ambos: "📍💻 Presencial y virtual" };
 function ensureDoctorCatalogStyles_() {
   if (typeof document === "undefined" || document.getElementById("bp-catalog-styles")) return;
   const style = document.createElement("style");
@@ -752,19 +762,57 @@ function ensureDoctorCatalogStyles_() {
     .catalog-card-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: var(--border, #E2E2E2); flex-shrink: 0; }
     .catalog-card-body { flex: 1; min-width: 0; }
     .catalog-card-name { font-weight: 650; font-size: 13.5px; }
-    .catalog-card-bio { font-size: 13px; margin-top: 2px; }
-    .catalog-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .catalog-card-subspecialty { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+    .catalog-card-bio { font-size: 13px; margin-top: 4px; }
+    .catalog-card-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+    .catalog-card-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .catalog-card-badge { font-size: 11px; background: var(--accent-soft); color: var(--accent-hover, var(--accent)); border-radius: 6px; padding: 2px 7px; }
+    .catalog-card-more { margin-top: 6px; }
+    .catalog-card-more summary { font-size: 12px; color: var(--accent); cursor: pointer; }
+    .catalog-card-more-section { margin-top: 8px; }
+    .catalog-card-more-section h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); margin: 0 0 3px; }
+    .catalog-card-more-section ul { margin: 0; padding-left: 16px; font-size: 12.5px; }
+    .catalog-card-more-section p { margin: 0; font-size: 12.5px; }
   `;
   document.head.appendChild(style);
 }
+// education/professional_activities/distinctions/associations se guardan
+// como texto libre, un punto por línea (ver update_doctor_catalog_profile en
+// db-postgres.js); aquí se parten en líneas no vacías para pintarse como
+// lista, igual que el perfil de referencia de hospital que inspiró esto.
+function bulletLinesHTML_(text) {
+  const lines = String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  return `<ul>${lines.map(l => `<li>${escapeHtml_(l)}</li>`).join("")}</ul>`;
+}
 function doctorCatalogCardHTML_(d) {
+  const badges = [];
+  if (d.consultation_mode) badges.push(CONSULTATION_MODE_LABELS[d.consultation_mode] || "");
+  if (d.years_experience) badges.push(`🎓 ${d.years_experience} año${d.years_experience === 1 ? "" : "s"} de experiencia`);
+  const metaParts = [d.catalog_city, d.catalog_contact, d.languages].filter(Boolean);
+  const moreSections = [
+    d.education && { title: "Formación académica", body: bulletLinesHTML_(d.education) },
+    d.professional_activities && { title: "Actividades profesionales", body: bulletLinesHTML_(d.professional_activities) },
+    d.distinctions && { title: "Distinciones", body: bulletLinesHTML_(d.distinctions) },
+    d.associations && { title: "Asociaciones", body: bulletLinesHTML_(d.associations) },
+    d.insurances && { title: "Aseguradoras", body: `<p>${escapeHtml_(d.insurances)}</p>` },
+    d.schedule_note && { title: "Horario de atención", body: `<p>${escapeHtml_(d.schedule_note)}</p>` },
+    d.website && { title: "Más información", body: `<p>${escapeHtml_(d.website)}</p>` },
+  ].filter(Boolean);
   return `
     <div class="catalog-card">
       ${avatarWithInitialsHTML_("doctor", d.id, d.name, 40)}
       <div class="catalog-card-body">
         <div class="catalog-card-name">${escapeHtml_(d.title || "Dr(a).")} ${escapeHtml_(d.name)}</div>
+        ${d.subspecialty ? `<div class="catalog-card-subspecialty">${escapeHtml_(d.subspecialty)}</div>` : ""}
         ${d.catalog_bio ? `<div class="catalog-card-bio">${escapeHtml_(d.catalog_bio)}</div>` : ""}
-        <div class="catalog-card-meta">${[d.catalog_city, d.catalog_contact].filter(Boolean).map(escapeHtml_).join(" · ")}</div>
+        ${badges.length ? `<div class="catalog-card-badges">${badges.map(b => `<span class="catalog-card-badge">${b}</span>`).join("")}</div>` : ""}
+        ${metaParts.length ? `<div class="catalog-card-meta">${metaParts.map(escapeHtml_).join(" · ")}</div>` : ""}
+        ${moreSections.length ? `
+          <details class="catalog-card-more">
+            <summary>Ver perfil completo</summary>
+            ${moreSections.map(s => `<div class="catalog-card-more-section"><h4>${s.title}</h4>${s.body}</div>`).join("")}
+          </details>` : ""}
       </div>
     </div>`;
 }
@@ -1428,6 +1476,9 @@ function fireConfetti(originEl, count) {
 // caía el confeti genérico de aquí abajo, encimando ambos efectos y tapando
 // el destello por completo. Se excluyen para que la pestaña se vea con una
 // sola animación, distinta a la de los demás botones.
+// v30.9: el botón "Agregar" de una lectura nueva (data-heartbeat-btn) tiene su
+// propia animación de 3 latidos de corazón (ver fireHeartbeats más abajo) en
+// vez del confeti genérico, para diferenciarlo como un evento de salud.
 function wireConfettiOnAllButtons_() {
   if (typeof document === "undefined" || document.body.dataset.confettiWired) return;
   document.body.dataset.confettiWired = "1";
@@ -1435,11 +1486,60 @@ function wireConfettiOnAllButtons_() {
     const btn = e.target.closest("button");
     if (!btn || btn.disabled) return;
     if (btn.classList.contains("page-tab-btn") || btn.hasAttribute("data-page-tab")) return;
+    if (btn.hasAttribute("data-heartbeat-btn")) return;
     fireConfetti(btn, 22);
   });
 }
 if (typeof document !== "undefined") {
   document.addEventListener("DOMContentLoaded", wireConfettiOnAllButtons_);
+}
+
+// v30.9: animación de "3 latidos de corazón en rojo" para el botón Agregar
+// de una lectura nueva — un corazón aparece sobre el botón y pulsa 3 veces
+// (como un latido) antes de desvanecerse, en vez del confeti genérico.
+function ensureHeartbeatStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-heartbeat-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-heartbeat-styles";
+  style.textContent = `
+  .bp-heartbeat-fx {
+    position: fixed;
+    z-index: 9999;
+    pointer-events: none;
+    font-size: 32px;
+    line-height: 1;
+    color: #e0304a;
+    filter: drop-shadow(0 2px 4px rgba(224,48,74,.45));
+    animation: bp-heartbeat-beat 1.05s ease-in-out 3;
+    will-change: transform, opacity;
+  }
+  @keyframes bp-heartbeat-beat {
+    0%   { transform: translate(-50%, -60%) scale(1); opacity: .95; }
+    14%  { transform: translate(-50%, -60%) scale(1.4); opacity: 1; }
+    28%  { transform: translate(-50%, -60%) scale(1); opacity: .95; }
+    42%  { transform: translate(-50%, -60%) scale(1.22); opacity: 1; }
+    56%  { transform: translate(-50%, -60%) scale(1); opacity: .95; }
+    92%  { transform: translate(-50%, -60%) scale(1); opacity: .95; }
+    100% { transform: translate(-50%, -60%) scale(1); opacity: 0; }
+  }`;
+  document.head.appendChild(style);
+}
+function fireHeartbeats(originEl) {
+  try {
+    if (typeof document === "undefined") return;
+    ensureHeartbeatStyles_();
+    const rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+    const y = rect ? rect.top : window.innerHeight * 0.2;
+    const heart = document.createElement("div");
+    heart.className = "bp-heartbeat-fx";
+    heart.textContent = "❤️";
+    heart.setAttribute("aria-hidden", "true");
+    heart.style.left = x + "px";
+    heart.style.top = y + "px";
+    document.body.appendChild(heart);
+    setTimeout(() => heart.remove(), 3300);
+  } catch (err) { /* silencioso: la animación es un extra */ }
 }
 
 // ---- Notificaciones push (Web Push) y badge del ícono (v29) ----
@@ -1488,13 +1588,23 @@ function registerServiceWorker_() {
 async function wirePushToggle(reportStatus) {
   const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window);
   if (unsupported) {
+    // v30.9: en iPhone/iPad, Safari SOLO expone la API de Push cuando la app
+    // ya se agregó a la pantalla de inicio y se abre desde ahí (modo
+    // standalone) — desde el navegador normal, "Notification"/"PushManager"
+    // ni siquiera existen, así que antes esto cae siempre en el mensaje
+    // genérico "no disponible" sin decir por qué ni cómo arreglarlo. Se
+    // detecta ese caso específico para dar instrucciones accionables en vez
+    // de dejar al usuario sin saber qué hacer.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.navigator.standalone === true
+      || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
     console.warn("[push] API no disponible en este navegador:", {
       serviceWorker: "serviceWorker" in navigator,
       PushManager: "PushManager" in window,
       Notification: "Notification" in window,
-      standalone: window.matchMedia && window.matchMedia("(display-mode: standalone)").matches,
+      isIOS, isStandalone,
     });
-    reportStatus("unsupported");
+    reportStatus(isIOS && !isStandalone ? "ios_needs_install" : "unsupported");
     return;
   }
 

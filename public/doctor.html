@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.8"></script>
+<script src="/shared/common.js?v=30.9"></script>
 <style>
   :root {
     color-scheme: light;
@@ -503,14 +503,46 @@
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px; max-width:440px;">Si activas esto, tus datos se muestran públicamente en un catálogo por especialidad, visible para pacientes, otros médicos, y en el enlace de familia. Es opcional y lo puedes desactivar cuando quieras.</p>
   <form class="pw-form" id="doctorCatalogForm">
     <label style="display:flex; align-items:center; gap:6px; font-size:13px;"><input type="checkbox" id="cat_opt_in"> Publicarme en el catálogo de médicos</label>
+    <p style="font-size:12px; color:var(--text-muted); margin:-4px 0 2px;">Lo mínimo para publicarte: especialidad, modalidad de atención y un contacto.</p>
     <div class="field"><label>Especialidad</label>
       <select id="cat_specialty" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
     </div>
-    <div class="field"><label>Ciudad</label><input type="text" id="cat_city"></div>
-    <div class="field"><label>Descripción breve</label>
-      <textarea id="cat_bio" rows="2" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+    <div class="field"><label>Modalidad de atención</label>
+      <select id="cat_consultation_mode" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <option value="presencial">📍 Presencial</option>
+        <option value="virtual">💻 Virtual</option>
+        <option value="ambos">📍💻 Presencial y virtual</option>
+      </select>
     </div>
     <div class="field"><label>Contacto (teléfono, correo o WhatsApp)</label><input type="text" id="cat_contact"></div>
+
+    <details style="margin-top:6px;">
+      <summary style="font-size:13px; color:var(--accent); cursor:pointer;">Más información para promocionarte (opcional)</summary>
+      <div style="display:grid; gap:10px; margin-top:10px;">
+        <div class="field"><label>Ciudad</label><input type="text" id="cat_city"></div>
+        <div class="field"><label>Subespecialidad o enfoque</label><input type="text" id="cat_subspecialty" placeholder="Ej. Laringología y Fonocirugía"></div>
+        <div class="field"><label>Años de experiencia</label><input type="number" id="cat_years_experience" min="0" max="80"></div>
+        <div class="field"><label>Descripción breve</label>
+          <textarea id="cat_bio" rows="2" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+        </div>
+        <div class="field"><label>Idiomas (separados por coma)</label><input type="text" id="cat_languages" placeholder="Ej. Español, Inglés"></div>
+        <div class="field"><label>Aseguradoras que acepta</label><input type="text" id="cat_insurances" placeholder="Ej. GNP, AXA, Metlife"></div>
+        <div class="field"><label>Horario de atención</label><input type="text" id="cat_schedule_note" placeholder="Ej. Lun-Vie 9:00-18:00"></div>
+        <div class="field"><label>Sitio web o redes sociales</label><input type="text" id="cat_website" placeholder="https://…"></div>
+        <div class="field"><label>Formación académica (un punto por línea)</label>
+          <textarea id="cat_education" rows="3" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;" placeholder="Ej. Médico egresado de la UNAM, 2010"></textarea>
+        </div>
+        <div class="field"><label>Actividades profesionales (un punto por línea)</label>
+          <textarea id="cat_professional_activities" rows="3" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+        </div>
+        <div class="field"><label>Distinciones (un punto por línea)</label>
+          <textarea id="cat_distinctions" rows="3" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+        </div>
+        <div class="field"><label>Asociaciones a las que pertenece (un punto por línea)</label>
+          <textarea id="cat_associations" rows="3" style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; box-sizing:border-box;"></textarea>
+        </div>
+      </div>
+    </details>
     <button type="submit" class="btn-primary" style="justify-self:start;">Guardar</button>
   </form>
 </div>
@@ -585,7 +617,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.8</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.9</button></footer>
 
 <script>
 let chartInstance = null;
@@ -752,9 +784,20 @@ async function loadDoctorAccount() {
     document.getElementById("doctorTitleSelect").value = currentDoctorAccount.title || "Dr(a).";
     document.getElementById("cat_opt_in").checked = !!currentDoctorAccount.catalog_opt_in;
     document.getElementById("cat_specialty").value = currentDoctorAccount.specialty || "Otro";
+    document.getElementById("cat_consultation_mode").value = currentDoctorAccount.consultation_mode || "presencial";
     document.getElementById("cat_city").value = currentDoctorAccount.catalog_city || "";
     document.getElementById("cat_bio").value = currentDoctorAccount.catalog_bio || "";
     document.getElementById("cat_contact").value = currentDoctorAccount.catalog_contact || "";
+    document.getElementById("cat_subspecialty").value = currentDoctorAccount.subspecialty || "";
+    document.getElementById("cat_years_experience").value = currentDoctorAccount.years_experience != null ? currentDoctorAccount.years_experience : "";
+    document.getElementById("cat_languages").value = currentDoctorAccount.languages || "";
+    document.getElementById("cat_insurances").value = currentDoctorAccount.insurances || "";
+    document.getElementById("cat_schedule_note").value = currentDoctorAccount.schedule_note || "";
+    document.getElementById("cat_website").value = currentDoctorAccount.website || "";
+    document.getElementById("cat_education").value = currentDoctorAccount.education || "";
+    document.getElementById("cat_professional_activities").value = currentDoctorAccount.professional_activities || "";
+    document.getElementById("cat_distinctions").value = currentDoctorAccount.distinctions || "";
+    document.getElementById("cat_associations").value = currentDoctorAccount.associations || "";
     setAvatarFallbackInitials_(document.getElementById("doc_avatar_fallback"), document.getElementById("doc_avatar_preview"), currentDoctorAccount.name);
     if (!doctorAvatarWired) {
       doctorAvatarWired = true;
@@ -795,9 +838,20 @@ document.getElementById("doctorCatalogForm").addEventListener("submit", async e 
     await apiPost("/api/account/doctor-catalog", {
       catalog_opt_in: document.getElementById("cat_opt_in").checked,
       specialty: document.getElementById("cat_specialty").value,
+      consultation_mode: document.getElementById("cat_consultation_mode").value,
       catalog_city: document.getElementById("cat_city").value.trim(),
       catalog_bio: document.getElementById("cat_bio").value.trim(),
       catalog_contact: document.getElementById("cat_contact").value.trim(),
+      subspecialty: document.getElementById("cat_subspecialty").value.trim(),
+      years_experience: document.getElementById("cat_years_experience").value ? Number(document.getElementById("cat_years_experience").value) : null,
+      languages: document.getElementById("cat_languages").value.trim(),
+      insurances: document.getElementById("cat_insurances").value.trim(),
+      schedule_note: document.getElementById("cat_schedule_note").value.trim(),
+      website: document.getElementById("cat_website").value.trim(),
+      education: document.getElementById("cat_education").value.trim(),
+      professional_activities: document.getElementById("cat_professional_activities").value.trim(),
+      distinctions: document.getElementById("cat_distinctions").value.trim(),
+      associations: document.getElementById("cat_associations").value.trim(),
     });
     setStatus("success", "Catálogo actualizado.");
     setTimeout(() => setStatus(null), 1500);
@@ -1100,6 +1154,9 @@ document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   statsChartPeriod = btn.dataset.statsPeriod;
+  // Al volver a tocar el filtro general, todas las gráficas se resincronizan
+  // con él, incluso las que se habían desligado con su filtro propio.
+  Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
   renderStatsChart();
   renderLabHistoryCharts();
@@ -1263,7 +1320,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.8");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.9");
 
 loadPatient();
 loadAndRender();
@@ -1320,7 +1377,8 @@ connectRealtime("/api/stream", kind => {
   const btn = document.getElementById("pushToggleBtn");
   if (!btn) return;
   function render(state) {
-    if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
+    if (state === "ios_needs_install") { btn.textContent = "📲 Agregue esta app a su pantalla de inicio para recibir notificaciones"; btn.disabled = true; }
+    else if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
     else if (state === "denied") { btn.textContent = "Notificaciones bloqueadas (revíselo en los ajustes de su navegador)"; btn.disabled = true; }
     else if (state === "subscribed") { btn.textContent = "🔕 Desactivar notificaciones push"; btn.dataset.state = "subscribed"; btn.disabled = false; }
     else { btn.textContent = "🔔 Activar notificaciones push"; btn.dataset.state = "unsubscribed"; btn.disabled = false; }

@@ -684,6 +684,14 @@ app.post("/api/account/doctor-catalog", requireRole("doctor"), asyncRoute(async 
     action: "update_doctor_catalog_profile", id: req.session.doctorId,
     catalog_opt_in: req.body.catalog_opt_in, specialty: req.body.specialty,
     catalog_bio: req.body.catalog_bio, catalog_contact: req.body.catalog_contact, catalog_city: req.body.catalog_city,
+    // v30.9: perfil ampliado ("carta de presentación") — consultation_mode es
+    // obligatorio para publicarse, el resto es opcional (ver validación en
+    // update_doctor_catalog_profile).
+    consultation_mode: req.body.consultation_mode, subspecialty: req.body.subspecialty,
+    years_experience: req.body.years_experience, education: req.body.education,
+    professional_activities: req.body.professional_activities, distinctions: req.body.distinctions,
+    associations: req.body.associations, languages: req.body.languages, insurances: req.body.insurances,
+    website: req.body.website, schedule_note: req.body.schedule_note,
   }));
 }));
 app.get("/api/doctor-catalog", asyncRoute(async (req, res) => {

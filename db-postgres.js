@@ -462,6 +462,12 @@ function doctorPublic(row) {
     title: row.title || DEFAULT_DOCTOR_TITLE, avatar_mime: row.avatar_mime || null, suspended: !!row.suspended,
     catalog_opt_in: !!row.catalog_opt_in, specialty: row.specialty || "",
     catalog_bio: row.catalog_bio || "", catalog_contact: row.catalog_contact || "", catalog_city: row.catalog_city || "",
+    consultation_mode: row.consultation_mode || "presencial", subspecialty: row.subspecialty || "",
+    years_experience: row.years_experience != null ? Number(row.years_experience) : null,
+    education: row.education || "", professional_activities: row.professional_activities || "",
+    distinctions: row.distinctions || "", associations: row.associations || "",
+    languages: row.languages || "", insurances: row.insurances || "",
+    website: row.website || "", schedule_note: row.schedule_note || "",
   };
 }
 function doctorDisplayName(d) {
@@ -472,7 +478,9 @@ function doctorDisplayName(d) {
 // avatar_data (bytea) deliberadamente fuera de este SELECT por lo mismo que
 // en pacientes: pesado y casi nunca hace falta junto con el resto de la fila.
 const DOCTOR_SELECT = `SELECT id, patient_id, name, email, password_hash, created_at, title, avatar_mime, suspended,
-  catalog_opt_in, specialty, catalog_bio, catalog_contact, catalog_city FROM medicos`;
+  catalog_opt_in, specialty, catalog_bio, catalog_contact, catalog_city,
+  consultation_mode, subspecialty, years_experience, education, professional_activities,
+  distinctions, associations, languages, insurances, website, schedule_note FROM medicos`;
 async function findDoctorByEmail(email) {
   const { rows } = await pool.query(`${DOCTOR_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
   return rows[0] || null;
@@ -499,7 +507,9 @@ async function countDoctorsForPatient(patientId) {
 // no aparezca repetido.
 async function listDoctorCatalog() {
   const { rows } = await pool.query(
-    `SELECT id, name, email, title, specialty, catalog_bio, catalog_contact, catalog_city, avatar_mime, created_at
+    `SELECT id, name, email, title, specialty, catalog_bio, catalog_contact, catalog_city, avatar_mime, created_at,
+            consultation_mode, subspecialty, years_experience, education, professional_activities,
+            distinctions, associations, languages, insurances, website, schedule_note
      FROM medicos WHERE catalog_opt_in = true ORDER BY created_at DESC`
   );
   const seen = new Set();
@@ -513,6 +523,12 @@ async function listDoctorCatalog() {
       specialty: r.specialty || "Otro", catalog_bio: r.catalog_bio || "",
       catalog_contact: r.catalog_contact || "", catalog_city: r.catalog_city || "",
       avatar_mime: r.avatar_mime || null,
+      consultation_mode: r.consultation_mode || "presencial", subspecialty: r.subspecialty || "",
+      years_experience: r.years_experience != null ? Number(r.years_experience) : null,
+      education: r.education || "", professional_activities: r.professional_activities || "",
+      distinctions: r.distinctions || "", associations: r.associations || "",
+      languages: r.languages || "", insurances: r.insurances || "",
+      website: r.website || "", schedule_note: r.schedule_note || "",
     });
   }
   out.sort((a, b) => a.specialty.localeCompare(b.specialty) || a.name.localeCompare(b.name));
@@ -1252,12 +1268,37 @@ async function handlePost(body) {
     return { ok: true, title };
   }
   // v30.3: el médico decide, por su cuenta, si se publica en el catálogo.
+  // v30.9: perfil ampliado ("carta de presentación") — lo mínimo obligatorio
+  // para publicarse es especialidad, modalidad de atención y contacto;
+  // todo lo demás (subespecialidad, años de experiencia, formación,
+  // actividades, distinciones, asociaciones, idiomas, aseguradoras, sitio
+  // web, horario) es opcional, para quien quiera promocionarse más.
+  const VALID_CONSULTATION_MODES = ["presencial", "virtual", "ambos"];
   if (body.action === "update_doctor_catalog_profile") {
     const d = await findDoctorById(body.id);
     if (!d) return { ok: false, error: "no encontrado" };
+    const optIn = !!body.catalog_opt_in;
+    if (optIn) {
+      if (!body.specialty) return { ok: false, error: "elige una especialidad para publicarte en el catálogo" };
+      if (!VALID_CONSULTATION_MODES.includes(body.consultation_mode)) {
+        return { ok: false, error: "elige la modalidad de atención (presencial, virtual o ambas)" };
+      }
+      if (!String(body.catalog_contact || "").trim()) {
+        return { ok: false, error: "agrega un contacto para que te puedan localizar" };
+      }
+    }
     await pool.query(
-      `UPDATE medicos SET catalog_opt_in = $1, specialty = $2, catalog_bio = $3, catalog_contact = $4, catalog_city = $5 WHERE id = $6`,
-      [!!body.catalog_opt_in, body.specialty || "", body.catalog_bio || "", body.catalog_contact || "", body.catalog_city || "", body.id]
+      `UPDATE medicos SET catalog_opt_in = $1, specialty = $2, catalog_bio = $3, catalog_contact = $4, catalog_city = $5,
+              consultation_mode = $6, subspecialty = $7, years_experience = $8, education = $9,
+              professional_activities = $10, distinctions = $11, associations = $12, languages = $13,
+              insurances = $14, website = $15, schedule_note = $16
+       WHERE id = $17`,
+      [optIn, body.specialty || "", body.catalog_bio || "", body.catalog_contact || "", body.catalog_city || "",
+        VALID_CONSULTATION_MODES.includes(body.consultation_mode) ? body.consultation_mode : "presencial",
+        body.subspecialty || "", num(body.years_experience), body.education || "",
+        body.professional_activities || "", body.distinctions || "", body.associations || "",
+        body.languages || "", body.insurances || "", body.website || "", body.schedule_note || "",
+        body.id]
     );
     return { ok: true };
   }

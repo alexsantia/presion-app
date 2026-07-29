@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.8"></script>
+<script src="/shared/common.js?v=30.9"></script>
 <style>
   :root {
     color-scheme: light;
@@ -357,7 +357,7 @@
       <textarea id="f_obs" rows="2"></textarea>
     </div>
     <div class="row-actions">
-      <button type="submit" id="submitBtn" class="btn-primary">Agregar</button>
+      <button type="submit" id="submitBtn" class="btn-primary" data-heartbeat-btn>Agregar</button>
       <button type="button" id="cancelEditBtn" class="btn-mini" style="display:none;">Cancelar</button>
     </div>
   </form>
@@ -697,7 +697,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.8</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.9</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1170,7 +1170,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.8");
+  showAboutOverlay_("30.9");
 });
 
 function openModal(id) {
@@ -1904,6 +1904,9 @@ document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   statsChartPeriod = btn.dataset.statsPeriod;
+  // Al volver a tocar el filtro general, todas las gráficas se resincronizan
+  // con él, incluso las que se habían desligado con su filtro propio.
+  Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
   renderStatsChart();
   renderLabHistoryCharts();
@@ -2114,7 +2117,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     else {
       await apiPost("/api/readings", values);
       e.target.reset();
-      fireConfetti(submitBtn); // v29: confeti al terminar de agregar (no al editar)
+      fireHeartbeats(submitBtn); // v30.9: 3 latidos de corazón en rojo al agregar una lectura
       // Al agregar una lectura nueva, si el peso capturado aquí es distinto
       // al que tenía Parámetros, ese nuevo peso pasa a ser el vigente.
       if (!wasEditing && enteredWeight != null && (!currentAccount || currentAccount.weight !== enteredWeight)) {
@@ -2481,7 +2484,8 @@ connectRealtime("/api/stream", kind => {
   const btn = document.getElementById("pushToggleBtn");
   if (!btn) return;
   function render(state) {
-    if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
+    if (state === "ios_needs_install") { btn.textContent = "📲 Agrega esta app a tu pantalla de inicio para recibir notificaciones"; btn.disabled = true; }
+    else if (state === "unsupported") { btn.textContent = "No disponible en este navegador"; btn.disabled = true; }
     else if (state === "denied") { btn.textContent = "Notificaciones bloqueadas (revísalo en los ajustes de tu navegador)"; btn.disabled = true; }
     else if (state === "subscribed") { btn.textContent = "🔕 Desactivar notificaciones push"; btn.dataset.state = "subscribed"; btn.disabled = false; }
     else { btn.textContent = "🔔 Activar notificaciones push"; btn.dataset.state = "unsubscribed"; btn.disabled = false; }
