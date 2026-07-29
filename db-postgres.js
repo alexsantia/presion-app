@@ -240,6 +240,20 @@ async function listSymptoms(patientId) {
     descripcion: r.descripcion || "", created_at: new Date(r.created_at).toISOString(),
   }));
 }
+// ---- Historial de cintura/colesterol/triglicéridos (v30.6) ----
+async function listLabHistory(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, to_char(fecha, 'YYYY-MM-DD') AS fecha, waist, cholesterol, triglycerides, created_at
+     FROM lab_history WHERE patient_id = $1 ORDER BY fecha ASC, created_at ASC`,
+    [patientId]
+  );
+  return rows.map(r => ({
+    id: r.id, patient_id: r.patient_id, fecha: r.fecha,
+    waist: r.waist != null ? Number(r.waist) : null,
+    cholesterol: r.cholesterol != null ? Number(r.cholesterol) : null,
+    triglycerides: r.triglycerides != null ? Number(r.triglycerides) : null,
+  }));
+}
 
 // ---- Pacientes ----
 function patientRaw(row) {
@@ -688,6 +702,9 @@ async function handleGet(params) {
   if (action === "list_symptoms") {
     return { ok: true, data: await listSymptoms(params.patient_id) };
   }
+  if (action === "list_lab_history") {
+    return { ok: true, data: await listLabHistory(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -914,6 +931,22 @@ async function handlePost(body) {
         now, body.id,
       ]
     );
+    // v30.6: cada vez que se guarda cintura, colesterol o triglicéridos se
+    // agrega un punto nuevo al historial (con la fecha de laboratorio si se
+    // dio, si no la de hoy), para poder graficar su tendencia en el tiempo.
+    // Antes solo existía "el valor actual", sin manera de ver cómo cambió.
+    if (hasValue(body.waist) || hasValue(body.cholesterol) || hasValue(body.triglycerides)) {
+      const waist = hasValue(body.waist) ? body.waist : p.waist;
+      const cholesterol = hasValue(body.cholesterol) ? body.cholesterol : p.cholesterol;
+      const triglycerides = hasValue(body.triglycerides) ? body.triglycerides : p.triglycerides;
+      const fecha = hasValue(body.last_lab_date) ? body.last_lab_date : (p.last_lab_date || nowIso().slice(0, 10));
+      await pool.query(
+        `INSERT INTO lab_history (id, patient_id, fecha, waist, cholesterol, triglycerides, created_at)
+         VALUES ($1,$2,$3::date,$4,$5,$6,$7)`,
+        [uuid(), body.id, fecha, waist ?? null, cholesterol ?? null, triglycerides ?? null, now]
+      );
+      emitChange(body.id, "lab_history");
+    }
     return { ok: true };
   }
   if (body.action === "generate_doctor_invite") {

@@ -429,6 +429,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const readingsResult = await callSheetsApi({ action: "list", patient_id: patient.id });
   const reactionsResult = await callSheetsApi({ action: "list_reactions", patient_id: patient.id });
   const broadcastsResult = await callSheetsApi({ action: "get_active_broadcasts", audience: "family" });
+  const labHistoryResult = await callSheetsApi({ action: "list_lab_history", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -436,6 +437,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       readings: readingsResult.ok ? readingsResult.data : [],
       reactions: reactionsResult.ok ? reactionsResult.data : [],
       broadcasts: broadcastsResult.ok ? broadcastsResult.data : [],
+      labHistory: labHistoryResult.ok ? labHistoryResult.data : [],
     },
   });
 }));
@@ -536,6 +538,10 @@ app.post("/api/symptoms", requireRole("patient"), asyncRoute(async (req, res) =>
 }));
 app.delete("/api/symptoms/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "delete_symptom", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+app.get("/api/lab-history", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_lab_history", patient_id: req.session.patientId }));
 }));
 
 app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {

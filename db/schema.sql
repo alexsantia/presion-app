@@ -174,6 +174,21 @@ CREATE TABLE IF NOT EXISTS broadcast_messages (
 -- interfaces, o solo pacientes / médicos / familia y amigos).
 ALTER TABLE broadcast_messages ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'all';
 
+-- v30.6: historial de cintura/colesterol/triglicéridos, para poder graficar
+-- su tendencia (antes solo se guardaba el valor actual en pacientes, sin
+-- fecha de cuándo cambió). Se agrega un punto nuevo cada vez que se guardan
+-- Parámetros con alguno de estos tres campos.
+CREATE TABLE IF NOT EXISTS lab_history (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  fecha date NOT NULL,
+  waist numeric,
+  cholesterol numeric,
+  triglycerides numeric,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lab_history_patient ON lab_history(patient_id, fecha);
+
 CREATE TABLE IF NOT EXISTS support_tickets (
   id uuid PRIMARY KEY,
   account_type text NOT NULL CHECK (account_type IN ('patient', 'doctor')),

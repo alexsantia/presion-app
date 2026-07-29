@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.5"></script>
+<script src="/shared/common.js?v=30.6"></script>
 <style>
   :root {
     color-scheme: light;
@@ -345,6 +345,36 @@
     <div class="chart-wrap"><canvas id="statsTimeOfDayChart"></canvas></div>
     <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
   </div>
+
+  <div class="section section-chart">
+    <h2>Frecuencia cardíaca</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsHrChart"></canvas></div>
+    <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Peso</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsWeightChart"></canvas></div>
+    <div id="statsWeightEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con peso registrado.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Perímetro abdominal</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsWaistChart"></canvas></div>
+    <div id="statsWaistEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de perímetro abdominal.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Triglicéridos</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsTriglyceridesChart"></canvas></div>
+    <div id="statsTriglyceridesEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de triglicéridos.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Colesterol</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
+    <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol.</div>
+  </div>
 </div>
 
 <div id="tabHabitos" class="tab-panel" style="display:none;">
@@ -363,10 +393,16 @@
       <img id="doc_avatar_preview" class="avatar-preview avatar-clickable" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
     </div>
     <div>
-      <label class="btn-secondary" for="doc_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
-      <input type="file" id="doc_avatar_input" accept="image/*" style="display:none;">
-      <button type="button" class="btn-secondary" id="doc_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
-      <button type="button" class="btn-mini danger" id="doc_avatar_remove" style="margin-left:6px;">Quitar</button>
+      <div id="doc_avatar_actions">
+        <label class="btn-secondary" for="doc_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
+        <input type="file" id="doc_avatar_input" accept="image/*" style="display:none;">
+        <button type="button" class="btn-secondary" id="doc_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
+        <button type="button" class="btn-mini danger" id="doc_avatar_remove" style="margin-left:6px;">Quitar</button>
+      </div>
+      <div id="doc_avatar_pending" style="display:none;">
+        <button type="button" class="btn-primary" id="doc_avatar_save">Guardar</button>
+        <button type="button" class="btn-mini" id="doc_avatar_cancel" style="margin-left:6px;">Cancelar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -465,7 +501,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.5</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.6</button></footer>
 
 <script>
 let chartInstance = null;
@@ -492,7 +528,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
-    if (btn.dataset.pageTab === "estadisticas") renderStatsChart();
+    if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
 });
 
@@ -637,6 +673,10 @@ async function loadDoctorAccount() {
         removeBtn: document.getElementById("doc_avatar_remove"),
         accountType: "doctor",
         accountId: currentDoctorAccount.id,
+        actionsWrap: document.getElementById("doc_avatar_actions"),
+        pendingWrap: document.getElementById("doc_avatar_pending"),
+        saveBtn: document.getElementById("doc_avatar_save"),
+        cancelBtn: document.getElementById("doc_avatar_cancel"),
         onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
       });
     }
@@ -968,6 +1008,37 @@ async function loadSymptoms() {
   document.getElementById("symptomsListWrap").innerHTML = renderSymptomsListHTML(currentSymptoms, { readOnly: true });
 }
 
+// ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6) ----
+let currentLabHistory = [];
+let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
+    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
+async function loadLabHistory() {
+  try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
+  renderLabHistoryCharts();
+}
+function renderLabHistoryCharts() {
+  statsHrChartInstance = renderMetricTrendChart(
+    statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
+    readingsSeriesForKey_(currentData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+  );
+  statsWeightChartInstance = renderMetricTrendChart(
+    statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
+    readingsSeriesForKey_(currentData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+  );
+  statsWaistChartInstance = renderMetricTrendChart(
+    statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
+    labHistorySeriesForKey_(currentLabHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+  );
+  statsTriglyceridesChartInstance = renderMetricTrendChart(
+    statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
+    labHistorySeriesForKey_(currentLabHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
+  );
+  statsCholesterolChartInstance = renderMetricTrendChart(
+    statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
+    labHistorySeriesForKey_(currentLabHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+  );
+}
+
 function render() {
   const data = currentData;
   const emptyState = document.getElementById("emptyState");
@@ -978,6 +1049,7 @@ function render() {
     document.getElementById("summaryCards").innerHTML = "";
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     renderStatsChart();
+    renderLabHistoryCharts();
     return;
   }
   emptyState.style.display = "none"; table.style.display = "table";
@@ -1000,6 +1072,7 @@ function render() {
 
   renderChart();
   renderStatsChart();
+  renderLabHistoryCharts();
 }
 
 document.getElementById("commentForm").addEventListener("submit", async e => {
@@ -1055,7 +1128,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.5");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.6");
 
 loadPatient();
 loadAndRender();
@@ -1064,6 +1137,7 @@ loadDoctorAccount();
 loadNotifications();
 loadHabits();
 loadSymptoms();
+loadLabHistory();
 wireBroadcastBanner(document.getElementById("broadcastBanner"));
 wireSupportTickets({
   listEl: document.getElementById("ticketList"),
@@ -1094,6 +1168,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "comment") loadComments();
   if (kind === "habit") loadHabits();
   if (kind === "symptom") loadSymptoms();
+  if (kind === "lab_history") loadLabHistory();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

@@ -175,6 +175,43 @@ function timeOfDayComparisonData(data, granularity) {
   });
 }
 
+// ---- Gráficas de una sola métrica en Estadísticas (v30.6): Frecuencia
+// cardíaca y Peso salen de las lecturas normales (currentData, ya trae hr y
+// weight); Perímetro abdominal, Colesterol y Triglicéridos salen del nuevo
+// historial de laboratorio (lab_history), porque antes solo se guardaba el
+// valor actual sin fecha. Un solo helper de Chart.js para las cinco. ----
+function readingsSeriesForKey_(data, key) {
+  const filtered = (data || []).filter(r => r[key] != null);
+  return {
+    labels: filtered.map(r => fmtDate(r.date) + (r.time ? " " + r.time : "")),
+    values: filtered.map(r => r[key]),
+  };
+}
+function labHistorySeriesForKey_(history, key) {
+  const filtered = (history || []).filter(h => h[key] != null);
+  return { labels: filtered.map(h => fmtDate(h.fecha)), values: filtered.map(h => h[key]) };
+}
+function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
+  if (prevInstance) prevInstance.destroy();
+  const hasData = series.values.length > 0;
+  if (emptyEl) emptyEl.style.display = hasData ? "none" : "block";
+  if (canvasEl) canvasEl.style.display = hasData ? "" : "none";
+  if (!hasData || !canvasEl) return null;
+  const ctx = canvasEl.getContext("2d");
+  return new Chart(ctx, {
+    type: "line",
+    data: { labels: series.labels, datasets: [{
+      label: opts.label, data: series.values, borderColor: opts.color, backgroundColor: opts.color,
+      tension: 0.25, spanGaps: true, pointRadius: 3,
+    }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { title: { display: true, text: opts.unit || "" }, beginAtZero: false } },
+    },
+  });
+}
+
 // Callbacks del tooltip de Chart.js para la gráfica de Tendencia, compartidos
 // por las 3 vistas. Dos ajustes sobre el tooltip por default: (1) la línea
 // de "Medicado" muestra Sí/No (o el % de adherencia si el punto es un
@@ -545,6 +582,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.6", changes: [
+    "Corregido: la foto de perfil no se actualizaba en algunos casos por el caché del navegador.",
+    "Botones de Guardar y Cancelar al elegir una foto de perfil nueva, con vista previa antes de subirla.",
+    "Efecto de confeti en cualquier botón de la app, no solo al agregar una lectura.",
+    "Nuevas gráficas en Estadísticas: frecuencia cardíaca, peso, perímetro abdominal, triglicéridos y colesterol.",
+  ] },
   { version: "30.5", changes: [
     "El botón de ver/ocultar contraseña ya no se encima con el texto en las pantallas de acceso.",
     "Los mensajes generales del administrador ahora se pueden dirigir solo a paciente, solo a médico, o solo al enlace de familia y amigos.",
@@ -1185,7 +1228,7 @@ function connectRealtime(url, onChange) {
 // Web Audio API de más abajo: un efecto chiquito no amerita una dependencia
 // nueva). originEl: elemento desde donde "explota" el confeti (normalmente
 // el botón "Agregar"); si no se da, sale del centro-arriba de la pantalla.
-function fireConfetti(originEl) {
+function fireConfetti(originEl, count) {
   try {
     const colors = ["#6FA98C", "#D8AE5C", "#D98E5F", "#9B8AC4", "#4F7A6F", "#2E9E96"];
     const rect = originEl && originEl.getBoundingClientRect ? originEl.getBoundingClientRect() : null;
@@ -1201,7 +1244,7 @@ function fireConfetti(originEl) {
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
 
-    const particles = Array.from({ length: 70 }, () => ({
+    const particles = Array.from({ length: count || 70 }, () => ({
       x: originX, y: originY,
       vx: (Math.random() - 0.5) * 9,
       vy: -(Math.random() * 8 + 4),
@@ -1238,6 +1281,23 @@ function fireConfetti(originEl) {
     }
     requestAnimationFrame(frame);
   } catch (err) { /* silencioso: el confeti es solo un extra, nunca debe romper el flujo de agregar */ }
+}
+// v30.6: confeti en cualquier botón de la app al presionarlo, no solo al
+// agregar una lectura (eso ya lo tenía desde v29, con más partículas). Un
+// solo listener delegado en el documento; se usan menos partículas aquí
+// para que no se sienta excesivo en botones de uso muy frecuente (paginar,
+// cerrar un modal, filtros).
+function wireConfettiOnAllButtons_() {
+  if (typeof document === "undefined" || document.body.dataset.confettiWired) return;
+  document.body.dataset.confettiWired = "1";
+  document.addEventListener("click", e => {
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled) return;
+    fireConfetti(btn, 22);
+  });
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("DOMContentLoaded", wireConfettiOnAllButtons_);
 }
 
 // ---- Notificaciones push (Web Push) y badge del ícono (v29) ----
@@ -1375,12 +1435,17 @@ function initialsFromName_(name) {
 // Se usa para los avatares chicos (médicos vinculados, catálogo); la foto
 // grande de la cuenta usa su propia estructura ya existente (avatar-preview
 // + avatar-preview-fallback), ver setAvatarFallbackInitials_ más abajo.
-function avatarWithInitialsHTML_(accountType, id, name, sizePx) {
+// cacheBuster (opcional): pásalo (p. ej. Date.now()) justo después de subir
+// o quitar la propia foto, para forzar al navegador a pedirla de nuevo en
+// vez de mostrar la versión vieja que tenía en caché (ver wireAvatarUploader
+// más abajo). En el resto de los casos (médicos vinculados, catálogo) se
+// deja sin cache-buster para aprovechar el caché normalmente.
+function avatarWithInitialsHTML_(accountType, id, name, sizePx, cacheBuster) {
   const initials = initialsFromName_(name);
   const fontSize = Math.max(9, Math.round(sizePx * 0.4));
   return `<span style="position:relative; display:inline-block; width:${sizePx}px; height:${sizePx}px; vertical-align:middle; margin-right:6px; flex-shrink:0;">
     <span style="position:absolute; inset:0; border-radius:50%; background:var(--accent-soft, #E8F0EC); color:var(--accent, #4F7A6F); display:flex; align-items:center; justify-content:center; font-size:${fontSize}px; font-weight:650;">${escapeHtml_(initials)}</span>
-    <img class="avatar-clickable" data-avatar-name="${escapeHtml_(name || "")}" src="${avatarUrl(accountType, id)}" alt=""
+    <img class="avatar-clickable" data-avatar-name="${escapeHtml_(name || "")}" src="${avatarUrl(accountType, id, cacheBuster)}" alt=""
       style="position:absolute; inset:0; width:100%; height:100%; border-radius:50%; object-fit:cover; cursor:pointer; display:block;"
       onerror="this.style.visibility='hidden'" onload="this.style.visibility='visible'">
   </span>`;
@@ -1580,14 +1645,41 @@ function openCameraCapture_(onCaptured) {
 // comparten la misma lógica de redimensionar y subir.
 // onStatus(kind, message): kind "loading" | "success" | "error", para que
 // cada página lo muestre con su propio setStatus().
+// v30.6: dos correcciones sobre la foto de perfil.
+// (1) La imagen de /api/avatar/:type/:id se sirve con caché de 5 minutos
+//     (Cache-Control), así que si algo vuelve a poner la misma URL (sin más)
+//     en un <img>, el navegador puede mostrar la foto vieja del caché en vez
+//     de pedir la nueva — por eso avatarUrl() SIEMPRE necesita un
+//     cache-buster distinto justo después de subir o quitar una foto.
+// (2) Elegir un archivo con "Subir foto" subía la imagen de inmediato, sin
+//     ninguna vista previa ni forma de arrepentirse (a diferencia de la
+//     cámara, que desde v30.3.2 sí pide confirmar o repetir). Ahora se
+//     muestra una vista previa del archivo elegido con botones de Guardar y
+//     Cancelar, y solo se sube al servidor cuando se confirma con Guardar.
 function wireAvatarUploader(opts) {
-  const { fileInput, cameraButton, previewImg, removeBtn, accountType, accountId, onStatus } = opts;
+  const { fileInput, cameraButton, previewImg, removeBtn, accountType, accountId, onStatus, onUploaded,
+          actionsWrap, pendingWrap, saveBtn, cancelBtn } = opts;
   if (!fileInput && !cameraButton) return;
+  let pendingFile = null;
+  let pendingObjectUrl = null;
   function refreshPreview() {
     if (previewImg) previewImg.src = avatarUrl(accountType, accountId, Date.now());
   }
-  async function uploadFile(file) {
-    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); return; }
+  function showPendingPreview(file) {
+    pendingFile = file;
+    if (pendingObjectUrl) URL.revokeObjectURL(pendingObjectUrl);
+    pendingObjectUrl = URL.createObjectURL(file);
+    if (previewImg) { previewImg.src = pendingObjectUrl; previewImg.classList.remove("avatar-hidden"); }
+    if (actionsWrap) actionsWrap.style.display = "none";
+    if (pendingWrap) pendingWrap.style.display = "";
+  }
+  function clearPending() {
+    pendingFile = null;
+    if (pendingObjectUrl) { URL.revokeObjectURL(pendingObjectUrl); pendingObjectUrl = null; }
+    if (actionsWrap) actionsWrap.style.display = "";
+    if (pendingWrap) pendingWrap.style.display = "none";
+  }
+  async function doUpload(file) {
     try {
       onStatus && onStatus("loading", "Subiendo foto…");
       const { base64, mime } = await resizeImageForAvatar_(file, 256, 0.85);
@@ -1597,8 +1689,10 @@ function wireAvatarUploader(opts) {
       });
       const json = await resp.json();
       if (!json.ok) throw new Error(json.error || "no se pudo subir la foto");
+      clearPending();
       refreshPreview();
       onStatus && onStatus("success", "Foto de perfil actualizada.");
+      onUploaded && onUploaded();
     } catch (err) {
       onStatus && onStatus("error", err.message);
     }
@@ -1606,9 +1700,17 @@ function wireAvatarUploader(opts) {
   if (fileInput) fileInput.addEventListener("change", () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = "";
-    if (file) uploadFile(file);
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { onStatus && onStatus("error", "Elige un archivo de imagen."); return; }
+    // Si hay botones de Guardar/Cancelar, se muestra la vista previa y se
+    // espera confirmación; si la página no los tiene (compatibilidad hacia
+    // atrás), se sube de inmediato como antes.
+    if (saveBtn && cancelBtn) showPendingPreview(file);
+    else doUpload(file);
   });
-  if (cameraButton) cameraButton.addEventListener("click", () => openCameraCapture_(uploadFile));
+  if (cameraButton) cameraButton.addEventListener("click", () => openCameraCapture_(doUpload));
+  if (saveBtn) saveBtn.addEventListener("click", () => { if (pendingFile) doUpload(pendingFile); });
+  if (cancelBtn) cancelBtn.addEventListener("click", () => clearPending());
   if (removeBtn) {
     removeBtn.addEventListener("click", async () => {
       try {
@@ -1618,6 +1720,7 @@ function wireAvatarUploader(opts) {
         if (!json.ok) throw new Error(json.error || "no se pudo quitar la foto");
         refreshPreview();
         onStatus && onStatus("success", "Foto de perfil quitada.");
+        onUploaded && onUploaded();
       } catch (err) {
         onStatus && onStatus("error", err.message);
       }

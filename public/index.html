@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.5"></script>
+<script src="/shared/common.js?v=30.6"></script>
 <style>
   :root {
     color-scheme: light;
@@ -481,6 +481,39 @@
     <div class="chart-wrap"><canvas id="statsTimeOfDayChart"></canvas></div>
     <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
   </div>
+
+  <div class="section section-chart">
+    <h2>Frecuencia cardíaca</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsHrChart"></canvas></div>
+    <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Peso</h2>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsWeightChart"></canvas></div>
+    <div id="statsWeightEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con peso registrado.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Perímetro abdominal</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsWaistChart"></canvas></div>
+    <div id="statsWaistEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de perímetro abdominal. Se registrará la próxima vez que lo guardes en Parámetros.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Triglicéridos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsTriglyceridesChart"></canvas></div>
+    <div id="statsTriglyceridesEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de triglicéridos. Se registrará la próxima vez que los guardes en Parámetros.</div>
+  </div>
+
+  <div class="section section-chart">
+    <h2>Colesterol</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
+    <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol. Se registrará la próxima vez que lo guardes en Parámetros.</div>
+  </div>
 </div>
 
 <div id="tabHabitos" class="tab-panel" style="display:none;">
@@ -553,7 +586,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.5</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.6</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -567,10 +600,16 @@
         <img id="p_avatar_preview" class="avatar-preview avatar-clickable" alt="" onerror="this.classList.add('avatar-hidden')" onload="this.classList.remove('avatar-hidden')">
       </div>
       <div>
-        <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
-        <input type="file" id="p_avatar_input" accept="image/*" style="display:none;">
-        <button type="button" class="btn-secondary" id="p_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
-        <button type="button" class="btn-mini danger" id="p_avatar_remove" style="margin-left:6px;">Quitar</button>
+        <div id="p_avatar_actions">
+          <label class="btn-secondary" for="p_avatar_input" style="cursor:pointer; display:inline-block;">Subir foto</label>
+          <input type="file" id="p_avatar_input" accept="image/*" style="display:none;">
+          <button type="button" class="btn-secondary" id="p_avatar_camera" style="margin-left:6px;">📷 Tomar foto</button>
+          <button type="button" class="btn-mini danger" id="p_avatar_remove" style="margin-left:6px;">Quitar</button>
+        </div>
+        <div id="p_avatar_pending" style="display:none;">
+          <button type="button" class="btn-primary" id="p_avatar_save">Guardar</button>
+          <button type="button" class="btn-mini" id="p_avatar_cancel" style="margin-left:6px;">Cancelar</button>
+        </div>
       </div>
     </div>
 
@@ -897,7 +936,14 @@ async function loadAccount() {
         removeBtn: document.getElementById("p_avatar_remove"),
         accountType: "patient",
         accountId: currentAccount.id,
+        actionsWrap: document.getElementById("p_avatar_actions"),
+        pendingWrap: document.getElementById("p_avatar_pending"),
+        saveBtn: document.getElementById("p_avatar_save"),
+        cancelBtn: document.getElementById("p_avatar_cancel"),
         onStatus: (kind, msg) => { setStatus(kind, msg); if (kind !== "loading") setTimeout(() => setStatus(null), 1800); },
+        onUploaded: () => {
+          document.getElementById("patientAvatarWrap").innerHTML = avatarWithInitialsHTML_("patient", currentAccount.id, currentAccount.name, 56, Date.now());
+        },
       });
     }
   } catch (err) { /* silencioso */ }
@@ -1007,7 +1053,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.5");
+  showAboutOverlay_("30.6");
 });
 
 function openModal(id) {
@@ -1083,6 +1129,7 @@ document.getElementById("paramsForm").addEventListener("submit", async e => {
     setStatus("success", "Parámetros guardados.");
     setTimeout(() => setStatus(null), 1500);
     await loadAccount();
+    await loadLabHistory();
   } catch (err) {
     setStatus("error", err.message);
   }
@@ -1718,13 +1765,56 @@ document.getElementById("statsChartFilter").addEventListener("click", e => {
   document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   renderStatsChart();
 });
+
+// ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6) ----
+// FC y peso salen de las lecturas normales (ya vienen con cada una);
+// cintura/colesterol/triglicéridos salen del nuevo historial de laboratorio
+// (antes solo existía "el valor actual", sin fecha ni tendencia).
+let currentLabHistory = [];
+let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
+    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
+function labHistorySeriesConverted_(key) {
+  const series = labHistorySeriesForKey_(currentLabHistory, key);
+  if (key === "waist" || getUnitPref() !== "mmoll") return series;
+  const factor = key === "cholesterol" ? CHOL_MGDL_PER_MMOLL : TRI_MGDL_PER_MMOLL;
+  return { labels: series.labels, values: series.values.map(v => Math.round((v / factor) * 100) / 100) };
+}
+async function loadLabHistory() {
+  try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
+  renderLabHistoryCharts();
+}
+function renderLabHistoryCharts() {
+  const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
+  statsHrChartInstance = renderMetricTrendChart(
+    statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
+    readingsSeriesForKey_(currentData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+  );
+  statsWeightChartInstance = renderMetricTrendChart(
+    statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
+    readingsSeriesForKey_(currentData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+  );
+  statsWaistChartInstance = renderMetricTrendChart(
+    statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
+    labHistorySeriesConverted_("waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+  );
+  statsTriglyceridesChartInstance = renderMetricTrendChart(
+    statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
+    labHistorySeriesConverted_("triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
+  );
+  statsCholesterolChartInstance = renderMetricTrendChart(
+    statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
+    labHistorySeriesConverted_("cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
+  );
+}
+loadLabHistory();
+
 // La pestaña Estadísticas empieza oculta (display:none); Chart.js no puede
 // medir un canvas oculto, así que además de renderizar junto con la
 // pestaña Presión Arterial, se vuelve a dibujar justo al entrar a
 // Estadísticas por si acaso quedó con el tamaño equivocado.
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
-    if (btn.dataset.pageTab === "estadisticas") renderStatsChart();
+    if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
 });
 
@@ -1740,6 +1830,7 @@ function render() {
     document.getElementById("alertsContent").innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Agrega o importa lecturas para ver alertas y tendencias.</div>`;
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     renderStatsChart();
+    renderLabHistoryCharts();
     return;
   }
   emptyState.style.display = "none";
@@ -1778,6 +1869,7 @@ function render() {
 
   renderChart();
   renderStatsChart();
+  renderLabHistoryCharts();
 }
 
 // Al editar una lectura existente, el campo Peso muestra el peso histórico
@@ -2099,6 +2191,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "comment") loadComments();
   if (kind === "habit") loadHabits();
   if (kind === "symptom") loadSymptoms();
+  if (kind === "lab_history") loadLabHistory();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();
