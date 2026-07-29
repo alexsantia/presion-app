@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.9"></script>
+<script src="/shared/common.js?v=30.10"></script>
 <style>
   :root {
     color-scheme: light;
@@ -138,7 +138,12 @@
   .notif-bell-wrap { position: relative; }
   .notif-bell-btn { background: none; border: none; font-size: 20px; cursor: pointer; position: relative; padding: 4px 6px; line-height: 1; }
   .notif-badge { position: absolute; top: -2px; right: -2px; background: var(--etapa2); color: white; font-size: 10px; font-weight: 700; border-radius: 20px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
-  .notif-panel { position: absolute; right: 0; top: 32px; width: 300px; max-height: 360px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 50; padding: 6px; }
+  /* v30.10: la campanita es el ícono más a la izquierda de la barra, así que
+     un panel "right:0" se salía casi por completo del viewport en móvil,
+     dejando visible solo una tira angosta del lado derecho — el mismo
+     problema ya corregido antes para el menú de hamburguesa. Se ancla con
+     "left:0" (crece hacia la derecha) y se limita el ancho a la pantalla. */
+  .notif-panel { position: absolute; left: 0; right: auto; top: 32px; width: 300px; max-width: calc(100vw - 24px); max-height: 360px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 50; padding: 6px; }
   .notif-item { display: flex; gap: 8px; padding: 9px 8px; border-radius: 8px; }
   .notif-item.notif-unread { background: var(--accent-soft); }
   .notif-icon { font-size: 15px; }
@@ -173,6 +178,10 @@
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .page-tab-btn-directory { margin-left: 22px !important; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 20px; padding: 8px 14px; color: var(--accent); }
+  .page-tab-btn-directory.active { background: var(--accent); color: white; border-bottom: 1px solid var(--accent); }
+  .page-tab-btn-directory:hover { color: var(--accent); }
+  .page-tab-btn-directory.active:hover { color: white; }
   /* v30.8: destello al seleccionar una pestaña — barra que recorre el ancho
      del botón por debajo, más un ligero "pop" del texto (ver nota en
      index.html sobre por qué se reemplazó el fundido de fondo anterior). */
@@ -225,9 +234,10 @@
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
-  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
   <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
   <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
+  <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -574,6 +584,15 @@
   </div>
 </div>
 
+<div id="tabEjercicio" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Ejercicio</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Ejercicio que el paciente tiene registrado (solo lectura). Las calorías son un estimado a partir del tipo de ejercicio, la duración, y su peso/estatura/edad/género.</p>
+    <div id="exerciseTotalsWrap"></div>
+    <div id="exercisesListWrap"></div>
+  </div>
+</div>
+
 <div class="section section-password">
   <h2>Cambiar mi contraseña</h2>
   <form class="pw-form" id="passwordForm">
@@ -617,7 +636,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.9</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.10</button></footer>
 
 <script>
 let chartInstance = null;
@@ -652,6 +671,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
     document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
+    document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
 });
@@ -1167,8 +1187,8 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
   const key = btn.closest(".chart-filter-mini").dataset.chartKey;
   statsChartOverrides[key] = btn.dataset.statsPeriod;
   syncStatsFilterButtons_();
-  renderStatsChart();
-  renderLabHistoryCharts();
+  if (key === "timeOfDay") renderStatsChart();
+  else renderLabHistoryCharts([key]);
 });
 document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
@@ -1195,6 +1215,15 @@ async function loadMedications() {
   document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(currentMedications, { readOnly: true });
 }
 
+// ---- Ejercicio (solo lectura, v30.10) ----
+let currentExercises = [];
+async function loadExercises() {
+  ensureExerciseStyles_();
+  try { currentExercises = await apiGet("/api/exercises"); } catch (err) { currentExercises = []; }
+  document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
+  document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises, { readOnly: true });
+}
+
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6) ----
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
@@ -1203,32 +1232,46 @@ async function loadLabHistory() {
   try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
   renderLabHistoryCharts();
 }
-function renderLabHistoryCharts() {
-  const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
-  const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
-  const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
-  const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
-  const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
-  statsHrChartInstance = renderMetricTrendChart(
-    statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
-  );
-  statsWeightChartInstance = renderMetricTrendChart(
-    statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
-  );
-  statsWaistChartInstance = renderMetricTrendChart(
-    statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesForKey_(waistHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
-  );
-  statsTriglyceridesChartInstance = renderMetricTrendChart(
-    statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesForKey_(triHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
-  );
-  statsCholesterolChartInstance = renderMetricTrendChart(
-    statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
-  );
+// v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas nada más,
+// para que el filtro propio de una gráfica no haga parpadear a las demás.
+function renderLabHistoryCharts(onlyKeys) {
+  const only = onlyKeys ? new Set(onlyKeys) : null;
+  const shouldRender = key => !only || only.has(key);
+  if (shouldRender("hr")) {
+    const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+    statsHrChartInstance = renderMetricTrendChart(
+      statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
+      readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    );
+  }
+  if (shouldRender("weight")) {
+    const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+    statsWeightChartInstance = renderMetricTrendChart(
+      statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
+      readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    );
+  }
+  if (shouldRender("waist")) {
+    const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+    statsWaistChartInstance = renderMetricTrendChart(
+      statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
+      labHistorySeriesForKey_(waistHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    );
+  }
+  if (shouldRender("triglycerides")) {
+    const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+    statsTriglyceridesChartInstance = renderMetricTrendChart(
+      statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
+      labHistorySeriesForKey_(triHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
+    );
+  }
+  if (shouldRender("cholesterol")) {
+    const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
+    statsCholesterolChartInstance = renderMetricTrendChart(
+      statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
+      labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+    );
+  }
 }
 
 function render() {
@@ -1320,7 +1363,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.9");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.10");
 
 loadPatient();
 loadAndRender();
@@ -1331,6 +1374,7 @@ loadHabits();
 loadSymptoms();
 loadLabHistory();
 loadMedications();
+loadExercises();
 wireBroadcastBanner(document.getElementById("broadcastBanner"));
 wireSupportTickets({
   listEl: document.getElementById("ticketList"),
@@ -1363,6 +1407,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "symptom") loadSymptoms();
   if (kind === "lab_history") loadLabHistory();
   if (kind === "medication") loadMedications();
+  if (kind === "exercise") loadExercises();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

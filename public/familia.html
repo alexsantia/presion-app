@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.9"></script>
+<script src="/shared/common.js?v=30.10"></script>
 <style>
   :root {
     color-scheme: light;
@@ -117,6 +117,10 @@
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .page-tab-btn-directory { margin-left: 22px !important; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 20px; padding: 8px 14px; color: var(--accent); }
+  .page-tab-btn-directory.active { background: var(--accent); color: white; border-bottom: 1px solid var(--accent); }
+  .page-tab-btn-directory:hover { color: var(--accent); }
+  .page-tab-btn-directory.active:hover { color: white; }
   /* v30.8: destello al seleccionar una pestaña — barra que recorre el ancho
      del botón por debajo, más un ligero "pop" del texto (ver nota en
      index.html sobre por qué se reemplazó el fundido de fondo anterior). */
@@ -159,8 +163,9 @@
 <div class="page-tabs">
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
-  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
   <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
+  <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -379,7 +384,16 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.9</button></footer>
+<div id="tabEjercicio" class="tab-panel" style="display:none;">
+<div class="section">
+  <h2>Ejercicio</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Ejercicio registrado (solo lectura). Las calorías son un estimado.</p>
+  <div id="exerciseTotalsWrap"></div>
+  <div id="exercisesListWrap"></div>
+</div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.10</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -410,6 +424,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
+    document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
 });
@@ -451,6 +466,9 @@ async function load() {
     currentLabHistory = json.data.labHistory || [];
     ensureMedicationStyles_();
     document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(json.data.medications || [], { readOnly: true });
+    ensureExerciseStyles_();
+    document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(json.data.exercises || []);
+    document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(json.data.exercises || [], { readOnly: true });
     checkNewReactionsSinceLastVisit_();
     renderBroadcastBannerFromList(document.getElementById("broadcastBanner"), json.data.broadcasts || []);
     render();
@@ -730,8 +748,8 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
   const key = btn.closest(".chart-filter-mini").dataset.chartKey;
   statsChartOverrides[key] = btn.dataset.statsPeriod;
   syncStatsFilterButtons_();
-  renderStatsChart();
-  renderLabHistoryCharts();
+  if (key === "timeOfDay") renderStatsChart();
+  else renderLabHistoryCharts([key]);
 });
 document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
@@ -746,32 +764,46 @@ syncStatsFilterButtons_();
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
-function renderLabHistoryCharts() {
-  const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
-  const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
-  const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
-  const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
-  const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
-  statsHrChartInstance = renderMetricTrendChart(
-    statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
-  );
-  statsWeightChartInstance = renderMetricTrendChart(
-    statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
-  );
-  statsWaistChartInstance = renderMetricTrendChart(
-    statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesForKey_(waistHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
-  );
-  statsTriglyceridesChartInstance = renderMetricTrendChart(
-    statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesForKey_(triHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
-  );
-  statsCholesterolChartInstance = renderMetricTrendChart(
-    statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
-  );
+// v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas nada más,
+// para que el filtro propio de una gráfica no haga parpadear a las demás.
+function renderLabHistoryCharts(onlyKeys) {
+  const only = onlyKeys ? new Set(onlyKeys) : null;
+  const shouldRender = key => !only || only.has(key);
+  if (shouldRender("hr")) {
+    const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+    statsHrChartInstance = renderMetricTrendChart(
+      statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
+      readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    );
+  }
+  if (shouldRender("weight")) {
+    const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+    statsWeightChartInstance = renderMetricTrendChart(
+      statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
+      readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    );
+  }
+  if (shouldRender("waist")) {
+    const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+    statsWaistChartInstance = renderMetricTrendChart(
+      statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
+      labHistorySeriesForKey_(waistHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    );
+  }
+  if (shouldRender("triglycerides")) {
+    const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+    statsTriglyceridesChartInstance = renderMetricTrendChart(
+      statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
+      labHistorySeriesForKey_(triHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
+    );
+  }
+  if (shouldRender("cholesterol")) {
+    const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
+    statsCholesterolChartInstance = renderMetricTrendChart(
+      statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
+      labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+    );
+  }
 }
 
 function render() {
@@ -834,7 +866,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.9");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.10");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

@@ -449,6 +449,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const broadcastsResult = await callSheetsApi({ action: "get_active_broadcasts", audience: "family" });
   const labHistoryResult = await callSheetsApi({ action: "list_lab_history", patient_id: patient.id });
   const medicationsResult = await callSheetsApi({ action: "list_medications", patient_id: patient.id });
+  const exercisesResult = await callSheetsApi({ action: "list_exercises", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -458,6 +459,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       broadcasts: broadcastsResult.ok ? broadcastsResult.data : [],
       labHistory: labHistoryResult.ok ? labHistoryResult.data : [],
       medications: medicationsResult.ok ? medicationsResult.data : [],
+      exercises: exercisesResult.ok ? exercisesResult.data : [],
     },
   });
 }));
@@ -589,6 +591,23 @@ app.post("/api/medication-doses/mark", requireRole("patient"), asyncRoute(async 
     action: "set_dose_taken", patient_id: req.session.patientId,
     medication_id: req.body.medication_id, dose_time: req.body.dose_time, taken: req.body.taken,
   }));
+}));
+
+// ---- Ejercicio (v30.10): captura manual, calorías calculadas en el servidor ----
+app.get("/api/exercise-types", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_exercise_types" }));
+}));
+app.get("/api/exercises", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_exercises", patient_id: req.session.patientId }));
+}));
+app.post("/api/exercises", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_exercise", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_exercise", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_exercise", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
 app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {
@@ -758,11 +777,11 @@ app.post("/api/account/email", requireRole("patient"), asyncRoute(async (req, re
 }));
 
 app.post("/api/account/params", requireRole("patient"), asyncRoute(async (req, res) => {
-  const { last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist } = req.body;
+  const { last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height } = req.body;
   res.json(await callSheetsApi(null, {
     action: "update_patient_params",
     id: req.session.patientId,
-    last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist,
+    last_lab_date, cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height,
   }));
 }));
 

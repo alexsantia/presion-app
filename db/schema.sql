@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS pacientes (
   med_mg numeric,
   gender text,
   weight numeric,
-  waist numeric
+  waist numeric,
+  height numeric
 );
 
 CREATE TABLE IF NOT EXISTS medicos (
@@ -311,3 +312,24 @@ CREATE TABLE IF NOT EXISTS medicamento_dosis (
   UNIQUE (medication_id, dose_date, dose_time)
 );
 CREATE INDEX IF NOT EXISTS idx_medicamento_dosis_patient ON medicamento_dosis(patient_id, dose_date);
+
+-- v30.10: estatura del paciente (para calcular calorías quemadas en Ejercicio).
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS height numeric;
+
+-- v30.10: pestaña de Ejercicio — captura manual (tipo, duración, fecha); las
+-- calorías se calculan y guardan al momento de capturar, con el MET del tipo
+-- de ejercicio y el peso del paciente en ese momento (no se recalculan
+-- después si el paciente cambia de peso, para no alterar el historial).
+CREATE TABLE IF NOT EXISTS ejercicios (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  tipo text NOT NULL,
+  duracion_min numeric NOT NULL,
+  fecha date NOT NULL,
+  hora time,
+  calorias numeric,
+  notas text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ejercicios_patient_id ON ejercicios(patient_id);

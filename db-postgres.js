@@ -414,6 +414,82 @@ async function scanMedicationReminders() {
   }
 }
 
+// ---- Ejercicio (v30.10): captura manual, calorías calculadas al guardar ----
+// El usuario pidió "tomar las actividades de Apple Watch", pero una PWA web
+// no tiene ninguna API para leer HealthKit/Apple Watch — eso solo lo puede
+// hacer una app nativa con ese permiso. Se optó (decisión del usuario) por
+// captura manual: el paciente elige el tipo de ejercicio y cuánto duró, y la
+// app calcula las calorías.
+// MET = "equivalente metabólico" de cada actividad (tabla estándar del
+// Compendium of Physical Activities). Valores aproximados y moderados.
+const EXERCISE_MET_TABLE = {
+  caminata_ligera: { label: "Caminata ligera", met: 3.0 },
+  caminata_rapida: { label: "Caminata rápida", met: 4.3 },
+  trote: { label: "Trote / correr suave", met: 7.0 },
+  correr_rapido: { label: "Correr rápido", met: 11.0 },
+  ciclismo: { label: "Ciclismo", met: 6.8 },
+  natacion: { label: "Natación", met: 6.0 },
+  yoga: { label: "Yoga", met: 3.0 },
+  pesas: { label: "Pesas / musculación", met: 5.0 },
+  baile: { label: "Baile", met: 4.8 },
+  futbol: { label: "Fútbol", met: 7.0 },
+  basquetbol: { label: "Básquetbol", met: 6.5 },
+  eliptica: { label: "Elíptica", met: 5.0 },
+  escaleras: { label: "Subir escaleras", met: 8.0 },
+  otro: { label: "Otro", met: 4.0 },
+};
+function ageFromBirthdate_(birthdate) {
+  if (!birthdate) return null;
+  const b = new Date(birthdate);
+  if (isNaN(b.getTime())) return null;
+  const { dateStr } = nowInAppTz_();
+  const today = new Date(dateStr);
+  let age = today.getFullYear() - b.getFullYear();
+  const hasHadBirthdayThisYear = (today.getMonth() > b.getMonth())
+    || (today.getMonth() === b.getMonth() && today.getDate() >= b.getDate());
+  if (!hasHadBirthdayThisYear) age--;
+  return age >= 0 ? age : null;
+}
+// Calorías = MET × (BMR/24) × horas de duración. Se usa la tasa metabólica
+// basal (Mifflin-St Jeor, que sí toma en cuenta peso Y estatura, además de
+// edad y género) en vez del atajo más simple de "MET × peso" que ignoran la
+// estatura — así el campo de estatura en Parámetros de verdad se usa aquí.
+// Si falta peso, estatura o edad no se puede calcular nada preciso y se
+// regresa null (se guarda el ejercicio de todas formas, solo sin calorías).
+function calcExerciseCalories_(metKey, durationMin, weightKg, heightCm, birthdate, gender) {
+  const met = (EXERCISE_MET_TABLE[metKey] || EXERCISE_MET_TABLE.otro).met;
+  const age = ageFromBirthdate_(birthdate);
+  if (!weightKg || !heightCm || age == null) return null;
+  const genderOffset = gender === "masculino" ? 5 : gender === "femenino" ? -161 : -78; // -78: punto medio, género sin especificar
+  const bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + genderOffset;
+  if (bmr <= 0) return null;
+  const hours = durationMin / 60;
+  return Math.round(met * (bmr / 24) * hours);
+}
+function exerciseRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    tipo: row.tipo,
+    tipo_label: (EXERCISE_MET_TABLE[row.tipo] || EXERCISE_MET_TABLE.otro).label,
+    duracion_min: row.duracion_min != null ? Number(row.duracion_min) : null,
+    fecha: row.fecha || "",
+    hora: row.hora || "",
+    calorias: row.calorias != null ? Number(row.calorias) : null,
+    notas: row.notas || "",
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listExercises(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, tipo, duracion_min, to_char(fecha, 'YYYY-MM-DD') AS fecha,
+            to_char(hora, 'HH24:MI') AS hora, calorias, notas, created_at
+     FROM ejercicios WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(exerciseRowToObject_);
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -425,7 +501,7 @@ function patientRaw(row) {
     last_lab_date: row.last_lab_date || "",
     cholesterol: num(row.cholesterol), triglycerides: num(row.triglycerides),
     med_brand: row.med_brand || "", med_mg: num(row.med_mg),
-    gender: row.gender || "", weight: num(row.weight), waist: num(row.waist),
+    gender: row.gender || "", weight: num(row.weight), waist: num(row.waist), height: num(row.height),
     avatar_mime: row.avatar_mime || null, suspended: !!row.suspended,
   };
 }
@@ -439,7 +515,7 @@ function patientPublic(row) {
 // ninguna acción lo necesita. Se sirve aparte por /api/avatar/:type/:id.
 const PATIENT_SELECT = `SELECT id, name, email, password_hash, to_char(birthdate, 'YYYY-MM-DD') AS birthdate,
   share_token, created_at, updated_at, to_char(last_lab_date, 'YYYY-MM-DD') AS last_lab_date,
-  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, avatar_mime, suspended FROM pacientes`;
+  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height, avatar_mime, suspended FROM pacientes`;
 
 async function findPatientByEmail(email) {
   const { rows } = await pool.query(`${PATIENT_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
@@ -886,6 +962,12 @@ async function handleGet(params) {
   if (action === "list_today_doses") {
     return { ok: true, data: await listTodayDoses(params.patient_id) };
   }
+  if (action === "list_exercises") {
+    return { ok: true, data: await listExercises(params.patient_id) };
+  }
+  if (action === "list_exercise_types") {
+    return { ok: true, data: Object.entries(EXERCISE_MET_TABLE).map(([key, v]) => ({ key, label: v.label })) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -1067,6 +1149,41 @@ async function handlePost(body) {
     return { ok: true };
   }
 
+  // ---- Ejercicio (v30.10) ----
+  if (body.action === "add_exercise" || body.action === "update_exercise") {
+    if (!body.tipo || !hasValue(body.duracion_min) || !body.fecha) {
+      return { ok: false, error: "faltan datos (tipo, duración y fecha son obligatorios)" };
+    }
+    const p = await findPatientById(body.patient_id);
+    if (!p) return { ok: false, error: "no encontrado" };
+    const calorias = calcExerciseCalories_(body.tipo, num(body.duracion_min), num(p.weight), num(p.height), p.birthdate, p.gender);
+    if (body.action === "add_exercise") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO ejercicios (id, patient_id, tipo, duracion_min, fecha, hora, calorias, notas, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
+        [id, body.patient_id, body.tipo, num(body.duracion_min), body.fecha, body.hora || null, calorias, body.notas || "", now]
+      );
+      emitChange(body.patient_id, "exercise");
+      return { ok: true, id, calorias };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE ejercicios SET tipo = $1, duracion_min = $2, fecha = $3, hora = $4, calorias = $5, notas = $6, updated_at = $7
+         WHERE id = $8 AND patient_id = $9`,
+        [body.tipo, num(body.duracion_min), body.fecha, body.hora || null, calorias, body.notas || "", now, body.id, body.patient_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "exercise");
+      return { ok: true, calorias };
+    }
+  }
+  if (body.action === "delete_exercise") {
+    const { rowCount } = await pool.query(`DELETE FROM ejercicios WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "exercise");
+    return { ok: true };
+  }
+
   // ---- Malos hábitos (v30.1) ----
   if (body.action === "add_habit") {
     const tipo = HABIT_TYPE_KEYS.includes(body.tipo) ? body.tipo : "otro";
@@ -1141,8 +1258,9 @@ async function handlePost(body) {
          gender        = CASE WHEN $11 THEN $12 ELSE gender END,
          weight        = CASE WHEN $13 THEN $14::numeric ELSE weight END,
          waist         = CASE WHEN $15 THEN $16::numeric ELSE waist END,
-         updated_at    = $17
-       WHERE id = $18`,
+         height        = CASE WHEN $17 THEN $18::numeric ELSE height END,
+         updated_at    = $19
+       WHERE id = $20`,
       [
         hasValue(body.last_lab_date), body.last_lab_date || null,
         hasValue(body.cholesterol), body.cholesterol ?? null,
@@ -1152,6 +1270,7 @@ async function handlePost(body) {
         hasValue(body.gender), body.gender || null,
         hasValue(body.weight), body.weight ?? null,
         hasValue(body.waist), body.waist ?? null,
+        hasValue(body.height), body.height ?? null,
         now, body.id,
       ]
     );

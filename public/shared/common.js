@@ -610,6 +610,13 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.10", changes: [
+    "Corregido: el panel de notificaciones se salía de la pantalla en móvil.",
+    "Nueva pestaña de Ejercicio: registra tipo, duración y fecha; las calorías se calculan solas con tu peso, estatura, edad y género.",
+    "Nuevo campo de estatura en Parámetros.",
+    "Las gráficas de Estadísticas ya no parpadean todas cuando usas el filtro propio de una sola.",
+    "El Directorio Médico (antes \"Catálogo de médicos\") se movió al final de las pestañas, con su propio estilo, como valor agregado.",
+  ] },
   { version: "30.9", changes: [
     "Nuevo perfil ampliado para médicos en el catálogo (carta de presentación): modalidad de atención, subespecialidad, años de experiencia, idiomas, aseguradoras, formación, distinciones y más, todo opcional salvo lo mínimo para publicarse.",
     "El filtro general de Estadísticas ahora vuelve a sincronizar todas las gráficas, incluso las que tenían su propio filtro independiente.",
@@ -971,6 +978,62 @@ function medicationDoseTodayHTML_(doses) {
       <span class="med-dose-time">${escapeHtml_(d.dose_time)}</span>
       <span class="med-dose-name">${escapeHtml_(d.medication_name)}${d.dose_text ? " — " + escapeHtml_(d.dose_text) : ""}</span>
     </label>`).join("");
+}
+
+// ---- Ejercicio (v30.10) ----
+// Captura manual (tipo, duración, fecha); las calorías ya vienen calculadas
+// desde el servidor (ver calcExerciseCalories_ en db-postgres.js, usa MET del
+// tipo de ejercicio junto con peso, estatura, edad y género del paciente).
+function exerciseEntryHTML_(ex, opts) {
+  opts = opts || {};
+  const dateLabel = ex.fecha ? ex.fecha.split("-").reverse().join("/") : "";
+  const actions = opts.readOnly ? "" : `
+    <div class="ex-entry-actions">
+      <button type="button" class="btn-mini exercise-edit-btn" data-exercise-id="${ex.id}">Editar</button>
+      <button type="button" class="btn-mini danger exercise-delete-btn" data-exercise-id="${ex.id}">Eliminar</button>
+    </div>`;
+  const detailParts = [dateLabel];
+  if (ex.hora) detailParts.push(escapeHtml_(ex.hora));
+  detailParts.push(`${ex.duracion_min} min`);
+  if (ex.calorias != null) detailParts.push(`🔥 ${ex.calorias} kcal`);
+  return `
+    <div class="ex-entry" data-exercise-id="${ex.id}">
+      <div class="ex-entry-header">
+        <div class="ex-entry-title">🏃 ${escapeHtml_(ex.tipo_label)}</div>
+        ${actions}
+      </div>
+      <div class="ex-entry-detail">${detailParts.join(" · ")}</div>
+      ${ex.notas ? `<div class="ex-entry-notes">${escapeHtml_(ex.notas)}</div>` : ""}
+    </div>`;
+}
+// opts: { readOnly } — doctor.html y familia.html usan readOnly:true.
+function renderExercisesListHTML(exercises, opts) {
+  if (!exercises || !exercises.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún ejercicio.</div>`;
+  }
+  return exercises.map(ex => exerciseEntryHTML_(ex, opts)).join("");
+}
+function exerciseTotalsHTML_(exercises) {
+  if (!exercises || !exercises.length) return "";
+  const totalMin = exercises.reduce((a, e) => a + (Number(e.duracion_min) || 0), 0);
+  const totalCal = exercises.reduce((a, e) => a + (e.calorias != null ? Number(e.calorias) : 0), 0);
+  return `<div class="ex-totals">${exercises.length} registro${exercises.length === 1 ? "" : "s"} · ${totalMin} min en total${totalCal ? ` · 🔥 ${totalCal} kcal en total` : ""}</div>`;
+}
+function ensureExerciseStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-exercise-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-exercise-styles";
+  style.textContent = `
+    .ex-entry { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .ex-entry:last-child { border-bottom: none; }
+    .ex-entry-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .ex-entry-title { font-weight: 650; font-size: 14px; }
+    .ex-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .ex-entry-detail { font-size: 13px; color: var(--text); margin-top: 3px; }
+    .ex-entry-notes { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .ex-totals { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  `;
+  document.head.appendChild(style);
 }
 
 // ---- Utilidades varias ----

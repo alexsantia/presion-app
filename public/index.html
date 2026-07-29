@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.9"></script>
+<script src="/shared/common.js?v=30.10"></script>
 <style>
   :root {
     color-scheme: light;
@@ -209,7 +209,14 @@
   .notif-bell-wrap { position: relative; }
   .notif-bell-btn { background: none; border: none; font-size: 20px; cursor: pointer; position: relative; padding: 4px 6px; line-height: 1; }
   .notif-badge { position: absolute; top: -2px; right: -2px; background: var(--etapa2); color: white; font-size: 10px; font-weight: 700; border-radius: 20px; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
-  .notif-panel { position: absolute; right: 0; top: 32px; width: 300px; max-height: 360px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 50; padding: 6px; }
+  /* v30.10: la campanita es el ícono más a la izquierda de la barra, así que
+     un panel "right:0" (ancla su borde derecho al del wrapper, y crece hacia
+     la izquierda) se salía casi por completo del viewport en móvil, dejando
+     visible solo una tira angosta del lado derecho del panel — exactamente el
+     mismo problema que ya se había corregido antes para el menú de
+     hamburguesa. Se ancla con "left:0" (crece hacia la derecha, donde sí hay
+     espacio) y se limita el ancho a la pantalla disponible. */
+  .notif-panel { position: absolute; left: 0; right: auto; top: 32px; width: 300px; max-width: calc(100vw - 24px); max-height: 360px; overflow-y: auto; background: white; border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 50; padding: 6px; }
   .notif-item { display: flex; gap: 8px; padding: 9px 8px; border-radius: 8px; }
   .notif-item.notif-unread { background: var(--accent-soft); }
   .notif-icon { font-size: 15px; }
@@ -245,6 +252,14 @@
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* v30.10: el Directorio Médico es un valor agregado, no parte de la
+     captura regular de datos — se separa visualmente con más margen a la
+     izquierda, fondo propio y esquinas redondeadas, para que no se confunda
+     con una pestaña más de captura. */
+  .page-tab-btn-directory { margin-left: 22px !important; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 20px; padding: 8px 14px; color: var(--accent); }
+  .page-tab-btn-directory.active { background: var(--accent); color: white; border-bottom: 1px solid var(--accent); }
+  .page-tab-btn-directory:hover { color: var(--accent); }
+  .page-tab-btn-directory.active:hover { color: white; }
   /* v30.8: destello al seleccionar una pestaña — una barra que recorre el
      ancho del botón por debajo, más un ligero "pop" del texto. Antes se
      usaba un fundido de fondo, pero el confeti genérico de cualquier botón
@@ -324,9 +339,14 @@
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
-  <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
   <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
   <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
+  <!-- v30.10: el Directorio Médico (antes "Catálogo de médicos") se movió al
+       extremo derecho y lleva un fondo distinto (.page-tab-btn-directory)
+       porque no es parte de la captura habitual de datos del paciente, sino
+       un valor agregado para encontrar médicos. -->
+  <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -697,7 +717,36 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.9</footer>
+<!-- v30.10: pestaña de Ejercicio. Captura manual (no hay forma de leer datos
+     de Apple Watch desde una app web); las calorías se calculan solas con el
+     tipo de ejercicio, la duración, y el peso/estatura/edad/género guardados
+     en Parámetros. -->
+<div id="tabEjercicio" class="tab-panel" style="display:none;">
+  <div class="section section-add">
+    <h2 id="exFormTitle">Agregar ejercicio</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Las calorías son un estimado a partir del tipo de ejercicio, la duración, y tu peso/estatura/edad/género en Parámetros.</p>
+    <form class="add-form" id="exerciseForm">
+      <div><label>Tipo de ejercicio</label>
+        <select id="ex_tipo" required style="width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      </div>
+      <div><label>Duración (minutos)</label><input type="number" id="ex_duracion_min" min="1" max="600" step="1" required></div>
+      <div><label>Fecha</label><input type="date" id="ex_fecha" required></div>
+      <div><label>Hora (opcional)</label><input type="time" id="ex_hora"></div>
+      <div class="full"><label>Notas (opcional)</label><input type="text" id="ex_notas" placeholder="Ej. trote en el parque"></div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary" id="exFormSubmitBtn">Agregar</button>
+        <button type="button" class="btn-secondary" id="exFormCancelBtn" style="display:none;">Cancelar edición</button>
+      </div>
+    </form>
+  </div>
+  <div class="section">
+    <h2>Tu ejercicio</h2>
+    <div id="exerciseTotalsWrap"></div>
+    <div id="exercisesListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.10</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -779,8 +828,9 @@
         </select>
       </div>
       <div class="field"><label>Peso (kg)</label><input type="number" id="param_weight" min="20" max="300" step="0.1"></div>
+      <div class="field"><label>Estatura (cm)</label><input type="number" id="param_height" min="80" max="250" step="0.1"></div>
       <div class="field"><label>Perímetro abdominal (cm)</label><input type="number" id="param_waist" min="30" max="250" step="0.1"></div>
-      <div class="modal-hint">El peso que pongas aquí se guarda automáticamente junto con cada lectura nueva que registres, hasta que lo actualices de nuevo.</div>
+      <div class="modal-hint">El peso que pongas aquí se guarda automáticamente junto con cada lectura nueva que registres, hasta que lo actualices de nuevo. La estatura se usa para calcular las calorías quemadas en Ejercicio.</div>
 
       <div class="modal-section-title">Estudios de laboratorio</div>
       <div class="field full"><label>Fecha de últimos estudios de laboratorio</label><input type="date" id="param_lab_date"></div>
@@ -1170,7 +1220,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.9");
+  showAboutOverlay_("30.10");
 });
 
 function openModal(id) {
@@ -1207,6 +1257,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
     document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
+    document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
   });
 });
 
@@ -1219,6 +1270,7 @@ function fillParamsForm() {
   const unit = getUnitPref();
   document.getElementById("param_gender").value = currentAccount.gender || "";
   document.getElementById("param_weight").value = currentAccount.weight != null ? currentAccount.weight : "";
+  document.getElementById("param_height").value = currentAccount.height != null ? currentAccount.height : "";
   document.getElementById("param_waist").value = currentAccount.waist != null ? currentAccount.waist : "";
   document.getElementById("param_lab_date").value = currentAccount.last_lab_date || "";
   document.getElementById("param_cholesterol").value = currentAccount.cholesterol != null
@@ -1239,12 +1291,14 @@ document.getElementById("paramsForm").addEventListener("submit", async e => {
   const cholesterol = cholRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(cholRaw) * CHOL_MGDL_PER_MMOLL) : Number(cholRaw));
   const triglycerides = triRaw === "" ? "" : (unit === "mmoll" ? Math.round(Number(triRaw) * TRI_MGDL_PER_MMOLL) : Number(triRaw));
   const weightRaw = document.getElementById("param_weight").value;
+  const heightRaw = document.getElementById("param_height").value;
   const waistRaw = document.getElementById("param_waist").value;
   try {
     setStatus("loading", "Guardando parámetros…");
     await apiPost("/api/account/params", {
       gender: document.getElementById("param_gender").value,
       weight: weightRaw === "" ? "" : Number(weightRaw),
+      height: heightRaw === "" ? "" : Number(heightRaw),
       waist: waistRaw === "" ? "" : Number(waistRaw),
       last_lab_date: document.getElementById("param_lab_date").value,
       cholesterol, triglycerides,
@@ -1920,8 +1974,10 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
   const key = btn.closest(".chart-filter-mini").dataset.chartKey;
   statsChartOverrides[key] = btn.dataset.statsPeriod;
   syncStatsFilterButtons_();
-  renderStatsChart();
-  renderLabHistoryCharts();
+  // Solo esta gráfica cambió de periodo: se redibuja nada más ella, para que
+  // las demás no parpadeen dando la falsa impresión de que también cambiaron.
+  if (key === "timeOfDay") renderStatsChart();
+  else renderLabHistoryCharts([key]);
 });
 document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
@@ -1950,33 +2006,52 @@ async function loadLabHistory() {
   try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
   renderLabHistoryCharts();
 }
-function renderLabHistoryCharts() {
+// v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas
+// nada más. Antes cada clic en CUALQUIER filtro (general o de una sola
+// gráfica) volvía a destruir y crear las 5 gráficas de aquí abajo aunque su
+// periodo no hubiera cambiado — eso se veía como un parpadeo en todas, dando
+// la falsa impresión de que sus valores también habían cambiado. Sin
+// onlyKeys (carga inicial, filtro general, "Eliminar filtros") sí se
+// redibujan todas, porque en esos casos de verdad les toca a todas.
+function renderLabHistoryCharts(onlyKeys) {
+  const only = onlyKeys ? new Set(onlyKeys) : null;
+  const shouldRender = key => !only || only.has(key);
   const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
-  const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
-  const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
-  const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
-  const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
-  const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
-  statsHrChartInstance = renderMetricTrendChart(
-    statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
-  );
-  statsWeightChartInstance = renderMetricTrendChart(
-    statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
-  );
-  statsWaistChartInstance = renderMetricTrendChart(
-    statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesConverted_("waist", waistHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
-  );
-  statsTriglyceridesChartInstance = renderMetricTrendChart(
-    statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesConverted_("triglycerides", triHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
-  );
-  statsCholesterolChartInstance = renderMetricTrendChart(
-    statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
-  );
+  if (shouldRender("hr")) {
+    const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+    statsHrChartInstance = renderMetricTrendChart(
+      statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
+      readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    );
+  }
+  if (shouldRender("weight")) {
+    const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+    statsWeightChartInstance = renderMetricTrendChart(
+      statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
+      readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    );
+  }
+  if (shouldRender("waist")) {
+    const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+    statsWaistChartInstance = renderMetricTrendChart(
+      statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
+      labHistorySeriesConverted_("waist", waistHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    );
+  }
+  if (shouldRender("triglycerides")) {
+    const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+    statsTriglyceridesChartInstance = renderMetricTrendChart(
+      statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
+      labHistorySeriesConverted_("triglycerides", triHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
+    );
+  }
+  if (shouldRender("cholesterol")) {
+    const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
+    statsCholesterolChartInstance = renderMetricTrendChart(
+      statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
+      labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
+    );
+  }
 }
 loadLabHistory();
 
@@ -2459,6 +2534,92 @@ loadMedications();
 loadTodayDoses();
 setInterval(loadTodayDoses, 60000);
 
+// ---- Ejercicio (v30.10) ----
+// Captura manual: el navegador no tiene forma de leer datos de Apple
+// Watch/Apple Health (eso requiere una app nativa con permiso de HealthKit).
+// Las calorías las calcula el servidor al guardar (ver calcExerciseCalories_
+// en db-postgres.js), con el peso/estatura/edad/género de Parámetros.
+let currentExercises = [];
+let editingExerciseId = null;
+async function loadExerciseTypes_() {
+  const sel = document.getElementById("ex_tipo");
+  if (sel.dataset.loaded) return;
+  try {
+    const types = await apiGet("/api/exercise-types");
+    sel.innerHTML = types.map(t => `<option value="${t.key}">${escapeHtml_(t.label)}</option>`).join("");
+    sel.dataset.loaded = "1";
+  } catch (err) { /* silencioso: el select se queda vacío si falla */ }
+}
+async function loadExercises() {
+  ensureExerciseStyles_();
+  try { currentExercises = await apiGet("/api/exercises"); } catch (err) { currentExercises = []; }
+  document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
+  document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises);
+}
+function resetExerciseForm_() {
+  editingExerciseId = null;
+  document.getElementById("exerciseForm").reset();
+  document.getElementById("exFormTitle").textContent = "Agregar ejercicio";
+  document.getElementById("exFormSubmitBtn").textContent = "Agregar";
+  document.getElementById("exFormCancelBtn").style.display = "none";
+}
+document.getElementById("exerciseForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const tipo = document.getElementById("ex_tipo").value;
+  const duracion = document.getElementById("ex_duracion_min").value;
+  const fecha = document.getElementById("ex_fecha").value;
+  if (!tipo || !duracion || !fecha) return;
+  const payload = {
+    tipo, duracion_min: Number(duracion), fecha,
+    hora: document.getElementById("ex_hora").value || "",
+    notas: document.getElementById("ex_notas").value.trim(),
+  };
+  try {
+    if (editingExerciseId) {
+      await apiPut(`/api/exercises/${editingExerciseId}`, payload);
+    } else {
+      await apiPost("/api/exercises", payload);
+    }
+    resetExerciseForm_();
+    await loadExercises();
+  } catch (err) {
+    alert("No se pudo guardar el ejercicio: " + err.message);
+  }
+});
+document.getElementById("exFormCancelBtn").addEventListener("click", () => resetExerciseForm_());
+document.getElementById("exercisesListWrap").addEventListener("click", async e => {
+  const editBtn = e.target.closest(".exercise-edit-btn");
+  if (editBtn) {
+    const ex = currentExercises.find(x => x.id === editBtn.dataset.exerciseId);
+    if (!ex) return;
+    await loadExerciseTypes_();
+    editingExerciseId = ex.id;
+    document.getElementById("ex_tipo").value = ex.tipo || "";
+    document.getElementById("ex_duracion_min").value = ex.duracion_min != null ? ex.duracion_min : "";
+    document.getElementById("ex_fecha").value = ex.fecha || "";
+    document.getElementById("ex_hora").value = ex.hora || "";
+    document.getElementById("ex_notas").value = ex.notas || "";
+    document.getElementById("exFormTitle").textContent = "Editar ejercicio";
+    document.getElementById("exFormSubmitBtn").textContent = "Guardar cambios";
+    document.getElementById("exFormCancelBtn").style.display = "";
+    document.getElementById("exerciseForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  const delBtn = e.target.closest(".exercise-delete-btn");
+  if (delBtn) {
+    if (!confirm("¿Eliminar este ejercicio?")) return;
+    try {
+      await apiDelete(`/api/exercises/${delBtn.dataset.exerciseId}`);
+      if (editingExerciseId === delBtn.dataset.exerciseId) resetExerciseForm_();
+      await loadExercises();
+    } catch (err) {
+      alert("No se pudo eliminar: " + err.message);
+    }
+  }
+});
+loadExerciseTypes_();
+loadExercises();
+
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
 // misma cuenta abierta en más de un dispositivo, o mientras tu médico
@@ -2470,6 +2631,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "symptom") loadSymptoms();
   if (kind === "lab_history") loadLabHistory();
   if (kind === "medication") { loadMedications(); loadTodayDoses(); }
+  if (kind === "exercise") loadExercises();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();
