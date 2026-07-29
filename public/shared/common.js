@@ -175,21 +175,39 @@ function timeOfDayComparisonData(data, granularity) {
   });
 }
 
-// ---- Gráficas de una sola métrica en Estadísticas (v30.6): Frecuencia
-// cardíaca y Peso salen de las lecturas normales (currentData, ya trae hr y
-// weight); Perímetro abdominal, Colesterol y Triglicéridos salen del nuevo
-// historial de laboratorio (lab_history), porque antes solo se guardaba el
-// valor actual sin fecha. Un solo helper de Chart.js para las cinco. ----
+// v30.7: mismo criterio que filterByPeriod, pero recibe el nombre del campo
+// de fecha a usar — las lecturas normales usan "date" y el historial de
+// laboratorio (lab_history) usa "fecha", y ahora las gráficas de
+// Estadísticas necesitan filtrar ambos por el mismo selector de periodo.
+function filterByPeriodField_(data, granularity, dateField) {
+  const list = data || [];
+  if (granularity === "all" || !granularity) return list.slice();
+  const daysMap = { day: 1, week: 7, month: 30, quarter: 90, year: 365 };
+  const days = daysMap[granularity];
+  if (!days) return list.slice();
+  const today = new Date();
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cutoffStr = localDateStr_(cutoff);
+  return list.filter(r => r[dateField] >= cutoffStr);
+}
+
+// ---- Gráficas de una sola métrica en Estadísticas (v30.6, filtro de
+// periodo y observaciones agregados en v30.7): Frecuencia cardíaca y Peso
+// salen de las lecturas normales (currentData, ya trae hr, weight y obs);
+// Perímetro abdominal, Colesterol y Triglicéridos salen del historial de
+// laboratorio (lab_history), que no tiene observaciones. ----
 function readingsSeriesForKey_(data, key) {
   const filtered = (data || []).filter(r => r[key] != null);
   return {
     labels: filtered.map(r => fmtDate(r.date) + (r.time ? " " + r.time : "")),
     values: filtered.map(r => r[key]),
+    obs: filtered.map(r => r.obs || ""),
   };
 }
 function labHistorySeriesForKey_(history, key) {
   const filtered = (history || []).filter(h => h[key] != null);
-  return { labels: filtered.map(h => fmtDate(h.fecha)), values: filtered.map(h => h[key]) };
+  return { labels: filtered.map(h => fmtDate(h.fecha)), values: filtered.map(h => h[key]), obs: filtered.map(() => "") };
 }
 function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   if (prevInstance) prevInstance.destroy();
@@ -206,7 +224,17 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
     }] },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const obs = series.obs && series.obs[items[0].dataIndex];
+              return obs ? [`Obs: ${obs}`] : [];
+            },
+          },
+        },
+      },
       scales: { y: { title: { display: true, text: opts.unit || "" }, beginAtZero: false } },
     },
   });
@@ -582,6 +610,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.7", changes: [
+    "Las gráficas de Estadísticas ahora respetan el filtro de semana, mes y año.",
+    "Los puntos de las gráficas de frecuencia cardíaca y peso muestran la observación de esa lectura al pasar el cursor.",
+    "\"Invitar a tu médico\" ahora se abre desde el menú de hamburguesa, no desde Parámetros.",
+    "Nueva animación de destello al cambiar de pestaña.",
+  ] },
   { version: "30.6", changes: [
     "Corregido: la foto de perfil no se actualizaba en algunos casos por el caché del navegador.",
     "Botones de Guardar y Cancelar al elegir una foto de perfil nueva, con vista previa antes de subirla.",

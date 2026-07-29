@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.6"></script>
+<script src="/shared/common.js?v=30.7"></script>
 <style>
   :root {
     color-scheme: light;
@@ -160,11 +160,17 @@
 
   /* v30.4: navegación por secciones de la página (Presión Arterial / Estadísticas / Malos hábitos / Catálogo / Síntomas) */
   .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .page-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
-    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+  .page-tab-btn { position: relative; overflow: hidden; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-radius: 6px; }
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* v30.7: destello al seleccionar una pestaña */
+  .page-tab-btn.tab-flash { animation: tabFlash_ 0.5s ease-out; }
+  @keyframes tabFlash_ {
+    0% { background-color: var(--accent-soft); }
+    100% { background-color: transparent; }
+  }
 
   /* v29: responsivo para celular (mismo criterio que index.html: sin
      flex-wrap, .topbar-links se salía del viewport en pantallas angostas y
@@ -501,7 +507,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.6</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.7</button></footer>
 
 <script>
 let chartInstance = null;
@@ -520,9 +526,16 @@ let currentHabits = [];
 let currentSymptoms = [];
 
 // ---- Navegación por pestañas (v30.4) ----
+// v30.7: destello (flash) en la pestaña seleccionada, además del subrayado.
+function flashTab_(btn) {
+  btn.classList.remove("tab-flash");
+  void btn.offsetWidth;
+  btn.classList.add("tab-flash");
+}
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    flashTab_(btn);
     document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
@@ -996,6 +1009,7 @@ document.getElementById("statsChartFilter").addEventListener("click", e => {
   statsChartPeriod = btn.dataset.statsPeriod;
   document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   renderStatsChart();
+  renderLabHistoryCharts();
 });
 
 // ---- Malos hábitos y Síntomas diarios (solo lectura, v30.4) ----
@@ -1017,25 +1031,27 @@ async function loadLabHistory() {
   renderLabHistoryCharts();
 }
 function renderLabHistoryCharts() {
+  const periodData = filterByPeriodField_(currentData, statsChartPeriod, "date");
+  const periodLabHistory = filterByPeriodField_(currentLabHistory, statsChartPeriod, "fecha");
   statsHrChartInstance = renderMetricTrendChart(
     statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(currentData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    readingsSeriesForKey_(periodData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
   );
   statsWeightChartInstance = renderMetricTrendChart(
     statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(currentData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    readingsSeriesForKey_(periodData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
   );
   statsWaistChartInstance = renderMetricTrendChart(
     statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesForKey_(currentLabHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    labHistorySeriesForKey_(periodLabHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
   );
   statsTriglyceridesChartInstance = renderMetricTrendChart(
     statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesForKey_(currentLabHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
+    labHistorySeriesForKey_(periodLabHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
   );
   statsCholesterolChartInstance = renderMetricTrendChart(
     statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesForKey_(currentLabHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+    labHistorySeriesForKey_(periodLabHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
   );
 }
 
@@ -1128,7 +1144,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.6");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.7");
 
 loadPatient();
 loadAndRender();

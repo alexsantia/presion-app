@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.6"></script>
+<script src="/shared/common.js?v=30.7"></script>
 <style>
   :root {
     color-scheme: light;
@@ -229,11 +229,17 @@
 
   /* v29: navegación por secciones de la página (Presión Arterial / Estadísticas) */
   .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
-  .page-tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
-    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+  .page-tab-btn { position: relative; overflow: hidden; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-radius: 6px; }
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* v30.7: destello al seleccionar una pestaña */
+  .page-tab-btn.tab-flash { animation: tabFlash_ 0.5s ease-out; }
+  @keyframes tabFlash_ {
+    0% { background-color: var(--accent-soft); }
+    100% { background-color: transparent; }
+  }
   .section-stats-soon { text-align: center; padding: 48px 20px; color: var(--text-muted); }
   .section-stats-soon h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
 
@@ -257,6 +263,7 @@
       <div class="hamburger-menu" id="hamburgerMenu" style="display:none;">
         <button type="button" class="hamburger-item" data-open-modal="accountModal">👤 Cuenta</button>
         <button type="button" class="hamburger-item" data-open-modal="paramsModal">🧪 Parámetros</button>
+        <button type="button" class="hamburger-item" data-open-modal="inviteDoctorModal">✉️ Invitar a tu médico</button>
         <button type="button" class="hamburger-item" data-open-modal="settingsModal">⚙️ Ajustes</button>
         <button type="button" class="hamburger-item" id="aboutMenuItem">ℹ️ Acerca de</button>
       </div>
@@ -451,7 +458,7 @@
       <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Tu médico ve tus datos en modo de solo lectura. Puedes vincular hasta 5 médicos.</p>
       <div id="doctorsMainCount" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
       <div id="doctorsListWrap"></div>
-      <button type="button" class="btn-secondary" id="openInviteDoctorBtn" data-open-modal="paramsModal" style="margin-top:8px;">Invitar a tu médico</button>
+      <button type="button" class="btn-secondary" id="openInviteDoctorBtn" data-open-modal="inviteDoctorModal" style="margin-top:8px;">Invitar a tu médico</button>
     </div>
     <div>
       <h3>Compartir con familia y amigos</h3>
@@ -586,7 +593,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.6</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.7</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -682,8 +689,14 @@
 
       <div class="full"><button type="submit" class="btn-primary">Guardar parámetros</button></div>
     </form>
+  </div>
+</div>
 
-    <div class="modal-section-title">Invitar a tu médico</div>
+<!-- ---- Menú hamburguesa: Invitar a tu médico ---- -->
+<div class="modal-overlay" id="inviteDoctorModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>✉️ Invitar a tu médico</h2><button type="button" class="modal-close" data-close-modal="inviteDoctorModal">✕</button></div>
+
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Si escribes su correo, se lo mandamos directo; si lo dejas en blanco, solo se genera el enlace para que lo copies.</p>
     <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
@@ -1053,7 +1066,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.6");
+  showAboutOverlay_("30.7");
 });
 
 function openModal(id) {
@@ -1074,9 +1087,16 @@ document.querySelectorAll(".modal-overlay").forEach(overlay => {
 });
 
 // ---- Navegación por secciones: Presión Arterial / Estadísticas (v29) ----
+// v30.7: destello (flash) en la pestaña seleccionada, además del subrayado.
+function flashTab_(btn) {
+  btn.classList.remove("tab-flash");
+  void btn.offsetWidth;
+  btn.classList.add("tab-flash");
+}
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("[data-page-tab]").forEach(b => b.classList.toggle("active", b === btn));
+    flashTab_(btn);
     document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
@@ -1764,20 +1784,23 @@ document.getElementById("statsChartFilter").addEventListener("click", e => {
   statsChartPeriod = btn.dataset.statsPeriod;
   document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   renderStatsChart();
+  renderLabHistoryCharts();
 });
 
-// ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6) ----
+// ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
+// filtro de semana/mes/año agregado en v30.7 reutilizando el mismo selector
+// de "Comparar por franja horaria" para las seis gráficas de esta pestaña).
 // FC y peso salen de las lecturas normales (ya vienen con cada una);
 // cintura/colesterol/triglicéridos salen del nuevo historial de laboratorio
 // (antes solo existía "el valor actual", sin fecha ni tendencia).
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
-function labHistorySeriesConverted_(key) {
-  const series = labHistorySeriesForKey_(currentLabHistory, key);
+function labHistorySeriesConverted_(key, history) {
+  const series = labHistorySeriesForKey_(history, key);
   if (key === "waist" || getUnitPref() !== "mmoll") return series;
   const factor = key === "cholesterol" ? CHOL_MGDL_PER_MMOLL : TRI_MGDL_PER_MMOLL;
-  return { labels: series.labels, values: series.values.map(v => Math.round((v / factor) * 100) / 100) };
+  return { labels: series.labels, values: series.values.map(v => Math.round((v / factor) * 100) / 100), obs: series.obs };
 }
 async function loadLabHistory() {
   try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
@@ -1785,25 +1808,27 @@ async function loadLabHistory() {
 }
 function renderLabHistoryCharts() {
   const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
+  const periodData = filterByPeriodField_(currentData, statsChartPeriod, "date");
+  const periodLabHistory = filterByPeriodField_(currentLabHistory, statsChartPeriod, "fecha");
   statsHrChartInstance = renderMetricTrendChart(
     statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(currentData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    readingsSeriesForKey_(periodData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
   );
   statsWeightChartInstance = renderMetricTrendChart(
     statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(currentData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    readingsSeriesForKey_(periodData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
   );
   statsWaistChartInstance = renderMetricTrendChart(
     statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesConverted_("waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    labHistorySeriesConverted_("waist", periodLabHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
   );
   statsTriglyceridesChartInstance = renderMetricTrendChart(
     statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesConverted_("triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
+    labHistorySeriesConverted_("triglycerides", periodLabHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
   );
   statsCholesterolChartInstance = renderMetricTrendChart(
     statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesConverted_("cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
+    labHistorySeriesConverted_("cholesterol", periodLabHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
   );
 }
 loadLabHistory();
