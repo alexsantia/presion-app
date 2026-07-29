@@ -253,3 +253,42 @@ CREATE TABLE IF NOT EXISTS sintomas (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sintomas_patient ON sintomas(patient_id, fecha DESC);
+
+-- v30.8: Medicamentos con recordatorio automático. El calendario semanal NO
+-- se captura a mano (el paciente no elige horas sueltas): se calcula solo, a
+-- partir de la frecuencia (frequency_hours, cada cuántas horas debe tomarse)
+-- y la hora de la primera toma (first_dose_time), repitiéndose todos los
+-- días de la semana (ver computeDoseTimes_ en db-postgres.js). medicamento_dosis
+-- guarda cada ocurrencia real de una toma (una fila por medicamento + fecha +
+-- hora), para saber si ya se marcó como tomada y cuándo se mandó el último
+-- recordatorio push; se crea solo cuando hace falta (al marcarla, o cuando el
+-- escaneo de recordatorios la ve por primera vez), no de antemano para todo
+-- el mes.
+CREATE TABLE IF NOT EXISTS medicamentos (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  active_substance text NOT NULL DEFAULT '',
+  mg numeric,
+  dose_text text NOT NULL DEFAULT '',
+  frequency_hours numeric NOT NULL,
+  first_dose_time time NOT NULL,
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_medicamentos_patient ON medicamentos(patient_id);
+
+CREATE TABLE IF NOT EXISTS medicamento_dosis (
+  id uuid PRIMARY KEY,
+  medication_id uuid NOT NULL REFERENCES medicamentos(id) ON DELETE CASCADE,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  dose_date date NOT NULL,
+  dose_time time NOT NULL,
+  taken boolean NOT NULL DEFAULT false,
+  taken_at timestamptz,
+  last_reminder_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (medication_id, dose_date, dose_time)
+);
+CREATE INDEX IF NOT EXISTS idx_medicamento_dosis_patient ON medicamento_dosis(patient_id, dose_date);

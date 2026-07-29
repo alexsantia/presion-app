@@ -294,6 +294,24 @@ if (DB_BACKEND === "postgres") {
     if (!patientResult.ok || !patientResult.data) return res.status(404).end();
     wireStream_(req, res, patientResult.data.id);
   }));
+
+  // ---- Recordatorios de medicamentos (v30.8) ----
+  // Escaneo periódico: manda push al paciente cuando toca una dosis y no se
+  // ha marcado como tomada, y vuelve a insistir cada 30 minutos (ver
+  // scanMedicationReminders en db-postgres.js para el detalle de cuándo para
+  // de insistir). Corre cada 5 minutos, más una vez al arrancar el servidor
+  // para no esperar los primeros 5 minutos tras cada despliegue — pero
+  // esperando primero a que ensureSchema() termine, porque este bloque corre
+  // justo al arrancar el proceso y podía ganarle la carrera a la creación de
+  // las tablas (visto en pruebas: "relation medicamentos does not exist").
+  const { scanMedicationReminders, ensureSchema: ensureSchemaForMeds } = require("./db-postgres");
+  const MEDICATION_SCAN_INTERVAL_MS = 5 * 60 * 1000;
+  ensureSchemaForMeds()
+    .then(() => scanMedicationReminders())
+    .catch(err => console.error("[medicamentos] error en el escaneo inicial:", err.message));
+  setInterval(() => {
+    scanMedicationReminders().catch(err => console.error("[medicamentos] error en el escaneo de recordatorios:", err.message));
+  }, MEDICATION_SCAN_INTERVAL_MS);
 }
 
 app.post("/logout", (req, res) => {
@@ -430,6 +448,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const reactionsResult = await callSheetsApi({ action: "list_reactions", patient_id: patient.id });
   const broadcastsResult = await callSheetsApi({ action: "get_active_broadcasts", audience: "family" });
   const labHistoryResult = await callSheetsApi({ action: "list_lab_history", patient_id: patient.id });
+  const medicationsResult = await callSheetsApi({ action: "list_medications", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -438,6 +457,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       reactions: reactionsResult.ok ? reactionsResult.data : [],
       broadcasts: broadcastsResult.ok ? broadcastsResult.data : [],
       labHistory: labHistoryResult.ok ? labHistoryResult.data : [],
+      medications: medicationsResult.ok ? medicationsResult.data : [],
     },
   });
 }));
@@ -542,6 +562,33 @@ app.delete("/api/symptoms/:id", requireRole("patient"), asyncRoute(async (req, r
 
 app.get("/api/lab-history", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_lab_history", patient_id: req.session.patientId }));
+}));
+
+// ---- Medicamentos (v30.8) ----
+// El calendario semanal se calcula solo (a partir de la frecuencia y la
+// primera toma), así que médico y familia lo ven en solo lectura vía este
+// mismo GET; solo el paciente puede crear/editar/eliminar medicamentos y
+// marcar sus propias dosis del día como tomadas.
+app.get("/api/medications", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_medications", patient_id: req.session.patientId }));
+}));
+app.post("/api/medications", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_medication", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/medications/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_medication", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/medications/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_medication", patient_id: req.session.patientId, id: req.params.id }));
+}));
+app.get("/api/medication-doses/today", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_today_doses", patient_id: req.session.patientId }));
+}));
+app.post("/api/medication-doses/mark", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "set_dose_taken", patient_id: req.session.patientId,
+    medication_id: req.body.medication_id, dose_time: req.body.dose_time, taken: req.body.taken,
+  }));
 }));
 
 app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {

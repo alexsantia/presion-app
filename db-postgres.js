@@ -255,6 +255,165 @@ async function listLabHistory(patientId) {
   }));
 }
 
+// ---- Medicamentos (v30.8) ----
+// El calendario semanal NO se captura a mano: se calcula a partir de la
+// frecuencia (cada cuántas horas) y la hora de la primera toma, y se repite
+// todos los días. Por ejemplo, cada 8 horas desde las 08:00 da 08:00, 16:00
+// y 00:00 — el mismo patrón todos los días de la semana.
+function computeDoseTimes_(frequencyHours, firstDoseTime) {
+  const freq = Number(frequencyHours);
+  if (!freq || freq <= 0) return [];
+  const parts = String(firstDoseTime || "00:00").split(":").map(Number);
+  const startMin = (parts[0] || 0) * 60 + (parts[1] || 0);
+  const count = Math.max(1, Math.min(24, Math.round(24 / freq)));
+  const times = [];
+  for (let i = 0; i < count; i++) {
+    const totalMin = Math.round(startMin + i * freq * 60) % (24 * 60);
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    times.push(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+  }
+  // Se ordenan por hora del día (00:00 primero), no en el orden en que se
+  // generaron a partir de la primera toma: cuando la frecuencia hace que una
+  // toma "de vuelta" pase medianoche (ej. cada 8h desde las 08:00 da
+  // 08:00, 16:00, 00:00), ese 00:00 es una hora del día como cualquier otra
+  // y tiene que quedar ANTES de 08:00 al comparar contra la hora actual;
+  // dejarlo al final (como sale de la generación) rompe la comparación
+  // secuencial que usa el escaneo de recordatorios para saber cuál es "la
+  // siguiente toma".
+  times.sort((a, b) => timeStrToMinutes_(a) - timeStrToMinutes_(b));
+  return times;
+}
+function timeStrToMinutes_(t) {
+  const parts = String(t).split(":").map(Number);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+}
+// La app no le pide zona horaria a cada paciente (es una app familiar, de un
+// solo huso horario); se fija a America/Mexico_City para que "hoy" y "ahora"
+// signifiquen lo mismo en el escaneo de recordatorios (que corre en el
+// servidor, en UTC) que en la hora de pared del paciente.
+const APP_TIMEZONE = "America/Mexico_City";
+function nowInAppTz_() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date());
+  const map = {};
+  parts.forEach(p => { map[p.type] = p.value; });
+  const dateStr = `${map.year}-${map.month}-${map.day}`;
+  const hour = map.hour === "24" ? 0 : Number(map.hour);
+  return { dateStr, minutesOfDay: hour * 60 + Number(map.minute) };
+}
+function medicationRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    name: row.name,
+    active_substance: row.active_substance || "",
+    mg: row.mg != null ? Number(row.mg) : null,
+    dose_text: row.dose_text || "",
+    frequency_hours: row.frequency_hours != null ? Number(row.frequency_hours) : null,
+    first_dose_time: row.first_dose_time || "",
+    active: !!row.active,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+    times: computeDoseTimes_(row.frequency_hours, row.first_dose_time),
+  };
+}
+async function listMedications(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, name, active_substance, mg, dose_text, frequency_hours,
+            to_char(first_dose_time, 'HH24:MI') AS first_dose_time, active, created_at
+     FROM medicamentos WHERE patient_id = $1 AND active = true ORDER BY created_at ASC`,
+    [patientId]
+  );
+  return rows.map(medicationRowToObject_);
+}
+// Dosis del día para el panel de "tomas de hoy" en la vista de paciente. Se
+// calculan las horas de cada medicamento y se cruzan con lo que ya exista en
+// medicamento_dosis para hoy; si aún no hay fila (porque ni el escaneo de
+// recordatorios ni el propio paciente la han tocado), se regresa como no
+// tomada, sin necesidad de crearla hasta que alguien la marque.
+async function listTodayDoses(patientId) {
+  const meds = await listMedications(patientId);
+  if (!meds.length) return [];
+  const { dateStr } = nowInAppTz_();
+  const { rows } = await pool.query(
+    `SELECT medication_id, to_char(dose_time, 'HH24:MI') AS dose_time, taken, taken_at
+     FROM medicamento_dosis WHERE patient_id = $1 AND dose_date = $2`,
+    [patientId, dateStr]
+  );
+  const byKey = new Map(rows.map(r => [`${r.medication_id}_${r.dose_time}`, r]));
+  const out = [];
+  for (const med of meds) {
+    for (const time of med.times) {
+      const existing = byKey.get(`${med.id}_${time}`);
+      out.push({
+        medication_id: med.id, medication_name: med.name, dose_text: med.dose_text, mg: med.mg,
+        dose_date: dateStr, dose_time: time,
+        taken: existing ? !!existing.taken : false,
+        taken_at: existing && existing.taken_at ? new Date(existing.taken_at).toISOString() : "",
+      });
+    }
+  }
+  return out;
+}
+// El paciente puede marcar o desmarcar una toma de hoy; se resuelve la fecha
+// del lado del servidor (nunca a partir de lo que mande el cliente) para que
+// siempre coincida con lo que el escaneo de recordatorios considera "hoy".
+async function setDoseTaken(patientId, medicationId, doseTime, taken) {
+  const { dateStr } = nowInAppTz_();
+  const id = uuid();
+  await pool.query(
+    `INSERT INTO medicamento_dosis (id, medication_id, patient_id, dose_date, dose_time, taken, taken_at, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (medication_id, dose_date, dose_time) DO UPDATE SET taken = $6, taken_at = $7`,
+    [id, medicationId, patientId, dateStr, doseTime, !!taken, taken ? nowIso() : null, nowIso()]
+  );
+}
+// Escaneo periódico (ver setInterval en server.js): por cada medicamento
+// activo, calcula las horas del día que ya se cumplieron y, si nadie las ha
+// marcado como tomadas, manda un recordatorio push — la primera vez en
+// cuanto se cumple la hora, y luego cada 30 minutos, pero solo hasta que
+// llegue la hora de la siguiente toma programada (después de eso ya no tiene
+// caso seguir insistiendo por una que quedó atrás).
+const MEDICATION_REMINDER_INTERVAL_MIN = 30;
+async function scanMedicationReminders() {
+  const { rows: meds } = await pool.query(`SELECT * FROM medicamentos WHERE active = true`);
+  if (!meds.length) return;
+  const { dateStr, minutesOfDay } = nowInAppTz_();
+  for (const med of meds) {
+    const times = computeDoseTimes_(med.frequency_hours, med.first_dose_time);
+    if (!times.length) continue;
+    for (let i = 0; i < times.length; i++) {
+      const doseMin = timeStrToMinutes_(times[i]);
+      if (minutesOfDay < doseMin) continue; // todavía no toca
+      const cutoffMin = i + 1 < times.length ? timeStrToMinutes_(times[i + 1]) : (24 * 60 + timeStrToMinutes_(times[0]));
+      if (minutesOfDay >= cutoffMin) continue; // ya se pasó a la siguiente toma
+      const newId = uuid();
+      await pool.query(
+        `INSERT INTO medicamento_dosis (id, medication_id, patient_id, dose_date, dose_time, taken, created_at)
+         VALUES ($1,$2,$3,$4,$5,false,$6)
+         ON CONFLICT (medication_id, dose_date, dose_time) DO NOTHING`,
+        [newId, med.id, med.patient_id, dateStr, times[i], nowIso()]
+      );
+      const { rows: doseRows } = await pool.query(
+        `SELECT id, taken, last_reminder_at FROM medicamento_dosis WHERE medication_id = $1 AND dose_date = $2 AND dose_time = $3`,
+        [med.id, dateStr, times[i]]
+      );
+      const dose = doseRows[0];
+      if (!dose || dose.taken) continue;
+      const lastReminder = dose.last_reminder_at ? new Date(dose.last_reminder_at).getTime() : null;
+      const dueForReminder = !lastReminder || (Date.now() - lastReminder) >= MEDICATION_REMINDER_INTERVAL_MIN * 60 * 1000;
+      if (!dueForReminder) continue;
+      const label = med.dose_text ? `${med.dose_text} de ${med.name}` : med.name;
+      await createNotification("patient", med.patient_id, "medication_reminder",
+        `Es hora de tomar ${label}${med.mg ? ` (${med.mg} mg)` : ""}.`, med.id);
+      await pool.query(`UPDATE medicamento_dosis SET last_reminder_at = $1 WHERE id = $2`, [nowIso(), dose.id]);
+      emitChange(med.patient_id, "medication");
+    }
+  }
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -705,6 +864,12 @@ async function handleGet(params) {
   if (action === "list_lab_history") {
     return { ok: true, data: await listLabHistory(params.patient_id) };
   }
+  if (action === "list_medications") {
+    return { ok: true, data: await listMedications(params.patient_id) };
+  }
+  if (action === "list_today_doses") {
+    return { ok: true, data: await listTodayDoses(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -840,6 +1005,49 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM sintomas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "symptom");
+    return { ok: true };
+  }
+
+  // ---- Medicamentos (v30.8) ----
+  if (body.action === "add_medication") {
+    if (!body.name || !hasValue(body.frequency_hours) || !body.first_dose_time) {
+      return { ok: false, error: "faltan datos (nombre, frecuencia y hora de la primera toma son obligatorios)" };
+    }
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO medicamentos (id, patient_id, name, active_substance, mg, dose_text, frequency_hours, first_dose_time, active, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$9)`,
+      [id, body.patient_id, body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
+        num(body.frequency_hours), body.first_dose_time, now]
+    );
+    emitChange(body.patient_id, "medication");
+    return { ok: true, id };
+  }
+  if (body.action === "update_medication") {
+    if (!body.name || !hasValue(body.frequency_hours) || !body.first_dose_time) {
+      return { ok: false, error: "faltan datos (nombre, frecuencia y hora de la primera toma son obligatorios)" };
+    }
+    const { rowCount } = await pool.query(
+      `UPDATE medicamentos SET name = $1, active_substance = $2, mg = $3, dose_text = $4,
+              frequency_hours = $5, first_dose_time = $6, updated_at = $7
+       WHERE id = $8 AND patient_id = $9`,
+      [body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
+        num(body.frequency_hours), body.first_dose_time, now, body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "medication");
+    return { ok: true };
+  }
+  if (body.action === "delete_medication") {
+    const { rowCount } = await pool.query(`DELETE FROM medicamentos WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "medication");
+    return { ok: true };
+  }
+  if (body.action === "set_dose_taken") {
+    if (!body.medication_id || !body.dose_time) return { ok: false, error: "faltan datos" };
+    await setDoseTaken(body.patient_id, body.medication_id, body.dose_time, !!body.taken);
+    emitChange(body.patient_id, "medication");
     return { ok: true };
   }
 
@@ -1349,4 +1557,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders };

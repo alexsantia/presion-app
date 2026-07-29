@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.7"></script>
+<script src="/shared/common.js?v=30.8"></script>
 <style>
   :root {
     color-scheme: light;
@@ -62,6 +62,14 @@
   .chart-filter-btn { border: none; background: transparent; color: var(--text-muted); font-size: 12px; padding: 5px 11px; border-radius: 6px; cursor: pointer; }
   .chart-filter-btn:hover { background: var(--accent-soft); color: var(--text); }
   .chart-filter-btn.active { background: var(--accent); color: white; }
+  /* v30.8: panel de filtro general de Estadísticas + filtro propio de cada
+     gráfica (ver nota completa en index.html). */
+  .stats-filter-panel { background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+  .stats-filter-panel .toolbar { margin-bottom: 4px; }
+  .stats-filter-panel h2 { font-size: 14.5px; }
+  .chart-filter-mini { display: flex; gap: 3px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+  .chart-filter-mini .chart-filter-btn { font-size: 11px; padding: 3px 8px; }
+  .chart-filter-mini.is-override { border-color: var(--accent); }
   .chart-day-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-family: inherit; color: var(--text); }
   .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
   .pagination-controls { display: flex; align-items: center; gap: 10px; }
@@ -104,16 +112,29 @@
 
   /* v30.4: navegación por secciones de la página (Presión Arterial / Estadísticas / Catálogo) */
   .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
-  .page-tab-btn { position: relative; overflow: hidden; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
-    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-radius: 6px; }
+  .page-tab-btn { position: relative; overflow: visible; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-  /* v30.7: destello al seleccionar una pestaña */
-  .page-tab-btn.tab-flash { animation: tabFlash_ 0.5s ease-out; }
-  @keyframes tabFlash_ {
-    0% { background-color: var(--accent-soft); }
-    100% { background-color: transparent; }
+  /* v30.8: destello al seleccionar una pestaña — barra que recorre el ancho
+     del botón por debajo, más un ligero "pop" del texto (ver nota en
+     index.html sobre por qué se reemplazó el fundido de fondo anterior). */
+  .page-tab-btn::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+    background: var(--accent); transform: scaleX(0); transform-origin: left; opacity: 0;
+  }
+  .page-tab-btn.tab-flash { animation: tabPop_ 0.35s ease; }
+  .page-tab-btn.tab-flash::after { animation: tabSweep_ 0.45s ease-out; }
+  @keyframes tabPop_ {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+  @keyframes tabSweep_ {
+    0% { transform: scaleX(0); opacity: 1; }
+    65% { transform: scaleX(1); opacity: 1; }
+    100% { transform: scaleX(1); opacity: 0; }
   }
 
   /* v29: responsivo para celular */
@@ -139,6 +160,7 @@
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -244,12 +266,25 @@
 <!-- /tabPresion -->
 
 <div id="tabEstadisticas" class="tab-panel" style="display:none;">
+  <div class="section stats-filter-panel">
+    <div class="toolbar">
+      <h2 style="flex:1">Filtro general</h2>
+      <div class="chart-filter" id="statsGeneralFilter" role="group" aria-label="Periodo general">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+      <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro; "Eliminar filtros" regresa todas a seguir este filtro general.</p>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Comparar por franja horaria</h2>
-      <div class="chart-filter" id="statsChartFilter" role="group" aria-label="Periodo a comparar">
-        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
-        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+      <div class="chart-filter-mini" data-chart-key="timeOfDay" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
       </div>
     </div>
@@ -259,31 +294,66 @@
   </div>
 
   <div class="section section-chart">
-    <h2>Frecuencia cardíaca</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Frecuencia cardíaca</h2>
+      <div class="chart-filter-mini" data-chart-key="hr" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsHrChart"></canvas></div>
     <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Peso</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Peso</h2>
+      <div class="chart-filter-mini" data-chart-key="weight" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsWeightChart"></canvas></div>
     <div id="statsWeightEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con peso registrado.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Perímetro abdominal</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Perímetro abdominal</h2>
+      <div class="chart-filter-mini" data-chart-key="waist" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsWaistChart"></canvas></div>
     <div id="statsWaistEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de perímetro abdominal.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Triglicéridos</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Triglicéridos</h2>
+      <div class="chart-filter-mini" data-chart-key="triglycerides" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsTriglyceridesChart"></canvas></div>
     <div id="statsTriglyceridesEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de triglicéridos.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Colesterol</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Colesterol</h2>
+      <div class="chart-filter-mini" data-chart-key="cholesterol" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
     <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol.</div>
   </div>
@@ -301,7 +371,15 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.7</button></footer>
+<div id="tabMedicamentos" class="tab-panel" style="display:none;">
+<div class="section">
+  <h2>Medicamentos</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Medicamentos registrados (solo lectura). El calendario semanal se calcula solo a partir de la frecuencia.</p>
+  <div id="medicationsListWrap"></div>
+</div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.8</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -331,6 +409,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabPresion").style.display = btn.dataset.pageTab === "presion" ? "" : "none";
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
+    document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
 });
@@ -370,6 +449,8 @@ async function load() {
     currentReactions = json.data.reactions || [];
     reactionsGrouped = groupReactionsByTarget(currentReactions);
     currentLabHistory = json.data.labHistory || [];
+    ensureMedicationStyles_();
+    document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(json.data.medications || [], { readOnly: true });
     checkNewReactionsSinceLastVisit_();
     renderBroadcastBannerFromList(document.getElementById("broadcastBanner"), json.data.broadcasts || []);
     render();
@@ -526,7 +607,7 @@ document.getElementById("chartFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   chartGranularity = btn.dataset.granularity;
-  document.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll("#chartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   chartDayPickerEl.style.display = chartGranularity === "day" ? "inline-block" : "none";
   renderChart();
 });
@@ -577,11 +658,25 @@ function renderChart() {
   });
 }
 
+// ---- Estadísticas: filtro general + filtro propio por gráfica (v30.8,
+// ver nota completa en index.html) ----
+let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null };
+function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
+function syncStatsFilterButtons_() {
+  document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
+  document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    const eff = effectivePeriod_(key);
+    wrap.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === eff));
+    wrap.classList.toggle("is-override", !!statsChartOverrides[key]);
+  });
+}
+
 // ---- Estadísticas: comparación por franja horaria (v30.4) ----
 function renderStatsChart() {
   const canvas = document.getElementById("statsTimeOfDayChart");
   if (!canvas) return;
-  const grouped = timeOfDayComparisonData(currentData, statsChartPeriod);
+  const grouped = timeOfDayComparisonData(currentData, effectivePeriod_("timeOfDay"));
   const emptyEl = document.getElementById("statsTimeOfDayEmpty");
   const hasData = grouped.some(g => g.sys != null || g.dia != null);
   emptyEl.style.display = hasData ? "none" : "block";
@@ -618,43 +713,61 @@ function renderStatsChart() {
     },
   });
 }
-document.getElementById("statsChartFilter").addEventListener("click", e => {
+document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   statsChartPeriod = btn.dataset.statsPeriod;
-  document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  syncStatsFilterButtons_();
   renderStatsChart();
   renderLabHistoryCharts();
 });
+document.getElementById("tabEstadisticas").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-mini .chart-filter-btn");
+  if (!btn) return;
+  const key = btn.closest(".chart-filter-mini").dataset.chartKey;
+  statsChartOverrides[key] = btn.dataset.statsPeriod;
+  syncStatsFilterButtons_();
+  renderStatsChart();
+  renderLabHistoryCharts();
+});
+document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
+  Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
+  syncStatsFilterButtons_();
+  renderStatsChart();
+  renderLabHistoryCharts();
+});
+syncStatsFilterButtons_();
 
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
-// filtro de semana/mes/año agregado en v30.7 con el mismo selector de
-// "Comparar por franja horaria"). ----
+// filtro general + por gráfica en v30.8). ----
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
 function renderLabHistoryCharts() {
-  const periodData = filterByPeriodField_(currentData, statsChartPeriod, "date");
-  const periodLabHistory = filterByPeriodField_(currentLabHistory, statsChartPeriod, "fecha");
+  const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+  const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+  const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+  const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+  const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
   statsHrChartInstance = renderMetricTrendChart(
     statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(periodData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
   );
   statsWeightChartInstance = renderMetricTrendChart(
     statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(periodData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
   );
   statsWaistChartInstance = renderMetricTrendChart(
     statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesForKey_(periodLabHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    labHistorySeriesForKey_(waistHistory, "waist"), { label: "Cintura", color: "#D9A15F", unit: "cm" }
   );
   statsTriglyceridesChartInstance = renderMetricTrendChart(
     statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesForKey_(periodLabHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
+    labHistorySeriesForKey_(triHistory, "triglycerides"), { label: "Triglicéridos", color: "#B0559B", unit: "mg/dL" }
   );
   statsCholesterolChartInstance = renderMetricTrendChart(
     statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesForKey_(periodLabHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+    labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
   );
 }
 
@@ -718,7 +831,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.7");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.8");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

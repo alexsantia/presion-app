@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.7"></script>
+<script src="/shared/common.js?v=30.8"></script>
 <style>
   :root {
     color-scheme: light;
@@ -130,6 +130,17 @@
   .chart-filter-btn { border: none; background: transparent; color: var(--text-muted); font-size: 12px; padding: 5px 11px; border-radius: 6px; cursor: pointer; }
   .chart-filter-btn:hover { background: var(--accent-soft); color: var(--text); }
   .chart-filter-btn.active { background: var(--accent); color: white; }
+  /* v30.8: panel de filtro general de Estadísticas + filtro propio de cada
+     gráfica. El general aplica por default; cada gráfica puede decidir su
+     propio periodo (queda marcada con .is-override), y "Eliminar filtros"
+     regresa todas a seguir al general. */
+  .stats-filter-panel { background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+  .stats-filter-panel .toolbar { margin-bottom: 4px; }
+  .stats-filter-panel h2 { font-size: 14.5px; }
+  .chart-filter-mini { display: flex; gap: 3px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+  .chart-filter-mini .chart-filter-btn { font-size: 11px; padding: 3px 8px; }
+  .chart-filter-mini.is-override { border-color: var(--accent); }
+  .chart-filter-mini-label { font-size: 11px; color: var(--text-muted); margin-right: 4px; align-self: center; }
   .chart-day-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-family: inherit; color: var(--text); }
   .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
   .pagination-controls { display: flex; align-items: center; gap: 10px; }
@@ -229,16 +240,32 @@
 
   /* v29: navegación por secciones de la página (Presión Arterial / Estadísticas) */
   .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
-  .page-tab-btn { position: relative; overflow: hidden; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
-    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-radius: 6px; }
+  .page-tab-btn { position: relative; overflow: visible; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-  /* v30.7: destello al seleccionar una pestaña */
-  .page-tab-btn.tab-flash { animation: tabFlash_ 0.5s ease-out; }
-  @keyframes tabFlash_ {
-    0% { background-color: var(--accent-soft); }
-    100% { background-color: transparent; }
+  /* v30.8: destello al seleccionar una pestaña — una barra que recorre el
+     ancho del botón por debajo, más un ligero "pop" del texto. Antes se
+     usaba un fundido de fondo, pero el confeti genérico de cualquier botón
+     (wireConfettiOnAllButtons_) disparaba encima y lo tapaba por completo;
+     ahora las pestañas quedan excluidas del confeti y tienen esta animación
+     propia, claramente distinta. */
+  .page-tab-btn::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px;
+    background: var(--accent); transform: scaleX(0); transform-origin: left; opacity: 0;
+  }
+  .page-tab-btn.tab-flash { animation: tabPop_ 0.35s ease; }
+  .page-tab-btn.tab-flash::after { animation: tabSweep_ 0.45s ease-out; }
+  @keyframes tabPop_ {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+  @keyframes tabSweep_ {
+    0% { transform: scaleX(0); opacity: 1; }
+    65% { transform: scaleX(1); opacity: 1; }
+    100% { transform: scaleX(1); opacity: 0; }
   }
   .section-stats-soon { text-align: center; padding: 48px 20px; color: var(--text-muted); }
   .section-stats-soon h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
@@ -299,6 +326,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
   <button type="button" class="page-tab-btn" data-page-tab="catalogo">🩺 Catálogo de médicos</button>
   <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
+  <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
 </div>
 
 <div id="tabPresion" class="tab-panel">
@@ -475,12 +503,25 @@
 <!-- /tabPresion -->
 
 <div id="tabEstadisticas" class="tab-panel" style="display:none;">
+  <div class="section stats-filter-panel">
+    <div class="toolbar">
+      <h2 style="flex:1">Filtro general</h2>
+      <div class="chart-filter" id="statsGeneralFilter" role="group" aria-label="Periodo general">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+      <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Comparar por franja horaria</h2>
-      <div class="chart-filter" id="statsChartFilter" role="group" aria-label="Periodo a comparar">
-        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
-        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+      <div class="chart-filter-mini" data-chart-key="timeOfDay" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
       </div>
     </div>
@@ -490,33 +531,68 @@
   </div>
 
   <div class="section section-chart">
-    <h2>Frecuencia cardíaca</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Frecuencia cardíaca</h2>
+      <div class="chart-filter-mini" data-chart-key="hr" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsHrChart"></canvas></div>
     <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Peso</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Peso</h2>
+      <div class="chart-filter-mini" data-chart-key="weight" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsWeightChart"></canvas></div>
     <div id="statsWeightEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con peso registrado.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Perímetro abdominal</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Perímetro abdominal</h2>
+      <div class="chart-filter-mini" data-chart-key="waist" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsWaistChart"></canvas></div>
     <div id="statsWaistEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de perímetro abdominal. Se registrará la próxima vez que lo guardes en Parámetros.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Triglicéridos</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Triglicéridos</h2>
+      <div class="chart-filter-mini" data-chart-key="triglycerides" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsTriglyceridesChart"></canvas></div>
     <div id="statsTriglyceridesEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de triglicéridos. Se registrará la próxima vez que los guardes en Parámetros.</div>
   </div>
 
   <div class="section section-chart">
-    <h2>Colesterol</h2>
+    <div class="toolbar">
+      <h2 style="flex:1">Colesterol</h2>
+      <div class="chart-filter-mini" data-chart-key="cholesterol" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
     <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol. Se registrará la próxima vez que lo guardes en Parámetros.</div>
@@ -593,7 +669,35 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.7</footer>
+<div id="tabMedicamentos" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Tomas de hoy</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Marca cada toma en cuanto la hagas. Si no la marcas, te seguimos recordando cada 30 minutos hasta la siguiente toma programada.</p>
+    <div id="medDosesTodayWrap"></div>
+  </div>
+  <div class="section section-add">
+    <h2 id="medFormTitle">Agregar medicamento</h2>
+    <form class="add-form" id="medicationForm">
+      <div class="full"><label>Nombre del medicamento</label><input type="text" id="med_name" required placeholder="Ej. Losartán"></div>
+      <div><label>Sustancia activa</label><input type="text" id="med_active_substance" placeholder="Ej. Losartán potásico"></div>
+      <div><label>Miligramos</label><input type="number" id="med_mg" step="0.1" min="0"></div>
+      <div><label>Dosis</label><input type="text" id="med_dose_text" placeholder="Ej. 1 tableta"></div>
+      <div><label>Cada cuántas horas debe tomarse</label><input type="number" id="med_frequency_hours" min="1" max="24" step="1" required placeholder="Ej. 8"></div>
+      <div><label>Hora de la primera toma</label><input type="time" id="med_first_dose_time" required></div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary" id="medFormSubmitBtn">Agregar</button>
+        <button type="button" class="btn-secondary" id="medFormCancelBtn" style="display:none;">Cancelar edición</button>
+      </div>
+    </form>
+  </div>
+  <div class="section">
+    <h2>Tus medicamentos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">El calendario semanal se calcula solo a partir de la frecuencia; se repiten las mismas horas todos los días.</p>
+    <div id="medicationsListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.8</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1066,7 +1170,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.7");
+  showAboutOverlay_("30.8");
 });
 
 function openModal(id) {
@@ -1102,6 +1206,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabHabitos").style.display = btn.dataset.pageTab === "habitos" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
+    document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
   });
 });
 
@@ -1685,7 +1790,7 @@ document.getElementById("chartFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   chartGranularity = btn.dataset.granularity;
-  document.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  document.querySelectorAll("#chartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   chartDayPickerEl.style.display = chartGranularity === "day" ? "inline-block" : "none";
   renderChart();
 });
@@ -1737,11 +1842,28 @@ function renderChart() {
   });
 }
 
+// ---- Estadísticas: filtro general + filtro propio por gráfica (v30.8) ----
+// statsChartPeriod sigue siendo el filtro GENERAL (el que ya existía).
+// statsChartOverrides guarda, por gráfica, un periodo propio que la
+// desliga del general; null significa "sigue al general". effectivePeriod_
+// es lo que de verdad usa cada gráfica al dibujarse.
+let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null };
+function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
+function syncStatsFilterButtons_() {
+  document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
+  document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    const eff = effectivePeriod_(key);
+    wrap.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === eff));
+    wrap.classList.toggle("is-override", !!statsChartOverrides[key]);
+  });
+}
+
 // ---- Estadísticas: comparación por franja horaria (v30) ----
 function renderStatsChart() {
   const canvas = document.getElementById("statsTimeOfDayChart");
   if (!canvas) return;
-  const grouped = timeOfDayComparisonData(currentData, statsChartPeriod);
+  const grouped = timeOfDayComparisonData(currentData, effectivePeriod_("timeOfDay"));
   const emptyEl = document.getElementById("statsTimeOfDayEmpty");
   const hasData = grouped.some(g => g.sys != null || g.dia != null);
   emptyEl.style.display = hasData ? "none" : "block";
@@ -1778,14 +1900,33 @@ function renderStatsChart() {
     },
   });
 }
-document.getElementById("statsChartFilter").addEventListener("click", e => {
+document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   statsChartPeriod = btn.dataset.statsPeriod;
-  document.querySelectorAll("#statsChartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  syncStatsFilterButtons_();
   renderStatsChart();
   renderLabHistoryCharts();
 });
+// Un solo listener delegado para las mini-toolbars de cada gráfica: al
+// tocar Sem/Mes/Año ahí, esa gráfica en particular se desliga del filtro
+// general y usa su propio periodo desde ese momento.
+document.getElementById("tabEstadisticas").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-mini .chart-filter-btn");
+  if (!btn) return;
+  const key = btn.closest(".chart-filter-mini").dataset.chartKey;
+  statsChartOverrides[key] = btn.dataset.statsPeriod;
+  syncStatsFilterButtons_();
+  renderStatsChart();
+  renderLabHistoryCharts();
+});
+document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
+  Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
+  syncStatsFilterButtons_();
+  renderStatsChart();
+  renderLabHistoryCharts();
+});
+syncStatsFilterButtons_();
 
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
 // filtro de semana/mes/año agregado en v30.7 reutilizando el mismo selector
@@ -1808,27 +1949,30 @@ async function loadLabHistory() {
 }
 function renderLabHistoryCharts() {
   const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
-  const periodData = filterByPeriodField_(currentData, statsChartPeriod, "date");
-  const periodLabHistory = filterByPeriodField_(currentLabHistory, statsChartPeriod, "fecha");
+  const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+  const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+  const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+  const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+  const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
   statsHrChartInstance = renderMetricTrendChart(
     statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-    readingsSeriesForKey_(periodData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
+    readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
   );
   statsWeightChartInstance = renderMetricTrendChart(
     statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-    readingsSeriesForKey_(periodData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
+    readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
   );
   statsWaistChartInstance = renderMetricTrendChart(
     statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-    labHistorySeriesConverted_("waist", periodLabHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
+    labHistorySeriesConverted_("waist", waistHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
   );
   statsTriglyceridesChartInstance = renderMetricTrendChart(
     statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-    labHistorySeriesConverted_("triglycerides", periodLabHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
+    labHistorySeriesConverted_("triglycerides", triHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
   );
   statsCholesterolChartInstance = renderMetricTrendChart(
     statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-    labHistorySeriesConverted_("cholesterol", periodLabHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
+    labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
   );
 }
 loadLabHistory();
@@ -2207,6 +2351,111 @@ document.getElementById("symptomsListWrap").addEventListener("click", async e =>
 });
 loadSymptoms();
 
+// ---- Medicamentos (v30.8) ----
+// El calendario semanal se calcula solo (a partir de la frecuencia y la
+// hora de la primera toma), así que aquí solo se administra el CRUD del
+// medicamento y el checkbox de "tomas de hoy"; ver computeDoseTimes_ en
+// db-postgres.js para el cálculo real y scanMedicationReminders para el
+// recordatorio push cada 30 minutos si no se marca.
+let currentMedications = [];
+let editingMedicationId = null;
+async function loadMedications() {
+  ensureMedicationStyles_();
+  try { currentMedications = await apiGet("/api/medications"); } catch (err) { currentMedications = []; }
+  document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(currentMedications);
+}
+async function loadTodayDoses() {
+  ensureMedicationStyles_();
+  let doses = [];
+  try { doses = await apiGet("/api/medication-doses/today"); } catch (err) { doses = []; }
+  document.getElementById("medDosesTodayWrap").innerHTML = medicationDoseTodayHTML_(doses);
+}
+function resetMedicationForm_() {
+  editingMedicationId = null;
+  document.getElementById("medicationForm").reset();
+  document.getElementById("medFormTitle").textContent = "Agregar medicamento";
+  document.getElementById("medFormSubmitBtn").textContent = "Agregar";
+  document.getElementById("medFormCancelBtn").style.display = "none";
+}
+document.getElementById("medicationForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const name = document.getElementById("med_name").value.trim();
+  const frequencyHours = document.getElementById("med_frequency_hours").value;
+  const firstDoseTime = document.getElementById("med_first_dose_time").value;
+  if (!name || !frequencyHours || !firstDoseTime) return;
+  const mgRaw = document.getElementById("med_mg").value;
+  const payload = {
+    name,
+    active_substance: document.getElementById("med_active_substance").value.trim(),
+    mg: mgRaw !== "" ? Number(mgRaw) : null,
+    dose_text: document.getElementById("med_dose_text").value.trim(),
+    frequency_hours: Number(frequencyHours),
+    first_dose_time: firstDoseTime,
+  };
+  try {
+    if (editingMedicationId) {
+      await apiPut(`/api/medications/${editingMedicationId}`, payload);
+    } else {
+      await apiPost("/api/medications", payload);
+    }
+    resetMedicationForm_();
+    await loadMedications();
+    await loadTodayDoses();
+  } catch (err) {
+    alert("No se pudo guardar el medicamento: " + err.message);
+  }
+});
+document.getElementById("medFormCancelBtn").addEventListener("click", () => resetMedicationForm_());
+document.getElementById("medicationsListWrap").addEventListener("click", async e => {
+  const editBtn = e.target.closest(".medication-edit-btn");
+  if (editBtn) {
+    const med = currentMedications.find(m => m.id === editBtn.dataset.medicationId);
+    if (!med) return;
+    editingMedicationId = med.id;
+    document.getElementById("med_name").value = med.name || "";
+    document.getElementById("med_active_substance").value = med.active_substance || "";
+    document.getElementById("med_mg").value = med.mg != null ? med.mg : "";
+    document.getElementById("med_dose_text").value = med.dose_text || "";
+    document.getElementById("med_frequency_hours").value = med.frequency_hours != null ? med.frequency_hours : "";
+    document.getElementById("med_first_dose_time").value = med.first_dose_time || "";
+    document.getElementById("medFormTitle").textContent = "Editar medicamento";
+    document.getElementById("medFormSubmitBtn").textContent = "Guardar cambios";
+    document.getElementById("medFormCancelBtn").style.display = "";
+    document.getElementById("medicationForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  const delBtn = e.target.closest(".medication-delete-btn");
+  if (delBtn) {
+    if (!confirm("¿Eliminar este medicamento?")) return;
+    try {
+      await apiDelete(`/api/medications/${delBtn.dataset.medicationId}`);
+      if (editingMedicationId === delBtn.dataset.medicationId) resetMedicationForm_();
+      await loadMedications();
+      await loadTodayDoses();
+    } catch (err) {
+      alert("No se pudo eliminar: " + err.message);
+    }
+  }
+});
+document.getElementById("medDosesTodayWrap").addEventListener("change", async e => {
+  const cb = e.target.closest(".med-dose-checkbox");
+  if (!cb) return;
+  try {
+    await apiPost("/api/medication-doses/mark", {
+      medication_id: cb.dataset.medicationId,
+      dose_time: cb.dataset.doseTime,
+      taken: cb.checked,
+    });
+    await loadTodayDoses();
+  } catch (err) {
+    alert("No se pudo actualizar: " + err.message);
+    cb.checked = !cb.checked;
+  }
+});
+loadMedications();
+loadTodayDoses();
+setInterval(loadTodayDoses, 60000);
+
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
 // misma cuenta abierta en más de un dispositivo, o mientras tu médico
@@ -2217,6 +2466,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "habit") loadHabits();
   if (kind === "symptom") loadSymptoms();
   if (kind === "lab_history") loadLabHistory();
+  if (kind === "medication") { loadMedications(); loadTodayDoses(); }
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

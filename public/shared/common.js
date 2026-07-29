@@ -610,6 +610,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.8", changes: [
+    "Nueva sección de Medicamentos: nombre, sustancia activa, miligramos, dosis y cada cuánto debe tomarse. El calendario semanal se calcula solo, a partir de la frecuencia.",
+    "Recordatorio push para tomar el medicamento, con casilla para marcarlo como tomado; si no se marca, se vuelve a recordar cada 30 minutos hasta la siguiente toma.",
+    "Las gráficas de Estadísticas ahora tienen un filtro general y, además, cada gráfica puede tener su propio filtro independiente, con un botón para quitarlos todos.",
+    "Nueva animación al cambiar de pestaña, separada del efecto de confeti de los demás botones.",
+  ] },
   { version: "30.7", changes: [
     "Las gráficas de Estadísticas ahora respetan el filtro de semana, mes y año.",
     "Los puntos de las gráficas de frecuencia cardíaca y peso muestran la observación de esa lectura al pasar el cursor.",
@@ -821,6 +827,102 @@ function renderSymptomsListHTML(symptoms, opts) {
     return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay síntomas registrados.</div>`;
   }
   return symptoms.map(s => symptomEntryHTML_(s, opts)).join("");
+}
+
+// ---- Medicamentos (v30.8) ----
+// El calendario semanal no se captura a mano: el servidor ya manda, por cada
+// medicamento, las horas del día calculadas a partir de la frecuencia (ver
+// computeDoseTimes_ en db-postgres.js). Aquí solo se pintan como una
+// cuadrícula de 7 días con esas mismas horas repetidas cada día (una toma
+// programada por horas se repite todos los días, no varía por día de la
+// semana), a modo de vista de solo lectura del horario.
+const MEDICATION_WEEKDAY_LABELS_ = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+function medicationWeeklyCalendarHTML_(times) {
+  if (!times || !times.length) {
+    return `<div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Sin horario calculado todavía.</div>`;
+  }
+  const cols = MEDICATION_WEEKDAY_LABELS_.map(day => `
+    <div class="med-cal-day">
+      <div class="med-cal-day-label">${day}</div>
+      ${times.map(t => `<div class="med-cal-chip">${escapeHtml_(t)}</div>`).join("")}
+    </div>`).join("");
+  return `<div class="med-cal-grid">${cols}</div>`;
+}
+function medicationEntryHTML_(m, opts) {
+  opts = opts || {};
+  const detailParts = [];
+  if (m.active_substance) detailParts.push(escapeHtml_(m.active_substance));
+  if (m.mg != null) detailParts.push(`${m.mg} mg`);
+  if (m.dose_text) detailParts.push(escapeHtml_(m.dose_text));
+  const freqLabel = m.frequency_hours
+    ? `Cada ${m.frequency_hours} hora${Number(m.frequency_hours) === 1 ? "" : "s"}${m.first_dose_time ? " · primera toma " + escapeHtml_(m.first_dose_time) : ""}`
+    : "";
+  const actions = opts.readOnly ? "" : `
+    <div class="med-entry-actions">
+      <button type="button" class="btn-mini medication-edit-btn" data-medication-id="${m.id}">Editar</button>
+      <button type="button" class="btn-mini danger medication-delete-btn" data-medication-id="${m.id}">Eliminar</button>
+    </div>`;
+  return `
+    <div class="med-entry" data-medication-id="${m.id}">
+      <div class="med-entry-header">
+        <div class="med-entry-title">💊 ${escapeHtml_(m.name)}</div>
+        ${actions}
+      </div>
+      ${detailParts.length ? `<div class="med-entry-detail">${detailParts.join(" · ")}</div>` : ""}
+      ${freqLabel ? `<div class="med-entry-freq">${freqLabel}</div>` : ""}
+      ${medicationWeeklyCalendarHTML_(m.times)}
+    </div>`;
+}
+// opts: { readOnly } — doctor.html y familia.html usan readOnly:true.
+function renderMedicationsListHTML(medications, opts) {
+  if (!medications || !medications.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún medicamento.</div>`;
+  }
+  return medications.map(m => medicationEntryHTML_(m, opts)).join("");
+}
+function ensureMedicationStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-medication-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-medication-styles";
+  style.textContent = `
+    .med-entry { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .med-entry:last-child { border-bottom: none; }
+    .med-entry-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .med-entry-title { font-weight: 650; font-size: 14px; }
+    .med-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .med-entry-detail { font-size: 13px; color: var(--text); margin-top: 3px; }
+    .med-entry-freq { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .med-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 8px; }
+    .med-cal-day { text-align: center; background: var(--accent-soft); border-radius: 8px; padding: 5px 2px; }
+    .med-cal-day-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 3px; }
+    .med-cal-chip { font-size: 10px; background: var(--bg-page, white); color: var(--accent-hover, var(--accent)); border-radius: 5px; padding: 1px 2px; margin-top: 2px; }
+    @media (max-width: 560px) {
+      .med-cal-grid { grid-template-columns: repeat(7, 1fr); gap: 3px; }
+      .med-cal-day-label { font-size: 9px; }
+      .med-cal-chip { font-size: 8.5px; }
+    }
+    .med-dose-today-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .med-dose-today-row:last-child { border-bottom: none; }
+    .med-dose-today-row input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
+    .med-dose-time { font-weight: 700; font-size: 13px; color: var(--accent); min-width: 44px; }
+    .med-dose-name { font-size: 13px; color: var(--text); }
+    .med-dose-today-row.is-taken .med-dose-name, .med-dose-today-row.is-taken .med-dose-time { color: var(--text-muted); text-decoration: line-through; }
+  `;
+  document.head.appendChild(style);
+}
+// Panel de "tomas de hoy" (solo vista de paciente): una casilla por cada
+// hora programada de cada medicamento activo, para marcarla como tomada.
+function medicationDoseTodayHTML_(doses) {
+  if (!doses || !doses.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">No hay medicamentos programados por ahora.</div>`;
+  }
+  const sorted = doses.slice().sort((a, b) => a.dose_time.localeCompare(b.dose_time));
+  return sorted.map(d => `
+    <label class="med-dose-today-row ${d.taken ? "is-taken" : ""}" data-medication-id="${d.medication_id}" data-dose-time="${d.dose_time}">
+      <input type="checkbox" class="med-dose-checkbox" data-medication-id="${d.medication_id}" data-dose-time="${d.dose_time}" ${d.taken ? "checked" : ""}>
+      <span class="med-dose-time">${escapeHtml_(d.dose_time)}</span>
+      <span class="med-dose-name">${escapeHtml_(d.medication_name)}${d.dose_text ? " — " + escapeHtml_(d.dose_text) : ""}</span>
+    </label>`).join("");
 }
 
 // ---- Utilidades varias ----
@@ -1321,12 +1423,18 @@ function fireConfetti(originEl, count) {
 // solo listener delegado en el documento; se usan menos partículas aquí
 // para que no se sienta excesivo en botones de uso muy frecuente (paginar,
 // cerrar un modal, filtros).
+// v30.8: los botones de pestañas de sección (.page-tab-btn) tienen su propia
+// animación de destello (ver flashTab_ en cada página) — antes también les
+// caía el confeti genérico de aquí abajo, encimando ambos efectos y tapando
+// el destello por completo. Se excluyen para que la pestaña se vea con una
+// sola animación, distinta a la de los demás botones.
 function wireConfettiOnAllButtons_() {
   if (typeof document === "undefined" || document.body.dataset.confettiWired) return;
   document.body.dataset.confettiWired = "1";
   document.addEventListener("click", e => {
     const btn = e.target.closest("button");
     if (!btn || btn.disabled) return;
+    if (btn.classList.contains("page-tab-btn") || btn.hasAttribute("data-page-tab")) return;
     fireConfetti(btn, 22);
   });
 }
