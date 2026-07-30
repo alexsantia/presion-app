@@ -450,6 +450,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const labHistoryResult = await callSheetsApi({ action: "list_lab_history", patient_id: patient.id });
   const medicationsResult = await callSheetsApi({ action: "list_medications", patient_id: patient.id });
   const exercisesResult = await callSheetsApi({ action: "list_exercises", patient_id: patient.id });
+  const medAdherenceResult = await callSheetsApi({ action: "list_medication_adherence", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -460,6 +461,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       labHistory: labHistoryResult.ok ? labHistoryResult.data : [],
       medications: medicationsResult.ok ? medicationsResult.data : [],
       exercises: exercisesResult.ok ? exercisesResult.data : [],
+      medAdherence: medAdherenceResult.ok ? medAdherenceResult.data : [],
     },
   });
 }));
@@ -596,6 +598,9 @@ app.post("/api/medication-doses/mark", requireRole("patient"), asyncRoute(async 
 // ---- Ejercicio (v30.10): captura manual, calorías calculadas en el servidor ----
 app.get("/api/exercise-types", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_exercise_types" }));
+}));
+app.get("/api/medication-adherence", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_medication_adherence", patient_id: req.session.patientId }));
 }));
 app.get("/api/exercises", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_exercises", patient_id: req.session.patientId }));

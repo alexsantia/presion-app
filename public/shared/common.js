@@ -610,6 +610,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.11", changes: [
+    "Corregido: el recordatorio de una toma programada para más tarde hoy ya no sonaba de inmediato al crear el medicamento.",
+    "Nueva interfaz de frecuencia en Medicamentos: además de cada cuántas horas, ahora se puede indicar cada cuántos días o semanas.",
+    "Nuevo campo de duración del tratamiento en Medicamentos: fecha de inicio y fecha de fin, o periodo indefinido.",
+    "Nuevas gráficas en Estadísticas: calorías quemadas por ejercicio y porcentaje de apego a los medicamentos.",
+  ] },
   { version: "30.10", changes: [
     "Corregido: el panel de notificaciones se salía de la pantalla en móvil.",
     "Nueva pestaña de Ejercicio: registra tipo, duración y fecha; las calorías se calculan solas con tu peso, estatura, edad y género.",
@@ -903,20 +909,47 @@ function medicationWeeklyCalendarHTML_(times) {
     </div>`).join("");
   return `<div class="med-cal-grid">${cols}</div>`;
 }
+// v30.11: descripción de la frecuencia según la unidad (antes solo existían
+// horas, tope de 24 — no alcanzaba para "cada 3 días" ni "cada semana").
+function medicationFrequencyLabel_(m) {
+  const unit = m.frequency_unit || "hours";
+  const value = m.frequency_value != null ? m.frequency_value : m.frequency_hours;
+  if (value == null) return "";
+  const n = Number(value);
+  if (unit === "days") return `Cada ${n} día${n === 1 ? "" : "s"}`;
+  if (unit === "weeks") return `Cada ${n === 1 ? "semana" : n + " semanas"}`;
+  return `Cada ${n} hora${n === 1 ? "" : "s"}`;
+}
+// Rango de vigencia del tratamiento: "Desde dd/mm/aaaa" (indefinido) o
+// "Del dd/mm/aaaa al dd/mm/aaaa" si tiene fecha de fin.
+function medicationDateRangeLabel_(m) {
+  if (!m.start_date) return "";
+  const fmt = s => s.split("-").reverse().join("/");
+  return m.end_date ? `Del ${fmt(m.start_date)} al ${fmt(m.end_date)}` : `Desde ${fmt(m.start_date)}, indefinido`;
+}
 function medicationEntryHTML_(m, opts) {
   opts = opts || {};
   const detailParts = [];
   if (m.active_substance) detailParts.push(escapeHtml_(m.active_substance));
   if (m.mg != null) detailParts.push(`${m.mg} mg`);
   if (m.dose_text) detailParts.push(escapeHtml_(m.dose_text));
-  const freqLabel = m.frequency_hours
-    ? `Cada ${m.frequency_hours} hora${Number(m.frequency_hours) === 1 ? "" : "s"}${m.first_dose_time ? " · primera toma " + escapeHtml_(m.first_dose_time) : ""}`
+  const unit = m.frequency_unit || "hours";
+  const freqBase = medicationFrequencyLabel_(m);
+  const freqLabel = freqBase
+    ? `${freqBase}${m.first_dose_time ? " · primera toma " + escapeHtml_(m.first_dose_time) : ""}`
     : "";
+  const dateRangeLabel = medicationDateRangeLabel_(m);
   const actions = opts.readOnly ? "" : `
     <div class="med-entry-actions">
       <button type="button" class="btn-mini medication-edit-btn" data-medication-id="${m.id}">Editar</button>
       <button type="button" class="btn-mini danger medication-delete-btn" data-medication-id="${m.id}">Eliminar</button>
     </div>`;
+  // El calendario semanal (cuadrícula de 7 días) solo tiene sentido para
+  // frecuencia por horas, donde de verdad se repite todos los días; para
+  // días/semanas se muestra en su lugar el rango de vigencia como texto.
+  const scheduleHTML = unit === "hours"
+    ? medicationWeeklyCalendarHTML_(m.times)
+    : (dateRangeLabel ? `<div class="med-entry-daterange">📅 ${escapeHtml_(dateRangeLabel)}</div>` : "");
   return `
     <div class="med-entry" data-medication-id="${m.id}">
       <div class="med-entry-header">
@@ -925,7 +958,8 @@ function medicationEntryHTML_(m, opts) {
       </div>
       ${detailParts.length ? `<div class="med-entry-detail">${detailParts.join(" · ")}</div>` : ""}
       ${freqLabel ? `<div class="med-entry-freq">${freqLabel}</div>` : ""}
-      ${medicationWeeklyCalendarHTML_(m.times)}
+      ${unit === "hours" && dateRangeLabel ? `<div class="med-entry-daterange">📅 ${escapeHtml_(dateRangeLabel)}</div>` : ""}
+      ${scheduleHTML}
     </div>`;
 }
 // opts: { readOnly } — doctor.html y familia.html usan readOnly:true.
@@ -947,6 +981,7 @@ function ensureMedicationStyles_() {
     .med-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .med-entry-detail { font-size: 13px; color: var(--text); margin-top: 3px; }
     .med-entry-freq { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .med-entry-daterange { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .med-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 8px; }
     .med-cal-day { text-align: center; background: var(--accent-soft); border-radius: 8px; padding: 5px 2px; }
     .med-cal-day-label { font-size: 10.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 3px; }

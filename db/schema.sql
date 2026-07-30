@@ -280,6 +280,22 @@ CREATE TABLE IF NOT EXISTS medicamentos (
 );
 CREATE INDEX IF NOT EXISTS idx_medicamentos_patient ON medicamentos(patient_id);
 
+-- v30.11: frecuencia por horas/días/semanas (antes solo horas, máx 24 — no
+-- alcanzaba para "cada 3 días" o "cada semana"), más duración del tratamiento
+-- (fecha de inicio/fin, o indefinido si end_date es NULL). frequency_hours se
+-- deja de exigir NOT NULL porque para unit='days'/'weeks' ya no aplica
+-- directamente (se respalda igual con un equivalente en horas por si algún
+-- código viejo lo lee, pero la fuente de verdad ahora es frequency_unit +
+-- frequency_value). start_date default CURRENT_DATE para que los
+-- medicamentos ya existentes (creados antes de esta versión) sigan activos
+-- desde ya, sin fecha de inicio futura que los desactive por accidente.
+ALTER TABLE medicamentos ALTER COLUMN frequency_hours DROP NOT NULL;
+ALTER TABLE medicamentos ADD COLUMN IF NOT EXISTS frequency_unit text NOT NULL DEFAULT 'hours';
+ALTER TABLE medicamentos ADD COLUMN IF NOT EXISTS frequency_value numeric;
+ALTER TABLE medicamentos ADD COLUMN IF NOT EXISTS start_date date NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE medicamentos ADD COLUMN IF NOT EXISTS end_date date;
+UPDATE medicamentos SET frequency_value = frequency_hours WHERE frequency_value IS NULL;
+
 -- v30.9: perfil ampliado del médico en el catálogo ("carta de presentación").
 -- Mínimo obligatorio para publicarse (validado en update_doctor_catalog_profile):
 -- especialidad, modalidad de atención y contacto. Todo lo demás es opcional,

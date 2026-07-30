@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.10"></script>
+<script src="/shared/common.js?v=30.11"></script>
 <style>
   :root {
     color-scheme: light;
@@ -362,6 +362,34 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
     <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol.</div>
   </div>
+
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Ejercicio (calorías quemadas)</h2>
+      <div class="chart-filter-mini" data-chart-key="exercise" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Suma de calorías estimadas por día, según lo registrado en la pestaña Ejercicio.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsExerciseChart"></canvas></div>
+    <div id="statsExerciseEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay ejercicio registrado.</div>
+  </div>
+
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Apego a medicamentos</h2>
+      <div class="chart-filter-mini" data-chart-key="medAdherence" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Porcentaje de tomas programadas que se marcaron como tomadas cada día.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsMedAdherenceChart"></canvas></div>
+    <div id="statsMedAdherenceEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay medicamentos con tomas programadas.</div>
+  </div>
 </div>
 
 <div id="tabCatalogo" class="tab-panel" style="display:none;">
@@ -393,7 +421,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.10</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.11</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -467,8 +495,10 @@ async function load() {
     ensureMedicationStyles_();
     document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(json.data.medications || [], { readOnly: true });
     ensureExerciseStyles_();
-    document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(json.data.exercises || []);
-    document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(json.data.exercises || [], { readOnly: true });
+    currentExercises = json.data.exercises || [];
+    currentMedAdherence = json.data.medAdherence || [];
+    document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
+    document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises, { readOnly: true });
     checkNewReactionsSinceLastVisit_();
     renderBroadcastBannerFromList(document.getElementById("broadcastBanner"), json.data.broadcasts || []);
     render();
@@ -678,7 +708,7 @@ function renderChart() {
 
 // ---- Estadísticas: filtro general + filtro propio por gráfica (v30.8,
 // ver nota completa en index.html) ----
-let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null };
+let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -762,8 +792,19 @@ syncStatsFilterButtons_();
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
 // filtro general + por gráfica en v30.8). ----
 let currentLabHistory = [];
+let currentExercises = [];
+let currentMedAdherence = [];
+function exerciseDailyTotalsForChart_() {
+  const byDay = new Map();
+  for (const ex of currentExercises || []) {
+    if (ex.calorias == null) continue;
+    byDay.set(ex.fecha, (byDay.get(ex.fecha) || 0) + Number(ex.calorias));
+  }
+  return Array.from(byDay.entries()).map(([fecha, calorias]) => ({ fecha, calorias })).sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
-    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
+    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null,
+    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null;
 // v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas nada más,
 // para que el filtro propio de una gráfica no haga parpadear a las demás.
 function renderLabHistoryCharts(onlyKeys) {
@@ -802,6 +843,20 @@ function renderLabHistoryCharts(onlyKeys) {
     statsCholesterolChartInstance = renderMetricTrendChart(
       statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
       labHistorySeriesForKey_(cholHistory, "cholesterol"), { label: "Colesterol", color: "#D98E5F", unit: "mg/dL" }
+    );
+  }
+  if (shouldRender("exercise")) {
+    const exerciseHistory = filterByPeriodField_(exerciseDailyTotalsForChart_(), effectivePeriod_("exercise"), "fecha");
+    statsExerciseChartInstance = renderMetricTrendChart(
+      statsExerciseChartInstance, document.getElementById("statsExerciseChart"), document.getElementById("statsExerciseEmpty"),
+      labHistorySeriesForKey_(exerciseHistory, "calorias"), { label: "Calorías", color: "#2E9E96", unit: "kcal" }
+    );
+  }
+  if (shouldRender("medAdherence")) {
+    const adherenceHistory = filterByPeriodField_(currentMedAdherence, effectivePeriod_("medAdherence"), "fecha");
+    statsMedAdherenceChartInstance = renderMetricTrendChart(
+      statsMedAdherenceChartInstance, document.getElementById("statsMedAdherenceChart"), document.getElementById("statsMedAdherenceEmpty"),
+      labHistorySeriesForKey_(adherenceHistory, "pct"), { label: "% de apego", color: "#D9A15F", unit: "%" }
     );
   }
 }
@@ -866,7 +921,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.10");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.11");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

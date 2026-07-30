@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.10"></script>
+<script src="/shared/common.js?v=30.11"></script>
 <style>
   :root {
     color-scheme: light;
@@ -617,6 +617,35 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="statsCholesterolChart"></canvas></div>
     <div id="statsCholesterolEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de colesterol. Se registrará la próxima vez que lo guardes en Parámetros.</div>
   </div>
+
+  <!-- v30.11: gráficas de Ejercicio y apego a medicamentos -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Ejercicio (calorías quemadas)</h2>
+      <div class="chart-filter-mini" data-chart-key="exercise" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Suma de calorías estimadas por día, según lo registrado en la pestaña Ejercicio.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsExerciseChart"></canvas></div>
+    <div id="statsExerciseEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay ejercicio registrado.</div>
+  </div>
+
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Apego a medicamentos</h2>
+      <div class="chart-filter-mini" data-chart-key="medAdherence" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Porcentaje de tomas programadas que se marcaron como tomadas cada día.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsMedAdherenceChart"></canvas></div>
+    <div id="statsMedAdherenceEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay medicamentos con tomas programadas.</div>
+  </div>
 </div>
 
 <div id="tabHabitos" class="tab-panel" style="display:none;">
@@ -702,8 +731,23 @@
       <div><label>Sustancia activa</label><input type="text" id="med_active_substance" placeholder="Ej. Losartán potásico"></div>
       <div><label>Miligramos</label><input type="number" id="med_mg" step="0.1" min="0"></div>
       <div><label>Dosis</label><input type="text" id="med_dose_text" placeholder="Ej. 1 tableta"></div>
-      <div><label>Cada cuántas horas debe tomarse</label><input type="number" id="med_frequency_hours" min="1" max="24" step="1" required placeholder="Ej. 8"></div>
+      <div><label>Cada cuánto debe tomarse</label>
+        <div style="display:flex; gap:6px;">
+          <input type="number" id="med_frequency_value" min="1" step="1" required placeholder="Ej. 8" style="flex:1; min-width:0;">
+          <select id="med_frequency_unit" style="flex:1; min-width:0; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+            <option value="hours">Horas</option>
+            <option value="days">Días</option>
+            <option value="weeks">Semanas</option>
+          </select>
+        </div>
+        <div style="font-size:11px; color:var(--text-muted); margin-top:3px;" id="med_frequency_hint">Ej. "cada 8 horas", "cada 3 días" o "cada semana".</div>
+      </div>
       <div><label>Hora de la primera toma</label><input type="time" id="med_first_dose_time" required></div>
+      <div><label>Fecha de inicio del tratamiento</label><input type="date" id="med_start_date" required></div>
+      <div>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; margin-top:22px;"><input type="checkbox" id="med_indefinite" checked> Tratamiento indefinido</label>
+        <input type="date" id="med_end_date" style="display:none; margin-top:6px; width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px; box-sizing:border-box;">
+      </div>
       <div class="row-actions">
         <button type="submit" class="btn-primary" id="medFormSubmitBtn">Agregar</button>
         <button type="button" class="btn-secondary" id="medFormCancelBtn" style="display:none;">Cancelar edición</button>
@@ -746,7 +790,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.10</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.11</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1220,7 +1264,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.10");
+  showAboutOverlay_("30.11");
 });
 
 function openModal(id) {
@@ -1901,7 +1945,7 @@ function renderChart() {
 // statsChartOverrides guarda, por gráfica, un periodo propio que la
 // desliga del general; null significa "sigue al general". effectivePeriod_
 // es lo que de verdad usa cada gráfica al dibujarse.
-let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null };
+let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -1995,7 +2039,23 @@ syncStatsFilterButtons_();
 // (antes solo existía "el valor actual", sin fecha ni tendencia).
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
-    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null;
+    statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null,
+    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null;
+// v30.11: agrega currentExercises (ya cargado para la pestaña Ejercicio) por
+// día, sumando calorías — varias sesiones el mismo día se ven como un solo
+// punto con el total del día.
+function exerciseDailyTotalsForChart_() {
+  const byDay = new Map();
+  for (const ex of currentExercises || []) {
+    if (ex.calorias == null) continue;
+    byDay.set(ex.fecha, (byDay.get(ex.fecha) || 0) + Number(ex.calorias));
+  }
+  return Array.from(byDay.entries()).map(([fecha, calorias]) => ({ fecha, calorias })).sort((a, b) => a.fecha.localeCompare(b.fecha));
+}
+let currentMedAdherence = [];
+async function loadMedicationAdherence() {
+  try { currentMedAdherence = await apiGet("/api/medication-adherence"); } catch (err) { currentMedAdherence = []; }
+}
 function labHistorySeriesConverted_(key, history) {
   const series = labHistorySeriesForKey_(history, key);
   if (key === "waist" || getUnitPref() !== "mmoll") return series;
@@ -2052,8 +2112,23 @@ function renderLabHistoryCharts(onlyKeys) {
       labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
     );
   }
+  if (shouldRender("exercise")) {
+    const exerciseHistory = filterByPeriodField_(exerciseDailyTotalsForChart_(), effectivePeriod_("exercise"), "fecha");
+    statsExerciseChartInstance = renderMetricTrendChart(
+      statsExerciseChartInstance, document.getElementById("statsExerciseChart"), document.getElementById("statsExerciseEmpty"),
+      labHistorySeriesForKey_(exerciseHistory, "calorias"), { label: "Calorías", color: "#2E9E96", unit: "kcal" }
+    );
+  }
+  if (shouldRender("medAdherence")) {
+    const adherenceHistory = filterByPeriodField_(currentMedAdherence, effectivePeriod_("medAdherence"), "fecha");
+    statsMedAdherenceChartInstance = renderMetricTrendChart(
+      statsMedAdherenceChartInstance, document.getElementById("statsMedAdherenceChart"), document.getElementById("statsMedAdherenceEmpty"),
+      labHistorySeriesForKey_(adherenceHistory, "pct"), { label: "% de apego", color: "#D9A15F", unit: "%" }
+    );
+  }
 }
 loadLabHistory();
+loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 
 // La pestaña Estadísticas empieza oculta (display:none); Chart.js no puede
 // medir un canvas oculto, así que además de renderizar junto con la
@@ -2448,27 +2523,44 @@ async function loadTodayDoses() {
   try { doses = await apiGet("/api/medication-doses/today"); } catch (err) { doses = []; }
   document.getElementById("medDosesTodayWrap").innerHTML = medicationDoseTodayHTML_(doses);
 }
+function todayDateStr_() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
 function resetMedicationForm_() {
   editingMedicationId = null;
   document.getElementById("medicationForm").reset();
+  document.getElementById("med_start_date").value = todayDateStr_();
+  document.getElementById("med_indefinite").checked = true;
+  document.getElementById("med_end_date").style.display = "none";
+  document.getElementById("med_end_date").value = "";
   document.getElementById("medFormTitle").textContent = "Agregar medicamento";
   document.getElementById("medFormSubmitBtn").textContent = "Agregar";
   document.getElementById("medFormCancelBtn").style.display = "none";
 }
+document.getElementById("med_indefinite").addEventListener("change", e => {
+  document.getElementById("med_end_date").style.display = e.target.checked ? "none" : "";
+});
 document.getElementById("medicationForm").addEventListener("submit", async e => {
   e.preventDefault();
   const name = document.getElementById("med_name").value.trim();
-  const frequencyHours = document.getElementById("med_frequency_hours").value;
+  const frequencyValue = document.getElementById("med_frequency_value").value;
   const firstDoseTime = document.getElementById("med_first_dose_time").value;
-  if (!name || !frequencyHours || !firstDoseTime) return;
+  const startDate = document.getElementById("med_start_date").value;
+  if (!name || !frequencyValue || !firstDoseTime || !startDate) return;
   const mgRaw = document.getElementById("med_mg").value;
+  const indefinite = document.getElementById("med_indefinite").checked;
+  const endDate = document.getElementById("med_end_date").value;
   const payload = {
     name,
     active_substance: document.getElementById("med_active_substance").value.trim(),
     mg: mgRaw !== "" ? Number(mgRaw) : null,
     dose_text: document.getElementById("med_dose_text").value.trim(),
-    frequency_hours: Number(frequencyHours),
+    frequency_unit: document.getElementById("med_frequency_unit").value,
+    frequency_value: Number(frequencyValue),
     first_dose_time: firstDoseTime,
+    start_date: startDate,
+    end_date: indefinite ? "" : endDate,
   };
   try {
     if (editingMedicationId) {
@@ -2494,8 +2586,13 @@ document.getElementById("medicationsListWrap").addEventListener("click", async e
     document.getElementById("med_active_substance").value = med.active_substance || "";
     document.getElementById("med_mg").value = med.mg != null ? med.mg : "";
     document.getElementById("med_dose_text").value = med.dose_text || "";
-    document.getElementById("med_frequency_hours").value = med.frequency_hours != null ? med.frequency_hours : "";
+    document.getElementById("med_frequency_unit").value = med.frequency_unit || "hours";
+    document.getElementById("med_frequency_value").value = med.frequency_value != null ? med.frequency_value : "";
     document.getElementById("med_first_dose_time").value = med.first_dose_time || "";
+    document.getElementById("med_start_date").value = med.start_date || todayDateStr_();
+    document.getElementById("med_indefinite").checked = !med.end_date;
+    document.getElementById("med_end_date").style.display = med.end_date ? "" : "none";
+    document.getElementById("med_end_date").value = med.end_date || "";
     document.getElementById("medFormTitle").textContent = "Editar medicamento";
     document.getElementById("medFormSubmitBtn").textContent = "Guardar cambios";
     document.getElementById("medFormCancelBtn").style.display = "";
@@ -2530,6 +2627,7 @@ document.getElementById("medDosesTodayWrap").addEventListener("change", async e 
     cb.checked = !cb.checked;
   }
 });
+document.getElementById("med_start_date").value = todayDateStr_();
 loadMedications();
 loadTodayDoses();
 setInterval(loadTodayDoses, 60000);
@@ -2630,8 +2728,14 @@ connectRealtime("/api/stream", kind => {
   if (kind === "habit") loadHabits();
   if (kind === "symptom") loadSymptoms();
   if (kind === "lab_history") loadLabHistory();
-  if (kind === "medication") { loadMedications(); loadTodayDoses(); }
-  if (kind === "exercise") loadExercises();
+  if (kind === "medication") {
+    loadMedications();
+    loadTodayDoses();
+    loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
+  }
+  if (kind === "exercise") {
+    loadExercises().then(() => renderLabHistoryCharts(["exercise"]));
+  }
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

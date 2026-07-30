@@ -288,6 +288,71 @@ function timeStrToMinutes_(t) {
   const parts = String(t).split(":").map(Number);
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 }
+// v30.11: bug corregido — computeDoseTimes_ arma un patrón que se repite
+// IDÉNTICO todos los días (incluye horas que, vistas desde la primera toma,
+// son "de un ciclo anterior" que ya pasó, ej. cada 8h desde las 21:00 da
+// 21:00, 05:00 y 13:00 — 05:00 y 13:00 son, en realidad, las últimas dos
+// tomas del día ANTERIOR al patrón, que ese mismo día del calendario ya
+// pasaron). Aplicado tal cual al día en que se CREA el medicamento, esas
+// horas "fantasma" ya pasadas disparaban un recordatorio inmediato aunque el
+// medicamento nunca existió a esa hora — el bug exacto que reportó el
+// usuario ("puse un medicamento para las 21:00 y ya sonó antes"). Esta
+// función arma SOLO las tomas reales del primer día: desde la primera toma
+// hacia adelante, sin dar la vuelta a la medianoche.
+function computeFirstDayDoseTimes_(frequencyHours, firstDoseTime) {
+  const freq = Number(frequencyHours);
+  if (!freq || freq <= 0) return [];
+  const parts = String(firstDoseTime || "00:00").split(":").map(Number);
+  const startMin = (parts[0] || 0) * 60 + (parts[1] || 0);
+  const times = [];
+  let totalMin = startMin;
+  while (totalMin < 24 * 60) {
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    times.push(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+    totalMin += Math.round(freq * 60);
+  }
+  return times;
+}
+function addDaysToDateStr_(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function daysBetweenDateStrs_(fromStr, toStr) {
+  const a = new Date(fromStr + "T00:00:00Z");
+  const b = new Date(toStr + "T00:00:00Z");
+  return Math.round((b - a) / 86400000);
+}
+// v30.11: ¿toca este medicamento en esta fecha? Respeta start_date/end_date
+// (fuera de ese rango, nunca toca) y, para frecuencia por días/semanas, solo
+// los días exactos del intervalo contados desde start_date (ej. cada 3 días
+// desde el 1: toca el 1, 4, 7, 10...). Frecuencia por horas sigue tocando
+// todos los días dentro del rango (varias veces al día).
+function isMedicationDueOnDate_(med, dateStr) {
+  const startDate = med.start_date || dateStr;
+  if (dateStr < startDate) return false;
+  if (med.end_date && dateStr > med.end_date) return false;
+  const unit = med.frequency_unit || "hours";
+  if (unit === "hours") return true;
+  const value = Number(med.frequency_value != null ? med.frequency_value : med.frequency_hours);
+  const intervalDays = unit === "weeks" ? value * 7 : value;
+  if (!intervalDays || intervalDays < 1) return true;
+  const diffDays = daysBetweenDateStrs_(startDate, dateStr);
+  return diffDays >= 0 && diffDays % intervalDays === 0;
+}
+// v30.11: horas de toma reales para una fecha concreta — combina el rango de
+// vigencia del tratamiento, la frecuencia (horas/días/semanas), y la
+// exclusión de tomas "fantasma" del primer día para frecuencia por horas.
+function computeDoseTimesForDate_(med, dateStr) {
+  if (!isMedicationDueOnDate_(med, dateStr)) return [];
+  const unit = med.frequency_unit || "hours";
+  if (unit !== "hours") return [String(med.first_dose_time).slice(0, 5)];
+  const freqHours = Number(med.frequency_value != null ? med.frequency_value : med.frequency_hours);
+  const startDate = med.start_date || dateStr;
+  if (dateStr === startDate) return computeFirstDayDoseTimes_(freqHours, med.first_dose_time);
+  return computeDoseTimes_(freqHours, med.first_dose_time);
+}
 // La app no le pide zona horaria a cada paciente (es una app familiar, de un
 // solo huso horario); se fija a America/Mexico_City para que "hoy" y "ahora"
 // signifiquen lo mismo en el escaneo de recordatorios (que corre en el
@@ -305,6 +370,8 @@ function nowInAppTz_() {
   return { dateStr, minutesOfDay: hour * 60 + Number(map.minute) };
 }
 function medicationRowToObject_(row) {
+  const unit = row.frequency_unit || "hours";
+  const value = row.frequency_value != null ? Number(row.frequency_value) : (row.frequency_hours != null ? Number(row.frequency_hours) : null);
   return {
     id: row.id,
     patient_id: row.patient_id,
@@ -313,16 +380,27 @@ function medicationRowToObject_(row) {
     mg: row.mg != null ? Number(row.mg) : null,
     dose_text: row.dose_text || "",
     frequency_hours: row.frequency_hours != null ? Number(row.frequency_hours) : null,
+    frequency_unit: unit,
+    frequency_value: value,
     first_dose_time: row.first_dose_time || "",
+    start_date: row.start_date || "",
+    end_date: row.end_date || null,
     active: !!row.active,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
-    times: computeDoseTimes_(row.frequency_hours, row.first_dose_time),
+    // "times" (patrón repetido diario) solo tiene sentido como vista previa
+    // ilustrativa para frecuencia por horas; para días/semanas el calendario
+    // semanal no aplica (no es diario), así que se deja vacío a propósito —
+    // el frontend muestra ahí un resumen de texto en su lugar.
+    times: unit === "hours" ? computeDoseTimes_(value, row.first_dose_time) : [],
   };
 }
 async function listMedications(patientId) {
   const { rows } = await pool.query(
     `SELECT id, patient_id, name, active_substance, mg, dose_text, frequency_hours,
-            to_char(first_dose_time, 'HH24:MI') AS first_dose_time, active, created_at
+            frequency_unit, frequency_value,
+            to_char(first_dose_time, 'HH24:MI') AS first_dose_time,
+            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
+            active, created_at
      FROM medicamentos WHERE patient_id = $1 AND active = true ORDER BY created_at ASC`,
     [patientId]
   );
@@ -345,7 +423,11 @@ async function listTodayDoses(patientId) {
   const byKey = new Map(rows.map(r => [`${r.medication_id}_${r.dose_time}`, r]));
   const out = [];
   for (const med of meds) {
-    for (const time of med.times) {
+    // v30.11: las horas de "hoy" ya no salen del patrón repetido genérico
+    // (med.times) — se recalculan para la fecha exacta de hoy, respetando
+    // start_date/end_date y excluyendo tomas fantasma si hoy es el primer día.
+    const todayTimes = computeDoseTimesForDate_(med, dateStr);
+    for (const time of todayTimes) {
       const existing = byKey.get(`${med.id}_${time}`);
       out.push({
         medication_id: med.id, medication_name: med.name, dose_text: med.dose_text, mg: med.mg,
@@ -378,16 +460,37 @@ async function setDoseTaken(patientId, medicationId, doseTime, taken) {
 // caso seguir insistiendo por una que quedó atrás).
 const MEDICATION_REMINDER_INTERVAL_MIN = 30;
 async function scanMedicationReminders() {
-  const { rows: meds } = await pool.query(`SELECT * FROM medicamentos WHERE active = true`);
+  // v30.11: columnas explícitas con to_char (en vez de SELECT *) para que
+  // start_date/end_date lleguen como texto 'YYYY-MM-DD' — igual que en
+  // listMedications — y no como objetos Date (que rompería las comparaciones
+  // de texto en isMedicationDueOnDate_/computeDoseTimesForDate_).
+  const { rows: meds } = await pool.query(
+    `SELECT id, patient_id, name, mg, dose_text, frequency_hours, frequency_unit, frequency_value,
+            to_char(first_dose_time, 'HH24:MI') AS first_dose_time,
+            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date
+     FROM medicamentos WHERE active = true`
+  );
   if (!meds.length) return;
   const { dateStr, minutesOfDay } = nowInAppTz_();
   for (const med of meds) {
-    const times = computeDoseTimes_(med.frequency_hours, med.first_dose_time);
+    const times = computeDoseTimesForDate_(med, dateStr);
     if (!times.length) continue;
+    // v30.11: el "cutoff" (cuándo se deja de insistir porque ya llegó la
+    // siguiente toma) ahora se calcula sumando la frecuencia directamente en
+    // minutos, en vez de mirar la SIGUIENTE entrada del arreglo — el arreglo
+    // del primer día (computeFirstDayDoseTimes_) puede tener menos tomas que
+    // el patrón normal, así que "la siguiente entrada" ya no es un dato
+    // confiable de cuándo es la próxima toma real. Para días/semanas solo hay
+    // una toma por día que toca, así que el cutoff es simplemente el resto
+    // del día (nunca se corta antes de que acabe hoy).
+    const unit = med.frequency_unit || "hours";
+    const freqMinutes = unit === "hours"
+      ? Math.round(Number(med.frequency_value != null ? med.frequency_value : med.frequency_hours) * 60)
+      : 24 * 60 + 1;
     for (let i = 0; i < times.length; i++) {
       const doseMin = timeStrToMinutes_(times[i]);
       if (minutesOfDay < doseMin) continue; // todavía no toca
-      const cutoffMin = i + 1 < times.length ? timeStrToMinutes_(times[i + 1]) : (24 * 60 + timeStrToMinutes_(times[0]));
+      const cutoffMin = doseMin + (freqMinutes || 24 * 60 + 1);
       if (minutesOfDay >= cutoffMin) continue; // ya se pasó a la siguiente toma
       const newId = uuid();
       await pool.query(
@@ -488,6 +591,52 @@ async function listExercises(patientId) {
     [patientId]
   );
   return rows.map(exerciseRowToObject_);
+}
+
+// ---- Apego a medicamentos (v30.11), para la gráfica en Estadísticas ----
+// Por cada día desde el start_date más antiguo entre los medicamentos hasta
+// hoy, cuenta cuántas tomas tocaban (computeDoseTimesForDate_, respeta
+// start_date/end_date y frecuencia por horas/días/semanas) contra cuántas de
+// esas se marcaron como tomadas en medicamento_dosis. Se limita a un año
+// hacia atrás como máximo para no barrer un rango enorme si el paciente
+// lleva mucho tiempo con medicamentos activos.
+async function listMedicationAdherence(patientId) {
+  const { rows: meds } = await pool.query(
+    `SELECT id, frequency_hours, frequency_unit, frequency_value,
+            to_char(first_dose_time, 'HH24:MI') AS first_dose_time,
+            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date
+     FROM medicamentos WHERE patient_id = $1 AND active = true`,
+    [patientId]
+  );
+  if (!meds.length) return [];
+  const { dateStr: today } = nowInAppTz_();
+  let minStart = today;
+  for (const m of meds) { if (m.start_date && m.start_date < minStart) minStart = m.start_date; }
+  const oneYearAgo = addDaysToDateStr_(today, -365);
+  if (minStart < oneYearAgo) minStart = oneYearAgo;
+
+  const { rows: doseRows } = await pool.query(
+    `SELECT medication_id, to_char(dose_date, 'YYYY-MM-DD') AS dose_date, to_char(dose_time, 'HH24:MI') AS dose_time, taken
+     FROM medicamento_dosis WHERE patient_id = $1 AND taken = true`,
+    [patientId]
+  );
+  const takenSet = new Set(doseRows.map(r => `${r.medication_id}_${r.dose_date}_${r.dose_time}`));
+
+  const results = [];
+  const totalDays = daysBetweenDateStrs_(minStart, today);
+  for (let i = 0; i <= totalDays; i++) {
+    const d = addDaysToDateStr_(minStart, i);
+    let scheduled = 0, taken = 0;
+    for (const m of meds) {
+      const times = computeDoseTimesForDate_(m, d);
+      scheduled += times.length;
+      for (const t of times) if (takenSet.has(`${m.id}_${d}_${t}`)) taken++;
+    }
+    if (scheduled > 0) {
+      results.push({ fecha: d, scheduled, taken, pct: Math.round((taken / scheduled) * 100) });
+    }
+  }
+  return results;
 }
 
 // ---- Pacientes ----
@@ -968,6 +1117,9 @@ async function handleGet(params) {
   if (action === "list_exercise_types") {
     return { ok: true, data: Object.entries(EXERCISE_MET_TABLE).map(([key, v]) => ({ key, label: v.label })) };
   }
+  if (action === "list_medication_adherence") {
+    return { ok: true, data: await listMedicationAdherence(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -1107,34 +1259,57 @@ async function handlePost(body) {
   }
 
   // ---- Medicamentos (v30.8) ----
-  if (body.action === "add_medication") {
-    if (!body.name || !hasValue(body.frequency_hours) || !body.first_dose_time) {
+  if (body.action === "add_medication" || body.action === "update_medication") {
+    // v30.11: frecuencia por horas/días/semanas + duración del tratamiento
+    // (fecha de inicio obligatoria, fecha de fin opcional = indefinido).
+    const unit = ["hours", "days", "weeks"].includes(body.frequency_unit) ? body.frequency_unit : "hours";
+    const value = num(body.frequency_value != null ? body.frequency_value : body.frequency_hours);
+    const startDate = body.start_date || nowInAppTz_().dateStr;
+    const endDate = hasValue(body.end_date) ? body.end_date : null;
+    if (!body.name || !hasValue(value) || !body.first_dose_time) {
       return { ok: false, error: "faltan datos (nombre, frecuencia y hora de la primera toma son obligatorios)" };
     }
-    const id = uuid();
-    await pool.query(
-      `INSERT INTO medicamentos (id, patient_id, name, active_substance, mg, dose_text, frequency_hours, first_dose_time, active, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$9)`,
-      [id, body.patient_id, body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
-        num(body.frequency_hours), body.first_dose_time, now]
-    );
-    emitChange(body.patient_id, "medication");
-    return { ok: true, id };
-  }
-  if (body.action === "update_medication") {
-    if (!body.name || !hasValue(body.frequency_hours) || !body.first_dose_time) {
-      return { ok: false, error: "faltan datos (nombre, frecuencia y hora de la primera toma son obligatorios)" };
+    if (value <= 0) return { ok: false, error: "la frecuencia debe ser mayor a 0" };
+    if (unit === "hours" && (value < 1 || value > 24)) {
+      return { ok: false, error: "para frecuencia por horas, el valor debe estar entre 1 y 24" };
     }
-    const { rowCount } = await pool.query(
-      `UPDATE medicamentos SET name = $1, active_substance = $2, mg = $3, dose_text = $4,
-              frequency_hours = $5, first_dose_time = $6, updated_at = $7
-       WHERE id = $8 AND patient_id = $9`,
-      [body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
-        num(body.frequency_hours), body.first_dose_time, now, body.id, body.patient_id]
-    );
-    if (!rowCount) return { ok: false, error: "no encontrado" };
-    emitChange(body.patient_id, "medication");
-    return { ok: true };
+    if (unit === "days" && (value < 1 || value > 90)) {
+      return { ok: false, error: "para frecuencia por días, el valor debe estar entre 1 y 90" };
+    }
+    if (unit === "weeks" && (value < 1 || value > 52)) {
+      return { ok: false, error: "para frecuencia por semanas, el valor debe estar entre 1 y 52" };
+    }
+    if (endDate && endDate < startDate) {
+      return { ok: false, error: "la fecha de fin no puede ser anterior a la fecha de inicio" };
+    }
+    // frequency_hours (columna vieja) se respalda con un equivalente en horas
+    // por si algún reporte/consulta vieja todavía la lee directo.
+    const frequencyHoursEquivalent = unit === "hours" ? value : unit === "days" ? value * 24 : value * 24 * 7;
+    if (body.action === "add_medication") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO medicamentos (id, patient_id, name, active_substance, mg, dose_text,
+                frequency_hours, frequency_unit, frequency_value, first_dose_time,
+                start_date, end_date, active, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$13)`,
+        [id, body.patient_id, body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
+          frequencyHoursEquivalent, unit, value, body.first_dose_time, startDate, endDate, now]
+      );
+      emitChange(body.patient_id, "medication");
+      return { ok: true, id };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE medicamentos SET name = $1, active_substance = $2, mg = $3, dose_text = $4,
+                frequency_hours = $5, frequency_unit = $6, frequency_value = $7, first_dose_time = $8,
+                start_date = $9, end_date = $10, updated_at = $11
+         WHERE id = $12 AND patient_id = $13`,
+        [body.name, body.active_substance || "", num(body.mg), body.dose_text || "",
+          frequencyHoursEquivalent, unit, value, body.first_dose_time, startDate, endDate, now, body.id, body.patient_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "medication");
+      return { ok: true };
+    }
   }
   if (body.action === "delete_medication") {
     const { rowCount } = await pool.query(`DELETE FROM medicamentos WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
