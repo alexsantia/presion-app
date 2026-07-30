@@ -349,3 +349,33 @@ CREATE TABLE IF NOT EXISTS ejercicios (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ejercicios_patient_id ON ejercicios(patient_id);
+
+-- v30.12: catálogo de síntomas con escala propia. "sintoma" sigue siendo el
+-- nombre para mostrar (compatible con las filas viejas, capturadas como
+-- texto libre); "tipo" es la llave del catálogo (ver SYMPTOM_CATALOG en
+-- common.js) para saber qué escala usar al mostrarlo. La mayoría de los
+-- síntomas usa intensidad subjetiva 1-10 ("severidad"); Fiebre usa un grado
+-- real en la escala Celsius ("temperatura"), porque un número de
+-- temperatura es un dato más útil y objetivo para el médico que una
+-- intensidad subjetiva.
+ALTER TABLE sintomas ADD COLUMN IF NOT EXISTS tipo text;
+ALTER TABLE sintomas ADD COLUMN IF NOT EXISTS severidad numeric;
+ALTER TABLE sintomas ADD COLUMN IF NOT EXISTS temperatura numeric;
+
+-- v30.12: Consultas médicas — fecha de la consulta, con qué médico, motivo,
+-- foto de la receta (opcional) y la próxima cita (fecha o NULL = sin cita
+-- programada).
+CREATE TABLE IF NOT EXISTS consultas (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  fecha date NOT NULL,
+  doctor_name text NOT NULL DEFAULT '',
+  motivo text NOT NULL DEFAULT '',
+  notas text NOT NULL DEFAULT '',
+  next_appointment_date date,
+  receta_data bytea,
+  receta_mime text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_consultas_patient ON consultas(patient_id, fecha DESC);

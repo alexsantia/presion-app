@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.11"></script>
+<script src="/shared/common.js?v=30.12"></script>
 <style>
   :root {
     color-scheme: light;
@@ -164,6 +164,7 @@
   <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
   <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
   <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="consultas">🩺 Consultas</button>
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
@@ -412,6 +413,14 @@
 </div>
 </div>
 
+<div id="tabConsultas" class="tab-panel" style="display:none;">
+<div class="section">
+  <h2>Consultas médicas</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Consultas registradas (solo lectura).</p>
+  <div id="consultationsListWrap"></div>
+</div>
+</div>
+
 <div id="tabEjercicio" class="tab-panel" style="display:none;">
 <div class="section">
   <h2>Ejercicio</h2>
@@ -421,7 +430,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.11</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.12</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -452,6 +461,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEstadisticas").style.display = btn.dataset.pageTab === "estadisticas" ? "" : "none";
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
+    document.getElementById("tabConsultas").style.display = btn.dataset.pageTab === "consultas" ? "" : "none";
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
@@ -499,6 +509,10 @@ async function load() {
     currentMedAdherence = json.data.medAdherence || [];
     document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
     document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises, { readOnly: true });
+    ensureConsultationStyles_();
+    document.getElementById("consultationsListWrap").innerHTML = renderConsultationsListHTML(json.data.consultations || [], {
+      readOnly: true, photoBaseUrl: "/familia/" + encodeURIComponent(token) + "/consultations/",
+    });
     checkNewReactionsSinceLastVisit_();
     renderBroadcastBannerFromList(document.getElementById("broadcastBanner"), json.data.broadcasts || []);
     render();
@@ -921,7 +935,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.11");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.12");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

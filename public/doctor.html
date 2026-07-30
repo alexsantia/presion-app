@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.11"></script>
+<script src="/shared/common.js?v=30.12"></script>
 <style>
   :root {
     color-scheme: light;
@@ -236,6 +236,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
   <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
   <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="consultas">🩺 Consultas</button>
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
@@ -612,6 +613,14 @@
   </div>
 </div>
 
+<div id="tabConsultas" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Consultas médicas</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Consultas que el paciente tiene registradas (solo lectura).</p>
+    <div id="consultationsListWrap"></div>
+  </div>
+</div>
+
 <div id="tabEjercicio" class="tab-panel" style="display:none;">
   <div class="section">
     <h2>Ejercicio</h2>
@@ -664,7 +673,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.11</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.12</button></footer>
 
 <script>
 let chartInstance = null;
@@ -699,6 +708,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabCatalogo").style.display = btn.dataset.pageTab === "catalogo" ? "" : "none";
     document.getElementById("tabSintomas").style.display = btn.dataset.pageTab === "sintomas" ? "" : "none";
     document.getElementById("tabMedicamentos").style.display = btn.dataset.pageTab === "medicamentos" ? "" : "none";
+    document.getElementById("tabConsultas").style.display = btn.dataset.pageTab === "consultas" ? "" : "none";
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
   });
@@ -1242,6 +1252,13 @@ async function loadMedications() {
   try { currentMedications = await apiGet("/api/medications"); } catch (err) { currentMedications = []; }
   document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(currentMedications, { readOnly: true });
 }
+// ---- Consultas médicas (solo lectura, v30.12) ----
+let currentConsultations = [];
+async function loadConsultations() {
+  ensureConsultationStyles_();
+  try { currentConsultations = await apiGet("/api/consultations"); } catch (err) { currentConsultations = []; }
+  document.getElementById("consultationsListWrap").innerHTML = renderConsultationsListHTML(currentConsultations, { readOnly: true, photoBaseUrl: "/api/consultations/" });
+}
 
 // ---- Ejercicio (solo lectura, v30.10) ----
 let currentExercises = [];
@@ -1418,7 +1435,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.11");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.12");
 
 loadPatient();
 loadAndRender();
@@ -1430,6 +1447,7 @@ loadSymptoms();
 loadLabHistory();
 loadMedications();
 loadExercises();
+loadConsultations();
 loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 wireBroadcastBanner(document.getElementById("broadcastBanner"));
 wireSupportTickets({
@@ -1469,6 +1487,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "exercise") {
     loadExercises().then(() => renderLabHistoryCharts(["exercise"]));
   }
+  if (kind === "consultation") loadConsultations();
   if (kind === "reaction") {
     loadReactions().then(() => {
       renderComments();

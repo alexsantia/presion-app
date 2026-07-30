@@ -451,6 +451,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const medicationsResult = await callSheetsApi({ action: "list_medications", patient_id: patient.id });
   const exercisesResult = await callSheetsApi({ action: "list_exercises", patient_id: patient.id });
   const medAdherenceResult = await callSheetsApi({ action: "list_medication_adherence", patient_id: patient.id });
+  const consultationsResult = await callSheetsApi({ action: "list_consultations", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -462,9 +463,28 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       medications: medicationsResult.ok ? medicationsResult.data : [],
       exercises: exercisesResult.ok ? exercisesResult.data : [],
       medAdherence: medAdherenceResult.ok ? medAdherenceResult.data : [],
+      consultations: consultationsResult.ok ? consultationsResult.data : [],
     },
   });
 }));
+// Foto de receta para el enlace de familia (sin sesión): el patient_id se
+// resuelve del token, igual que el resto de esta ruta, y getConsultationReceta
+// filtra por ese patient_id, así que un token de un paciente nunca puede
+// destapar la receta de otro con solo adivinar el id de la consulta. Solo
+// existe con backend Postgres (igual que /api/consultations/:id/photo),
+// porque el backend Sheets nunca implementó almacenamiento binario.
+if (DB_BACKEND === "postgres") {
+  app.get("/familia/:token/consultations/:id/photo", asyncRoute(async (req, res) => {
+    const patientResult = await callSheetsApi({ action: "get_patient_by_share_token", token_value: req.params.token });
+    if (!patientResult.ok || !patientResult.data) return res.status(404).end();
+    const { getConsultationReceta } = require("./db-postgres");
+    const photo = await getConsultationReceta(patientResult.data.id, req.params.id);
+    if (!photo) return res.status(404).end();
+    res.set("Content-Type", photo.mime);
+    res.set("Cache-Control", "private, max-age=300");
+    res.send(photo.data);
+  }));
+}
 
 // Reacción de familia/amigos (sin cuenta): el patient_id nunca se toma del
 // body, siempre se resuelve aquí a partir del token del enlace, para que
@@ -614,6 +634,24 @@ app.put("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res
 app.delete("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "delete_exercise", patient_id: req.session.patientId, id: req.params.id }));
 }));
+
+// ---- Consultas médicas (v30.12) ----
+app.get("/api/consultations", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_consultations", patient_id: req.session.patientId }));
+}));
+app.post("/api/consultations", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_consultation", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/consultations/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_consultation", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/consultations/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_consultation", patient_id: req.session.patientId, id: req.params.id }));
+}));
+// La foto de la receta se sirve por HTTP directo (Buffer, no JSON/base64),
+// igual que el avatar — por eso su ruta vive más abajo, junto con
+// /api/avatar/:type/:id, dentro del bloque exclusivo de backend Postgres
+// (con backend Sheets nunca existió almacenamiento binario).
 
 app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_habits", patient_id: req.session.patientId }));
@@ -952,6 +990,20 @@ if (DB_BACKEND === "postgres") {
     res.set("Content-Type", avatar.mime);
     res.set("Cache-Control", "private, max-age=300");
     res.send(avatar.data);
+  }));
+
+  // ---- Foto de receta en Consultas (v30.12) — a diferencia del avatar, SÍ
+  // exige sesión y filtra por patient_id, porque una receta médica es un
+  // documento más sensible que una foto de perfil (ver /api/consultations
+  // más arriba y /familia/:token/consultations/:id/photo más abajo, para el
+  // enlace de solo lectura sin sesión). ----
+  app.get("/api/consultations/:id/photo", requireAnyRole, asyncRoute(async (req, res) => {
+    const { getConsultationReceta } = require("./db-postgres");
+    const photo = await getConsultationReceta(req.session.patientId, req.params.id);
+    if (!photo) return res.status(404).end();
+    res.set("Content-Type", photo.mime);
+    res.set("Cache-Control", "private, max-age=300");
+    res.send(photo.data);
   }));
 
   // ---- Cuenta de administrador (v30) — se crea/actualiza sola al arrancar ----

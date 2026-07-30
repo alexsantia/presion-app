@@ -610,6 +610,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.12", changes: [
+    "Corregido: en Medicamentos, los campos de frecuencia y el aviso de tratamiento indefinido se veían apretados/descuadrados.",
+    "Nueva sección de Consultas médicas: fecha, con qué médico, motivo, foto de la receta y próxima cita (o \"Sin cita programada\").",
+    "Nuevo catálogo de síntomas con la escala más adecuada para cada uno: intensidad 1-10 para la mayoría, y temperatura real en °C para Fiebre. Se agregaron zumbido de oídos (tinnitus), irritación en la piel, dolor de huesos y cuerpo cortado.",
+  ] },
   { version: "30.11", changes: [
     "Corregido: el recordatorio de una toma programada para más tarde hoy ya no sonaba de inmediato al crear el medicamento.",
     "Nueva interfaz de frecuencia en Medicamentos: además de cada cuántas horas, ahora se puede indicar cada cuántos días o semanas.",
@@ -863,19 +868,63 @@ function wireDoctorCatalogFilter(selectEl, containerEl, doctors, searchInputEl) 
   redraw();
 }
 
-// ---- Síntomas diarios (v30.4) ----
-const SYMPTOM_SUGGESTIONS = [
-  "Dolor de cabeza", "Mareo", "Palpitaciones", "Visión borrosa", "Náusea",
-  "Fatiga", "Dificultad para respirar", "Dolor en el pecho", "Zumbido en los oídos", "Otro",
+// ---- Síntomas diarios (v30.4; catálogo con escala propia en v30.12) ----
+// Cada síntoma trae la escala más adecuada para registrarlo. La mayoría usa
+// intensidad subjetiva 1-10 (1 casi imperceptible, 10 máximo/insoportable) —
+// es la misma escala tipo "dolor" que se usa en consultorios, y mantenerla
+// igual entre síntomas ayuda a comparar a lo largo del tiempo sin aprender
+// una escala distinta para cada uno. Fiebre es la excepción a propósito: un
+// grado real en °C es un dato objetivo mucho más útil para el médico que
+// una intensidad subjetiva, así que ahí se pide temperatura en vez de 1-10.
+const SYMPTOM_CATALOG = [
+  { value: "dolor_cabeza", label: "Dolor de cabeza", scale: "intensity" },
+  { value: "mareo", label: "Mareo", scale: "intensity" },
+  { value: "palpitaciones", label: "Palpitaciones", scale: "intensity" },
+  { value: "vision_borrosa", label: "Visión borrosa", scale: "intensity" },
+  { value: "nausea", label: "Náusea", scale: "intensity" },
+  { value: "fatiga", label: "Fatiga", scale: "intensity" },
+  { value: "dificultad_respirar", label: "Dificultad para respirar", scale: "intensity" },
+  { value: "dolor_pecho", label: "Dolor en el pecho", scale: "intensity" },
+  { value: "zumbido_oidos", label: "Zumbido en los oídos (tinnitus)", scale: "intensity" },
+  { value: "irritacion_piel", label: "Irritación en la piel", scale: "intensity" },
+  { value: "dolor_huesos", label: "Dolor de huesos", scale: "intensity" },
+  { value: "cuerpo_cortado", label: "Cuerpo cortado (malestar general)", scale: "intensity" },
+  { value: "fiebre", label: "Fiebre", scale: "temperature" },
+  { value: "otro", label: "Otro", scale: "intensity" },
 ];
+function symptomCatalogEntry_(value) {
+  return SYMPTOM_CATALOG.find(s => s.value === value) || null;
+}
+const SYMPTOM_INTENSITY_LABELS_ = {
+  1: "Casi imperceptible", 2: "Muy leve", 3: "Leve", 4: "Leve-moderado", 5: "Moderado",
+  6: "Moderado-fuerte", 7: "Fuerte", 8: "Muy fuerte", 9: "Severo", 10: "Máximo / insoportable",
+};
+// Nota clínica orientativa (no se guarda, solo ayuda a leer el número):
+// febrícula 37.5-38, fiebre 38-39, fiebre alta 39-40, urgente 40+.
+function feverNote_(temp) {
+  if (temp == null) return "";
+  if (temp < 37.5) return "";
+  if (temp < 38) return " (febrícula)";
+  if (temp < 39) return " (fiebre)";
+  if (temp < 40) return " (fiebre alta)";
+  return " (muy alta, busca atención pronto)";
+}
 function symptomEntryHTML_(s, opts) {
   opts = opts || {};
   const deleteBtn = opts.readOnly ? "" : `<button type="button" class="btn-mini danger symptom-delete-btn" data-symptom-id="${s.id}">Eliminar</button>`;
+  let scaleChip = "";
+  if (s.temperatura != null) {
+    scaleChip = `<span class="symptom-scale-chip symptom-scale-temp">${s.temperatura}°C${escapeHtml_(feverNote_(Number(s.temperatura)))}</span>`;
+  } else if (s.severidad != null) {
+    const n = Math.round(Number(s.severidad));
+    scaleChip = `<span class="symptom-scale-chip">Intensidad ${n}/10 – ${escapeHtml_(SYMPTOM_INTENSITY_LABELS_[n] || "")}</span>`;
+  }
   return `
     <div class="habit-entry" data-symptom-id="${s.id}">
       <div class="habit-entry-icon">🌡️</div>
       <div class="habit-entry-body">
         <div class="habit-entry-title">${escapeHtml_(s.sintoma)}</div>
+        ${scaleChip}
         ${s.descripcion ? `<div class="habit-entry-detail">${escapeHtml_(s.descripcion)}</div>` : ""}
         <div class="habit-entry-date">${fmtDate(s.fecha)}${s.hora ? " · " + escapeHtml_(s.hora) : ""}</div>
       </div>
@@ -888,6 +937,19 @@ function renderSymptomsListHTML(symptoms, opts) {
     return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay síntomas registrados.</div>`;
   }
   return symptoms.map(s => symptomEntryHTML_(s, opts)).join("");
+}
+function ensureSymptomStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-symptom-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-symptom-styles";
+  style.textContent = `
+    .symptom-scale-chip { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 20px; margin-top: 3px; }
+    .symptom-scale-chip.symptom-scale-temp { color: #A6534B; background: #FBEFEE; }
+    .symptom-intensity-wrap { display: flex; align-items: center; gap: 10px; }
+    .symptom-intensity-wrap input[type="range"] { flex: 1; }
+    .symptom-intensity-value { font-size: 12px; font-weight: 650; color: var(--accent); min-width: 118px; text-align: right; }
+  `;
+  document.head.appendChild(style);
 }
 
 // ---- Medicamentos (v30.8) ----
@@ -1067,6 +1129,69 @@ function ensureExerciseStyles_() {
     .ex-entry-detail { font-size: 13px; color: var(--text); margin-top: 3px; }
     .ex-entry-notes { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .ex-totals { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  `;
+  document.head.appendChild(style);
+}
+
+// ---- Consultas médicas (v30.12) ----
+// La foto de la receta se sirve por HTTP directo (no viaja en el JSON de la
+// lista), así que hace falta la base de la URL para armarla: el paciente y
+// el médico usan /api/consultations/ (con sesión), familia.html usa
+// /familia/<token>/consultations/ (sin sesión) — ver opts.photoBaseUrl.
+function consultationNextApptLabel_(c) {
+  if (!c.next_appointment_date) return { text: "Sin cita programada", isPending: false };
+  return { text: `Próxima cita: ${fmtDate(c.next_appointment_date)}`, isPending: true };
+}
+function consultationEntryHTML_(c, opts) {
+  opts = opts || {};
+  const actions = opts.readOnly ? "" : `
+    <div class="consult-entry-actions">
+      <button type="button" class="btn-mini consultation-edit-btn" data-consultation-id="${c.id}">Editar</button>
+      <button type="button" class="btn-mini danger consultation-delete-btn" data-consultation-id="${c.id}">Eliminar</button>
+    </div>`;
+  const nextAppt = consultationNextApptLabel_(c);
+  const photoHTML = c.has_receta && opts.photoBaseUrl
+    ? `<a href="${opts.photoBaseUrl}${c.id}/photo" target="_blank" rel="noopener" class="consult-receta-link">
+         <img src="${opts.photoBaseUrl}${c.id}/photo" alt="Foto de la receta" class="consult-receta-thumb">
+       </a>`
+    : "";
+  return `
+    <div class="consult-entry" data-consultation-id="${c.id}">
+      <div class="consult-entry-header">
+        <div class="consult-entry-title">🩺 ${escapeHtml_(c.doctor_name || "Consulta")}</div>
+        ${actions}
+      </div>
+      <div class="consult-entry-date">${fmtDate(c.fecha)}</div>
+      ${c.motivo ? `<div class="consult-entry-detail"><strong>Motivo:</strong> ${escapeHtml_(c.motivo)}</div>` : ""}
+      ${c.notas ? `<div class="consult-entry-notes">${escapeHtml_(c.notas)}</div>` : ""}
+      <div class="consult-entry-next ${nextAppt.isPending ? "is-pending" : "is-none"}">${nextAppt.isPending ? "📅" : "—"} ${escapeHtml_(nextAppt.text)}</div>
+      ${photoHTML}
+    </div>`;
+}
+// opts: { readOnly, photoBaseUrl } — doctor.html y familia.html usan readOnly:true.
+function renderConsultationsListHTML(consultations, opts) {
+  if (!consultations || !consultations.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ninguna consulta.</div>`;
+  }
+  return consultations.map(c => consultationEntryHTML_(c, opts)).join("");
+}
+function ensureConsultationStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-consultation-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-consultation-styles";
+  style.textContent = `
+    .consult-entry { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .consult-entry:last-child { border-bottom: none; }
+    .consult-entry-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .consult-entry-title { font-weight: 650; font-size: 14px; }
+    .consult-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .consult-entry-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .consult-entry-detail { font-size: 13px; color: var(--text); margin-top: 4px; }
+    .consult-entry-notes { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+    .consult-entry-next { font-size: 12px; font-weight: 600; margin-top: 6px; }
+    .consult-entry-next.is-pending { color: var(--accent); }
+    .consult-entry-next.is-none { color: var(--text-muted); font-weight: 500; }
+    .consult-receta-thumb { display: block; width: 90px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); margin-top: 8px; }
   `;
   document.head.appendChild(style);
 }

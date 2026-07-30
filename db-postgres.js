@@ -162,6 +162,10 @@ const RESET_TOKEN_TTL_MINUTES = 30;
 // pensado para atrapar errores, no el tamaño esperado normal.
 const AVATAR_MAX_BYTES = 800 * 1024;
 const AVATAR_ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
+// v30.12: foto de la receta en Consultas. Tope más generoso que el avatar
+// (1.5 MB) porque una receta necesita más resolución para leerse bien.
+const RECETA_MAX_BYTES = 1.5 * 1024 * 1024;
+const RECETA_ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
 
 // Lee la foto de perfil (bytes crudos) de un paciente o médico, para que
 // server.js la sirva directo por HTTP sin pasar por JSON/base64. Se exporta
@@ -228,15 +232,22 @@ async function listHabits(patientId) {
   }));
 }
 
-// ---- Síntomas diarios (v30.4) ----
+// ---- Síntomas diarios (v30.4; catálogo con escala propia por síntoma en
+// v30.12: "tipo" es la llave del catálogo, "severidad" es la intensidad
+// subjetiva 1-10 y "temperatura" es el grado real en °C para Fiebre — ver
+// SYMPTOM_CATALOG en common.js). ----
 async function listSymptoms(patientId) {
   const { rows } = await pool.query(
-    `SELECT id, patient_id, sintoma, to_char(fecha, 'YYYY-MM-DD') AS fecha, to_char(hora, 'HH24:MI') AS hora, descripcion, created_at
+    `SELECT id, patient_id, sintoma, tipo, severidad, temperatura,
+            to_char(fecha, 'YYYY-MM-DD') AS fecha, to_char(hora, 'HH24:MI') AS hora, descripcion, created_at
      FROM sintomas WHERE patient_id = $1 ORDER BY fecha DESC, hora DESC NULLS LAST, created_at DESC`,
     [patientId]
   );
   return rows.map(r => ({
-    id: r.id, patient_id: r.patient_id, sintoma: r.sintoma, fecha: r.fecha, hora: r.hora || "",
+    id: r.id, patient_id: r.patient_id, sintoma: r.sintoma, tipo: r.tipo || null,
+    severidad: r.severidad != null ? Number(r.severidad) : null,
+    temperatura: r.temperatura != null ? Number(r.temperatura) : null,
+    fecha: r.fecha, hora: r.hora || "",
     descripcion: r.descripcion || "", created_at: new Date(r.created_at).toISOString(),
   }));
 }
@@ -591,6 +602,49 @@ async function listExercises(patientId) {
     [patientId]
   );
   return rows.map(exerciseRowToObject_);
+}
+
+// ---- Consultas médicas (v30.12) ----
+// receta_data (bytea) deliberadamente fuera de este SELECT, igual que
+// avatar_data: es pesado y casi nunca hace falta junto con el resto de la
+// fila. "has_receta" le basta a la lista/tarjeta para saber si mostrar la
+// miniatura o el botón de subir foto; la foto real se sirve aparte por HTTP
+// (ver getConsultationReceta) para no ir envuelta en JSON/base64.
+function consultationRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    fecha: row.fecha || "",
+    doctor_name: row.doctor_name || "",
+    motivo: row.motivo || "",
+    notas: row.notas || "",
+    next_appointment_date: row.next_appointment_date || null,
+    has_receta: !!row.receta_mime,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listConsultations(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, to_char(fecha, 'YYYY-MM-DD') AS fecha, doctor_name, motivo, notas,
+            to_char(next_appointment_date, 'YYYY-MM-DD') AS next_appointment_date, receta_mime, created_at
+     FROM consultas WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(consultationRowToObject_);
+}
+// Igual que getAvatarData: exportada aparte de callPostgresApi porque
+// server.js necesita el Buffer y el mime tal cual para mandarlos por HTTP,
+// no envueltos en {ok, data}. Se filtra también por patient_id aquí (no
+// solo en la ruta) para que, aunque cambie la ruta, nunca se pueda leer la
+// receta de un paciente ajeno con solo adivinar el id de la consulta.
+async function getConsultationReceta(patientId, id) {
+  const { rows } = await pool.query(
+    `SELECT receta_data, receta_mime FROM consultas WHERE id = $1 AND patient_id = $2`,
+    [id, patientId]
+  );
+  const row = rows[0];
+  if (!row || !row.receta_data) return null;
+  return { data: row.receta_data, mime: row.receta_mime || "image/jpeg" };
 }
 
 // ---- Apego a medicamentos (v30.11), para la gráfica en Estadísticas ----
@@ -1120,6 +1174,9 @@ async function handleGet(params) {
   if (action === "list_medication_adherence") {
     return { ok: true, data: await listMedicationAdherence(params.patient_id) };
   }
+  if (action === "list_consultations") {
+    return { ok: true, data: await listConsultations(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -1239,14 +1296,23 @@ async function handlePost(body) {
     return { ok: true, data: await testPushForRecipient(body.recipient_type, body.recipient_id) };
   }
 
-  // ---- Síntomas diarios (v30.4) ----
+  // ---- Síntomas diarios (v30.4; escala por síntoma en v30.12) ----
   if (body.action === "add_symptom") {
     if (!body.fecha || !body.sintoma) return { ok: false, error: "faltan datos" };
+    let severidad = null, temperatura = null;
+    if (hasValue(body.severidad)) {
+      severidad = num(body.severidad);
+      if (severidad == null || severidad < 1 || severidad > 10) return { ok: false, error: "la intensidad debe ser un número entre 1 y 10" };
+    }
+    if (hasValue(body.temperatura)) {
+      temperatura = num(body.temperatura);
+      if (temperatura == null || temperatura < 30 || temperatura > 45) return { ok: false, error: "la temperatura debe ser un número entre 30 y 45 °C" };
+    }
     const id = uuid();
     await pool.query(
-      `INSERT INTO sintomas (id, patient_id, sintoma, fecha, hora, descripcion, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-      [id, body.patient_id, body.sintoma, body.fecha, body.hora || null, body.descripcion || "", now]
+      `INSERT INTO sintomas (id, patient_id, sintoma, tipo, severidad, temperatura, fecha, hora, descripcion, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+      [id, body.patient_id, body.sintoma, body.tipo || null, severidad, temperatura, body.fecha, body.hora || null, body.descripcion || "", now]
     );
     emitChange(body.patient_id, "symptom");
     return { ok: true, id };
@@ -1356,6 +1422,73 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM ejercicios WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "exercise");
+    return { ok: true };
+  }
+
+  // ---- Consultas médicas (v30.12) ----
+  // La foto de receta viaja en la misma llamada (receta_base64/receta_mime),
+  // a diferencia del avatar, para que capturar una consulta sea un solo
+  // paso: fecha, médico, motivo, notas, foto y próxima cita juntos. Si no se
+  // manda receta_base64 en un update, la foto existente se deja como está;
+  // remove_receta:true la quita explícitamente.
+  if (body.action === "add_consultation" || body.action === "update_consultation") {
+    if (!body.fecha || !String(body.doctor_name || "").trim()) {
+      return { ok: false, error: "faltan datos (fecha y médico son obligatorios)" };
+    }
+    let recetaBuf = null, recetaMime = null;
+    if (hasValue(body.receta_base64)) {
+      recetaBuf = Buffer.from(body.receta_base64, "base64");
+      if (recetaBuf.length > RECETA_MAX_BYTES) {
+        return { ok: false, error: "la foto es muy pesada (máximo " + Math.round(RECETA_MAX_BYTES / 1024) + " KB), intenta con una más chica" };
+      }
+      if (RECETA_ALLOWED_MIME.indexOf(body.receta_mime) === -1) {
+        return { ok: false, error: "formato de imagen no soportado (usa JPG, PNG o WEBP)" };
+      }
+      recetaMime = body.receta_mime;
+    }
+    const nextAppt = body.next_appointment_date || null;
+    if (body.action === "add_consultation") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO consultas (id, patient_id, fecha, doctor_name, motivo, notas, next_appointment_date, receta_data, receta_mime, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+        [id, body.patient_id, body.fecha, String(body.doctor_name).trim(), body.motivo || "", body.notas || "", nextAppt, recetaBuf, recetaMime, now]
+      );
+      emitChange(body.patient_id, "consultation");
+      return { ok: true, id };
+    } else {
+      if (body.remove_receta) {
+        const { rowCount } = await pool.query(
+          `UPDATE consultas SET fecha = $1, doctor_name = $2, motivo = $3, notas = $4, next_appointment_date = $5,
+                                 receta_data = NULL, receta_mime = NULL, updated_at = $6
+           WHERE id = $7 AND patient_id = $8`,
+          [body.fecha, String(body.doctor_name).trim(), body.motivo || "", body.notas || "", nextAppt, now, body.id, body.patient_id]
+        );
+        if (!rowCount) return { ok: false, error: "no encontrado" };
+      } else if (recetaBuf) {
+        const { rowCount } = await pool.query(
+          `UPDATE consultas SET fecha = $1, doctor_name = $2, motivo = $3, notas = $4, next_appointment_date = $5,
+                                 receta_data = $6, receta_mime = $7, updated_at = $8
+           WHERE id = $9 AND patient_id = $10`,
+          [body.fecha, String(body.doctor_name).trim(), body.motivo || "", body.notas || "", nextAppt, recetaBuf, recetaMime, now, body.id, body.patient_id]
+        );
+        if (!rowCount) return { ok: false, error: "no encontrado" };
+      } else {
+        const { rowCount } = await pool.query(
+          `UPDATE consultas SET fecha = $1, doctor_name = $2, motivo = $3, notas = $4, next_appointment_date = $5, updated_at = $6
+           WHERE id = $7 AND patient_id = $8`,
+          [body.fecha, String(body.doctor_name).trim(), body.motivo || "", body.notas || "", nextAppt, now, body.id, body.patient_id]
+        );
+        if (!rowCount) return { ok: false, error: "no encontrado" };
+      }
+      emitChange(body.patient_id, "consultation");
+      return { ok: true };
+    }
+  }
+  if (body.action === "delete_consultation") {
+    const { rowCount } = await pool.query(`DELETE FROM consultas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "consultation");
     return { ok: true };
   }
 
@@ -1892,4 +2025,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders, getConsultationReceta };
