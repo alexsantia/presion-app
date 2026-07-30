@@ -693,6 +693,79 @@ async function listMedicationAdherence(patientId) {
   return results;
 }
 
+// ---- Medicamentos eventuales (v30.13) ----
+// Tomas fuera del plan de recordatorios (aspirina, paracetamol, antiácidos,
+// etc.): no están ligadas a un medicamento del catálogo ni tienen horario
+// ni recordatorio, solo quedan registradas para el historial/bitácora.
+function eventualMedicationRowToObject_(row) {
+  return {
+    id: row.id, patient_id: row.patient_id, nombre: row.nombre, dosis: row.dosis || "",
+    fecha: row.fecha || "", hora: row.hora || "", notas: row.notas || "",
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listEventualMedications(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, nombre, dosis, to_char(fecha, 'YYYY-MM-DD') AS fecha,
+            to_char(hora, 'HH24:MI') AS hora, notas, created_at
+     FROM medicamentos_eventuales WHERE patient_id = $1 ORDER BY fecha DESC, hora DESC NULLS LAST, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(eventualMedicationRowToObject_);
+}
+
+// ---- Bitácora de medicamentos (v30.13) ----
+// Resumen día por día (últimos MEDICATION_LOG_DAYS) de: (a) qué dosis
+// programadas tocaban ese día y si se marcaron como tomadas — misma lógica
+// de computeDoseTimesForDate_ que usa listMedicationAdherence, pero aquí
+// con el detalle de cada toma (medicamento y hora), no solo el conteo — y
+// (b) qué medicamentos eventuales se registraron ese mismo día. Los días
+// sin nada registrado se omiten, para que la bitácora no se llene de días
+// vacíos.
+const MEDICATION_LOG_DAYS = 30;
+async function listMedicationLog(patientId) {
+  const { rows: meds } = await pool.query(
+    `SELECT id, name, dose_text, frequency_hours, frequency_unit, frequency_value,
+            to_char(first_dose_time, 'HH24:MI') AS first_dose_time,
+            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date
+     FROM medicamentos WHERE patient_id = $1 AND active = true`,
+    [patientId]
+  );
+  const { dateStr: today } = nowInAppTz_();
+  const startDate = addDaysToDateStr_(today, -(MEDICATION_LOG_DAYS - 1));
+  const { rows: doseRows } = await pool.query(
+    `SELECT medication_id, to_char(dose_date, 'YYYY-MM-DD') AS dose_date, to_char(dose_time, 'HH24:MI') AS dose_time, taken
+     FROM medicamento_dosis WHERE patient_id = $1 AND dose_date >= $2 AND taken = true`,
+    [patientId, startDate]
+  );
+  const takenSet = new Set(doseRows.map(r => `${r.medication_id}_${r.dose_date}_${r.dose_time}`));
+  const { rows: eventualRows } = await pool.query(
+    `SELECT id, nombre, dosis, to_char(fecha, 'YYYY-MM-DD') AS fecha, to_char(hora, 'HH24:MI') AS hora, notas
+     FROM medicamentos_eventuales WHERE patient_id = $1 AND fecha >= $2`,
+    [patientId, startDate]
+  );
+  const eventualByDay = new Map();
+  for (const e of eventualRows) {
+    if (!eventualByDay.has(e.fecha)) eventualByDay.set(e.fecha, []);
+    eventualByDay.get(e.fecha).push({ id: e.id, nombre: e.nombre, dosis: e.dosis || "", hora: e.hora || "", notas: e.notas || "" });
+  }
+  const results = [];
+  for (let i = 0; i < MEDICATION_LOG_DAYS; i++) {
+    const d = addDaysToDateStr_(today, -i);
+    const scheduled = [];
+    for (const m of meds) {
+      const times = computeDoseTimesForDate_(m, d);
+      for (const t of times) {
+        scheduled.push({ medication_id: m.id, medication_name: m.name, dose_text: m.dose_text, dose_time: t, taken: takenSet.has(`${m.id}_${d}_${t}`) });
+      }
+    }
+    scheduled.sort((a, b) => a.dose_time.localeCompare(b.dose_time));
+    const eventual = (eventualByDay.get(d) || []).sort((a, b) => (a.hora || "").localeCompare(b.hora || ""));
+    if (scheduled.length || eventual.length) results.push({ fecha: d, scheduled, eventual });
+  }
+  return results; // más reciente primero
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -1177,6 +1250,12 @@ async function handleGet(params) {
   if (action === "list_consultations") {
     return { ok: true, data: await listConsultations(params.patient_id) };
   }
+  if (action === "list_eventual_medications") {
+    return { ok: true, data: await listEventualMedications(params.patient_id) };
+  }
+  if (action === "list_medication_log") {
+    return { ok: true, data: await listMedicationLog(params.patient_id) };
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -1489,6 +1568,27 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM consultas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "consultation");
+    return { ok: true };
+  }
+
+  // ---- Medicamentos eventuales (v30.13) ----
+  if (body.action === "add_eventual_medication") {
+    if (!String(body.nombre || "").trim() || !body.fecha) {
+      return { ok: false, error: "faltan datos (nombre y fecha son obligatorios)" };
+    }
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO medicamentos_eventuales (id, patient_id, nombre, dosis, fecha, hora, notas, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+      [id, body.patient_id, String(body.nombre).trim(), body.dosis || "", body.fecha, body.hora || null, body.notas || "", now]
+    );
+    emitChange(body.patient_id, "eventual_medication");
+    return { ok: true, id };
+  }
+  if (body.action === "delete_eventual_medication") {
+    const { rowCount } = await pool.query(`DELETE FROM medicamentos_eventuales WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "eventual_medication");
     return { ok: true };
   }
 

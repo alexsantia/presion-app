@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.12"></script>
+<script src="/shared/common.js?v=30.13"></script>
 <style>
   :root {
     color-scheme: light;
@@ -767,7 +767,11 @@
         </div>
         <div style="font-size:11px; color:var(--text-muted); margin-top:3px;" id="med_frequency_hint">Ej. "cada 8 horas", "cada 3 días" o "cada semana".</div>
       </div>
-      <div style="grid-column: span 3;"><label>Fecha de inicio del tratamiento</label><input type="date" id="med_start_date" required></div>
+      <!-- v30.13: este campo tenía span 3 igual que "Cada cuánto debe
+           tomarse", pero un input de fecha no necesita ese ancho — se veía
+           descuadrado (una caja angosta flotando en un espacio enorme).
+           Vuelve a su ancho natural de 1 columna. -->
+      <div><label>Fecha de inicio del tratamiento</label><input type="date" id="med_start_date" required></div>
       <!-- v30.12: antes el checkbox y su texto se veían separados porque el
            bloque completo estaba apretado en 1/6 del ancho; ahora ocupa 3
            columnas y usa .checkbox-label (ya usada en el resto de la app)
@@ -789,6 +793,34 @@
     <h2>Tus medicamentos</h2>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">El calendario semanal se calcula solo a partir de la frecuencia; se repiten las mismas horas todos los días.</p>
     <div id="medicationsListWrap"></div>
+  </div>
+
+  <!-- v30.13: medicamentos "fuera de plan" (aspirina, paracetamol,
+       antiácidos, etc.) — no llevan recordatorio ni horario, solo quedan
+       registrados para el historial/bitácora. -->
+  <div class="section section-add">
+    <h2>Medicamento eventual</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Para tomas sueltas que no son parte de tu plan regular: aspirina, paracetamol, antiácidos, etc.</p>
+    <form class="add-form" id="eventualMedForm">
+      <div style="grid-column: span 2;"><label>Medicamento</label><input type="text" id="ev_nombre" required placeholder="Ej. Paracetamol"></div>
+      <div><label>Dosis</label><input type="text" id="ev_dosis" placeholder="Ej. 500 mg"></div>
+      <div><label>Fecha</label><input type="date" id="ev_fecha" required></div>
+      <div><label>Hora</label><input type="time" id="ev_hora"></div>
+      <div class="full">
+        <label>Notas</label>
+        <textarea id="ev_notas" rows="2" placeholder="Motivo, quién lo indicó, etc. (opcional)"></textarea>
+      </div>
+      <div class="row-actions"><button type="submit" class="btn-primary">Registrar</button></div>
+    </form>
+    <div id="eventualMedsListWrap" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- v30.13: Bitácora — resumen día por día de tomas programadas
+       (tomadas/no marcadas) y eventuales, para ver todo junto de un vistazo. -->
+  <div class="section">
+    <h2>Bitácora de medicamentos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Resumen de los últimos 30 días: tomas programadas y eventuales.</p>
+    <div id="medicationLogWrap"></div>
   </div>
 </div>
 
@@ -865,7 +897,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.12</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.13</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1339,7 +1371,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.12");
+  showAboutOverlay_("30.13");
 });
 
 function openModal(id) {
@@ -2739,6 +2771,55 @@ loadMedications();
 loadTodayDoses();
 setInterval(loadTodayDoses, 60000);
 
+// ---- Medicamentos eventuales (v30.13) ----
+let currentEventualMeds = [];
+async function loadEventualMedications() {
+  try { currentEventualMeds = await apiGet("/api/eventual-medications"); } catch (err) { currentEventualMeds = []; }
+  document.getElementById("eventualMedsListWrap").innerHTML = renderEventualMedicationsListHTML(currentEventualMeds);
+}
+document.getElementById("ev_fecha").value = todayDateStr_();
+document.getElementById("eventualMedForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const nombre = document.getElementById("ev_nombre").value.trim();
+  const fecha = document.getElementById("ev_fecha").value;
+  if (!nombre || !fecha) return;
+  try {
+    await apiPost("/api/eventual-medications", {
+      nombre, fecha,
+      dosis: document.getElementById("ev_dosis").value.trim(),
+      hora: document.getElementById("ev_hora").value,
+      notas: document.getElementById("ev_notas").value.trim(),
+    });
+    document.getElementById("eventualMedForm").reset();
+    document.getElementById("ev_fecha").value = todayDateStr_();
+    await loadEventualMedications();
+    await loadMedicationLog();
+  } catch (err) {
+    alert("No se pudo registrar: " + err.message);
+  }
+});
+document.getElementById("eventualMedsListWrap").addEventListener("click", async e => {
+  const delBtn = e.target.closest(".eventual-med-delete-btn");
+  if (!delBtn) return;
+  if (!confirm("¿Eliminar este registro?")) return;
+  try {
+    await apiDelete(`/api/eventual-medications/${delBtn.dataset.eventualId}`);
+    await loadEventualMedications();
+    await loadMedicationLog();
+  } catch (err) {
+    alert("No se pudo eliminar: " + err.message);
+  }
+});
+loadEventualMedications();
+
+// ---- Bitácora de medicamentos (v30.13) ----
+async function loadMedicationLog() {
+  let log = [];
+  try { log = await apiGet("/api/medication-log"); } catch (err) { log = []; }
+  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log);
+}
+loadMedicationLog();
+
 // ---- Consultas médicas (v30.12) ----
 // La foto de la receta viaja junto con el resto del formulario en un solo
 // paso (a diferencia del avatar, que sube aparte): se redimensiona/comprime
@@ -2963,6 +3044,11 @@ connectRealtime("/api/stream", kind => {
     loadMedications();
     loadTodayDoses();
     loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
+    loadMedicationLog();
+  }
+  if (kind === "eventual_medication") {
+    loadEventualMedications();
+    loadMedicationLog();
   }
   if (kind === "exercise") {
     loadExercises().then(() => renderLabHistoryCharts(["exercise"]));

@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.12"></script>
+<script src="/shared/common.js?v=30.13"></script>
 <style>
   :root {
     color-scheme: light;
@@ -411,6 +411,16 @@
   <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Medicamentos registrados (solo lectura). El calendario semanal se calcula solo a partir de la frecuencia.</p>
   <div id="medicationsListWrap"></div>
 </div>
+<div class="section">
+  <h2>Medicamentos eventuales</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Tomas fuera de plan registradas (solo lectura).</p>
+  <div id="eventualMedsListWrap"></div>
+</div>
+<div class="section">
+  <h2>Bitácora de medicamentos</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Resumen de los últimos 30 días: tomas programadas y eventuales (solo lectura).</p>
+  <div id="medicationLogWrap"></div>
+</div>
 </div>
 
 <div id="tabConsultas" class="tab-panel" style="display:none;">
@@ -430,7 +440,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.12</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.13</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -504,6 +514,8 @@ async function load() {
     currentLabHistory = json.data.labHistory || [];
     ensureMedicationStyles_();
     document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(json.data.medications || [], { readOnly: true });
+    document.getElementById("eventualMedsListWrap").innerHTML = renderEventualMedicationsListHTML(json.data.eventualMedications || [], { readOnly: true });
+    document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(json.data.medicationLog || []);
     ensureExerciseStyles_();
     currentExercises = json.data.exercises || [];
     currentMedAdherence = json.data.medAdherence || [];
@@ -935,7 +947,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.12");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.13");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

@@ -452,6 +452,8 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const exercisesResult = await callSheetsApi({ action: "list_exercises", patient_id: patient.id });
   const medAdherenceResult = await callSheetsApi({ action: "list_medication_adherence", patient_id: patient.id });
   const consultationsResult = await callSheetsApi({ action: "list_consultations", patient_id: patient.id });
+  const eventualMedicationsResult = await callSheetsApi({ action: "list_eventual_medications", patient_id: patient.id });
+  const medicationLogResult = await callSheetsApi({ action: "list_medication_log", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -464,6 +466,8 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       exercises: exercisesResult.ok ? exercisesResult.data : [],
       medAdherence: medAdherenceResult.ok ? medAdherenceResult.data : [],
       consultations: consultationsResult.ok ? consultationsResult.data : [],
+      eventualMedications: eventualMedicationsResult.ok ? eventualMedicationsResult.data : [],
+      medicationLog: medicationLogResult.ok ? medicationLogResult.data : [],
     },
   });
 }));
@@ -652,6 +656,23 @@ app.delete("/api/consultations/:id", requireRole("patient"), asyncRoute(async (r
 // igual que el avatar — por eso su ruta vive más abajo, junto con
 // /api/avatar/:type/:id, dentro del bloque exclusivo de backend Postgres
 // (con backend Sheets nunca existió almacenamiento binario).
+
+// ---- Medicamentos eventuales (v30.13) ----
+app.get("/api/eventual-medications", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_eventual_medications", patient_id: req.session.patientId }));
+}));
+app.post("/api/eventual-medications", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_eventual_medication", patient_id: req.session.patientId, ...req.body }));
+}));
+app.delete("/api/eventual-medications/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_eventual_medication", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+// ---- Bitácora de medicamentos (v30.13): resumen por día de tomas
+// programadas + eventuales, ver listMedicationLog en db-postgres.js ----
+app.get("/api/medication-log", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_medication_log", patient_id: req.session.patientId }));
+}));
 
 app.get("/api/habits", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_habits", patient_id: req.session.patientId }));

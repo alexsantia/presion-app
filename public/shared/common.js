@@ -610,6 +610,13 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.13", changes: [
+    "Corregido: la fecha de inicio de tratamiento en Medicamentos se veía descuadrada.",
+    "Nuevo síntoma: temblor de ojo (tic palpebral).",
+    "En Tomas de hoy ahora se muestra la fecha junto a la hora de cada toma.",
+    "Nueva Bitácora de medicamentos dentro de la pestaña Medicamentos: resumen día por día de tomas programadas y eventuales de los últimos 30 días.",
+    "Nueva sección de medicamentos eventuales en Medicamentos, para registrar tomas fuera de tu plan regular (aspirina, paracetamol, antiácidos, etc.).",
+  ] },
   { version: "30.12", changes: [
     "Corregido: en Medicamentos, los campos de frecuencia y el aviso de tratamiento indefinido se veían apretados/descuadrados.",
     "Nueva sección de Consultas médicas: fecha, con qué médico, motivo, foto de la receta y próxima cita (o \"Sin cita programada\").",
@@ -889,6 +896,7 @@ const SYMPTOM_CATALOG = [
   { value: "irritacion_piel", label: "Irritación en la piel", scale: "intensity" },
   { value: "dolor_huesos", label: "Dolor de huesos", scale: "intensity" },
   { value: "cuerpo_cortado", label: "Cuerpo cortado (malestar general)", scale: "intensity" },
+  { value: "temblor_ojo", label: "Temblor de ojo (tic palpebral)", scale: "intensity" },
   { value: "fiebre", label: "Fiebre", scale: "temperature" },
   { value: "otro", label: "Otro", scale: "intensity" },
 ];
@@ -1056,11 +1064,79 @@ function ensureMedicationStyles_() {
     .med-dose-today-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
     .med-dose-today-row:last-child { border-bottom: none; }
     .med-dose-today-row input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
-    .med-dose-time { font-weight: 700; font-size: 13px; color: var(--accent); min-width: 44px; }
+    .med-dose-time { font-weight: 700; font-size: 13px; color: var(--accent); min-width: 78px; }
+    .med-dose-date { font-weight: 500; font-size: 11px; color: var(--text-muted); }
     .med-dose-name { font-size: 13px; color: var(--text); }
     .med-dose-today-row.is-taken .med-dose-name, .med-dose-today-row.is-taken .med-dose-time { color: var(--text-muted); text-decoration: line-through; }
+    .eventual-med-entry { padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .eventual-med-entry:last-child { border-bottom: none; }
+    .eventual-med-title { font-weight: 650; font-size: 13.5px; }
+    .eventual-med-detail { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .medlog-day { padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .medlog-day:last-child { border-bottom: none; }
+    .medlog-day-date { font-weight: 700; font-size: 13px; color: var(--text); margin-bottom: 6px; }
+    .medlog-item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; flex-wrap: wrap; }
+    .medlog-time { font-weight: 650; color: var(--accent); min-width: 42px; }
+    .medlog-name { color: var(--text); flex: 1; min-width: 120px; }
+    .medlog-status { font-size: 11.5px; color: var(--text-muted); }
+    .medlog-item.is-taken .medlog-status { color: #4F9E8C; font-weight: 600; }
+    .medlog-item.is-missed .medlog-status { color: #C97064; }
+    .medlog-item-eventual .medlog-time { color: #B0559B; }
+    .medlog-notes { font-size: 11.5px; color: var(--text-muted); font-style: italic; }
   `;
   document.head.appendChild(style);
+}
+// ---- Medicamentos eventuales (v30.13) ----
+function eventualMedicationEntryHTML_(e, opts) {
+  opts = opts || {};
+  const deleteBtn = opts.readOnly ? "" : `<button type="button" class="btn-mini danger eventual-med-delete-btn" data-eventual-id="${e.id}">Eliminar</button>`;
+  const detailParts = [fmtDate(e.fecha)];
+  if (e.hora) detailParts.push(escapeHtml_(e.hora));
+  if (e.dosis) detailParts.push(escapeHtml_(e.dosis));
+  return `
+    <div class="eventual-med-entry" data-eventual-id="${e.id}">
+      <div>
+        <div class="eventual-med-title">🩹 ${escapeHtml_(e.nombre)}</div>
+        <div class="eventual-med-detail">${detailParts.join(" · ")}</div>
+        ${e.notas ? `<div class="eventual-med-detail">${escapeHtml_(e.notas)}</div>` : ""}
+      </div>
+      ${deleteBtn}
+    </div>`;
+}
+// opts: { readOnly } — doctor.html y familia.html usan readOnly:true.
+function renderEventualMedicationsListHTML(list, opts) {
+  if (!list || !list.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún medicamento eventual.</div>`;
+  }
+  return list.map(e => eventualMedicationEntryHTML_(e, opts)).join("");
+}
+// ---- Bitácora de medicamentos (v30.13) ----
+// Resumen por día: tomas programadas (tomadas/no marcadas) + medicamentos
+// eventuales de ese mismo día. Ver listMedicationLog en db-postgres.js.
+function medicationLogDayHTML_(day) {
+  const scheduledHTML = (day.scheduled || []).map(s => `
+    <div class="medlog-item ${s.taken ? "is-taken" : "is-missed"}">
+      <span class="medlog-time">${escapeHtml_(s.dose_time)}</span>
+      <span class="medlog-name">💊 ${escapeHtml_(s.medication_name)}${s.dose_text ? " — " + escapeHtml_(s.dose_text) : ""}</span>
+      <span class="medlog-status">${s.taken ? "✅ Tomada" : "— No marcada"}</span>
+    </div>`).join("");
+  const eventualHTML = (day.eventual || []).map(e => `
+    <div class="medlog-item medlog-item-eventual">
+      <span class="medlog-time">${e.hora ? escapeHtml_(e.hora) : "—"}</span>
+      <span class="medlog-name">🩹 ${escapeHtml_(e.nombre)}${e.dosis ? " — " + escapeHtml_(e.dosis) : ""}</span>
+      ${e.notas ? `<span class="medlog-notes">${escapeHtml_(e.notas)}</span>` : ""}
+    </div>`).join("");
+  return `
+    <div class="medlog-day">
+      <div class="medlog-day-date">${fmtDate(day.fecha)}</div>
+      ${scheduledHTML}${eventualHTML}
+    </div>`;
+}
+function renderMedicationLogHTML(log) {
+  if (!log || !log.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay nada que mostrar en la bitácora.</div>`;
+  }
+  return log.map(medicationLogDayHTML_).join("");
 }
 // Panel de "tomas de hoy" (solo vista de paciente): una casilla por cada
 // hora programada de cada medicamento activo, para marcarla como tomada.
@@ -1072,7 +1148,7 @@ function medicationDoseTodayHTML_(doses) {
   return sorted.map(d => `
     <label class="med-dose-today-row ${d.taken ? "is-taken" : ""}" data-medication-id="${d.medication_id}" data-dose-time="${d.dose_time}">
       <input type="checkbox" class="med-dose-checkbox" data-medication-id="${d.medication_id}" data-dose-time="${d.dose_time}" ${d.taken ? "checked" : ""}>
-      <span class="med-dose-time">${escapeHtml_(d.dose_time)}</span>
+      <span class="med-dose-time">${d.dose_date ? `<span class="med-dose-date">${fmtDate(d.dose_date)}</span> ` : ""}${escapeHtml_(d.dose_time)}</span>
       <span class="med-dose-name">${escapeHtml_(d.medication_name)}${d.dose_text ? " — " + escapeHtml_(d.dose_text) : ""}</span>
     </label>`).join("");
 }

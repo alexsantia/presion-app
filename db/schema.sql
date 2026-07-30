@@ -379,3 +379,21 @@ CREATE TABLE IF NOT EXISTS consultas (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_consultas_patient ON consultas(patient_id, fecha DESC);
+
+-- v30.13: Medicamentos eventuales — tomas fuera del plan de recordatorios
+-- (aspirina, paracetamol, antiácidos, etc.), registradas sueltas, no
+-- ligadas a un medicamento del catálogo ni a un horario. Se muestran junto
+-- con las tomas programadas en la Bitácora de medicamentos (ver
+-- listMedicationLog en db-postgres.js).
+CREATE TABLE IF NOT EXISTS medicamentos_eventuales (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  nombre text NOT NULL,
+  dosis text NOT NULL DEFAULT '',
+  fecha date NOT NULL,
+  hora time,
+  notas text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_medicamentos_eventuales_patient ON medicamentos_eventuales(patient_id, fecha DESC);

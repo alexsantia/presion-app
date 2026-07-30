@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.12"></script>
+<script src="/shared/common.js?v=30.13"></script>
 <style>
   :root {
     color-scheme: light;
@@ -611,6 +611,16 @@
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Medicamentos que el paciente tiene registrados (solo lectura). El calendario semanal se calcula solo a partir de la frecuencia.</p>
     <div id="medicationsListWrap"></div>
   </div>
+  <div class="section">
+    <h2>Medicamentos eventuales</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Tomas fuera de plan que el paciente ha registrado (solo lectura).</p>
+    <div id="eventualMedsListWrap"></div>
+  </div>
+  <div class="section">
+    <h2>Bitácora de medicamentos</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Resumen de los últimos 30 días: tomas programadas y eventuales (solo lectura).</p>
+    <div id="medicationLogWrap"></div>
+  </div>
 </div>
 
 <div id="tabConsultas" class="tab-panel" style="display:none;">
@@ -673,7 +683,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.12</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.13</button></footer>
 
 <script>
 let chartInstance = null;
@@ -1252,6 +1262,18 @@ async function loadMedications() {
   try { currentMedications = await apiGet("/api/medications"); } catch (err) { currentMedications = []; }
   document.getElementById("medicationsListWrap").innerHTML = renderMedicationsListHTML(currentMedications, { readOnly: true });
 }
+// ---- Medicamentos eventuales (solo lectura, v30.13) ----
+let currentEventualMeds = [];
+async function loadEventualMedications() {
+  try { currentEventualMeds = await apiGet("/api/eventual-medications"); } catch (err) { currentEventualMeds = []; }
+  document.getElementById("eventualMedsListWrap").innerHTML = renderEventualMedicationsListHTML(currentEventualMeds, { readOnly: true });
+}
+// ---- Bitácora de medicamentos (solo lectura, v30.13) ----
+async function loadMedicationLog() {
+  let log = [];
+  try { log = await apiGet("/api/medication-log"); } catch (err) { log = []; }
+  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log);
+}
 // ---- Consultas médicas (solo lectura, v30.12) ----
 let currentConsultations = [];
 async function loadConsultations() {
@@ -1435,7 +1457,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.12");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.13");
 
 loadPatient();
 loadAndRender();
@@ -1446,6 +1468,8 @@ loadHabits();
 loadSymptoms();
 loadLabHistory();
 loadMedications();
+loadEventualMedications();
+loadMedicationLog();
 loadExercises();
 loadConsultations();
 loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
@@ -1483,6 +1507,11 @@ connectRealtime("/api/stream", kind => {
   if (kind === "medication") {
     loadMedications();
     loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
+    loadMedicationLog();
+  }
+  if (kind === "eventual_medication") {
+    loadEventualMedications();
+    loadMedicationLog();
   }
   if (kind === "exercise") {
     loadExercises().then(() => renderLabHistoryCharts(["exercise"]));
