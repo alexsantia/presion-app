@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.14"></script>
+<script src="/shared/common.js?v=30.15"></script>
 <style>
   :root {
     color-scheme: light;
@@ -925,7 +925,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.14</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.15</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1401,7 +1401,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.14");
+  showAboutOverlay_("30.15");
 });
 
 function openModal(id) {
@@ -2159,8 +2159,12 @@ function renderWeekdayChart() {
     data: {
       labels: grouped.map(g => g.label),
       datasets: [
-        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9" },
-        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9" },
+        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9", yAxisID: "y" },
+        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9", yAxisID: "y" },
+        // v30.15: FC como línea sobre un eje propio (bpm), igual que en la
+        // gráfica de Tendencia — mezclarla como barra en el mismo eje que
+        // mmHg no tiene sentido porque son escalas muy distintas.
+        { label: "FC (prom.)", type: "line", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4, 3], tension: 0.25, spanGaps: true, yAxisID: "y1" },
       ],
     },
     options: {
@@ -2171,15 +2175,15 @@ function renderWeekdayChart() {
           callbacks: {
             afterBody(items) {
               const point = grouped[items[0].dataIndex];
-              const parts = [];
-              if (point.hr != null) parts.push(`FC prom.: ${point.hr}`);
-              parts.push(`${point.count} lectura${point.count === 1 ? "" : "s"}`);
-              return parts;
+              return [`${point.count} lectura${point.count === 1 ? "" : "s"}`];
             },
           },
         },
       },
-      scales: { y: { title: { display: true, text: "mmHg" }, beginAtZero: false } },
+      scales: {
+        y: { position: "left", title: { display: true, text: "mmHg" }, beginAtZero: false },
+        y1: { position: "right", title: { display: true, text: "FC" }, grid: { drawOnChartArea: false } },
+      },
     },
   });
 }

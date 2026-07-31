@@ -645,6 +645,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.15", changes: [
+    "Comparar por día de la semana ahora también muestra la frecuencia cardíaca promedio (línea, con su propio eje), no solo sistólica y diastólica.",
+  ] },
   { version: "30.14", changes: [
     "Nueva gráfica en Estadísticas: Comparar por día de la semana. Agrupa tus lecturas por lunes, martes, etc., con la opción de acotarlas primero a una franja horaria (por ejemplo, comparar solo tus mañanas del lunes contra las del viernes).",
   ] },
