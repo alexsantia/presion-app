@@ -706,6 +706,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.18", changes: [
+    "En Estadísticas, la gráfica de Presión Arterial Media (PAM) ahora aparece hasta arriba, justo después del filtro general.",
+    "Nuevo filtro \"Día\" en las gráficas de PAM y Frecuencia cardíaca.",
+  ] },
   { version: "30.17", changes: [
     "La gráfica de PAM en Estadísticas ahora muestra una banda verde con el rango óptimo (70-100 mmHg) de fondo, más una guía con la interpretación clínica (rango óptimo, límite crítico inferior y límite superior elevado).",
   ] },

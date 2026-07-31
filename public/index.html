@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.17"></script>
+<script src="/shared/common.js?v=30.18"></script>
 <style>
   :root {
     color-scheme: light;
@@ -537,6 +537,29 @@
     <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
   </div>
 
+  <!-- v30.18: PAM movida hasta arriba de Estadísticas, antes de "Comparar por
+       franja horaria" (ver nota completa de la fórmula más abajo en su
+       versión original de v30.16). -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Presión Arterial Media (PAM)</h2>
+      <div class="chart-filter-mini" data-chart-key="pam" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">PAM = (Sistólica + 2 × Diastólica) / 3. La banda verde de la gráfica marca el rango óptimo.</p>
+    <div style="font-size:12px; color:var(--text-muted); margin:0 0 10px; display:flex; flex-direction:column; gap:3px;">
+      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#6FA98C; margin-right:6px;"></span><strong style="color:var(--text);">70-100 mmHg (óptimo):</strong> perfusión de tus órganos equilibrada.</div>
+      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#C97064; margin-right:6px;"></span><strong style="color:var(--text);">Menor a 60-65 mmHg:</strong> riesgo de isquemia (tus tejidos dejan de recibir suficiente sangre).</div>
+      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#D98E5F; margin-right:6px;"></span><strong style="color:var(--text);">Mayor a 100 mmHg de forma sostenida:</strong> esfuerzo excesivo para tu corazón y daño progresivo en tus vasos.</div>
+    </div>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsPamChart"></canvas></div>
+    <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Comparar por franja horaria</h2>
@@ -579,33 +602,11 @@
     <div id="statsWeekdayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar por día de la semana.</div>
   </div>
 
-  <!-- v30.16: Presión Arterial Media (PAM) = (sistólica + 2×diastólica) / 3
-       — el promedio de presión que en realidad "sienten" tus órganos durante
-       todo el ciclo cardíaco. Se calcula al vuelo a partir de tus lecturas,
-       no se guarda como campo aparte. -->
-  <div class="section section-chart">
-    <div class="toolbar">
-      <h2 style="flex:1">Presión Arterial Media (PAM)</h2>
-      <div class="chart-filter-mini" data-chart-key="pam" role="group" aria-label="Periodo de esta gráfica">
-        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
-        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
-        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
-      </div>
-    </div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">PAM = (Sistólica + 2 × Diastólica) / 3. La banda verde de la gráfica marca el rango óptimo.</p>
-    <div style="font-size:12px; color:var(--text-muted); margin:0 0 10px; display:flex; flex-direction:column; gap:3px;">
-      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#6FA98C; margin-right:6px;"></span><strong style="color:var(--text);">70-100 mmHg (óptimo):</strong> perfusión de tus órganos equilibrada.</div>
-      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#C97064; margin-right:6px;"></span><strong style="color:var(--text);">Menor a 60-65 mmHg:</strong> riesgo de isquemia (tus tejidos dejan de recibir suficiente sangre).</div>
-      <div><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#D98E5F; margin-right:6px;"></span><strong style="color:var(--text);">Mayor a 100 mmHg de forma sostenida:</strong> esfuerzo excesivo para tu corazón y daño progresivo en tus vasos.</div>
-    </div>
-    <div class="chart-wrap" style="height:220px;"><canvas id="statsPamChart"></canvas></div>
-    <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
-  </div>
-
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Frecuencia cardíaca</h2>
       <div class="chart-filter-mini" data-chart-key="hr" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
@@ -952,7 +953,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.17</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.18</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1428,7 +1429,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.17");
+  showAboutOverlay_("30.18");
 });
 
 function openModal(id) {
