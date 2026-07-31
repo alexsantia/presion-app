@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.13"></script>
+<script src="/shared/common.js?v=30.14"></script>
 <style>
   :root {
     color-scheme: light;
@@ -551,6 +551,34 @@
     <div id="statsTimeOfDayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar franjas horarias.</div>
   </div>
 
+  <!-- v30.14: comparación por día de la semana, opcionalmente acotada a una
+       franja horaria — para preguntas como "¿mis mañanas del lunes suelen
+       ser más altas que las del viernes?". Reutiliza el mismo mini-filtro de
+       periodo (chart-filter-mini) que las demás gráficas de esta pestaña. -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Comparar por día de la semana</h2>
+      <div class="chart-filter-mini" data-chart-key="weekday" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de tus lecturas agrupadas por día de la semana, para comparar por ejemplo todas tus mañanas del lunes contra las del viernes.</p>
+    <label style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+      Franja horaria a comparar:
+      <select id="statsWeekdayTimeView" aria-label="Franja horaria a comparar">
+        <option value="regular">Todas las horas</option>
+        <option value="manana">Mañanas (5–12h)</option>
+        <option value="tarde">Tardes (12–19h)</option>
+        <option value="noche">Noches (19–1h)</option>
+        <option value="madrugada">Madrugadas (1–5h)</option>
+      </select>
+    </label>
+    <div class="chart-wrap"><canvas id="statsWeekdayChart"></canvas></div>
+    <div id="statsWeekdayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar por día de la semana.</div>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Frecuencia cardíaca</h2>
@@ -897,7 +925,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.13</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.14</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1098,6 +1126,8 @@
 <script>
 let chartInstance = null;
 let statsChartInstance = null;
+let statsWeekdayChartInstance = null;
+let statsWeekdayTimeView = "regular";
 let statsChartPeriod = "month";
 let editingId = null;
 let currentData = [];
@@ -1371,7 +1401,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.13");
+  showAboutOverlay_("30.14");
 });
 
 function openModal(id) {
@@ -2053,7 +2083,7 @@ function renderChart() {
 // statsChartOverrides guarda, por gráfica, un periodo propio que la
 // desliga del general; null significa "sigue al general". effectivePeriod_
 // es lo que de verdad usa cada gráfica al dibujarse.
-let statsChartOverrides = { timeOfDay: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
+let statsChartOverrides = { timeOfDay: null, weekday: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -2106,6 +2136,58 @@ function renderStatsChart() {
     },
   });
 }
+
+// ---- Estadísticas: comparación por día de la semana (v30.14) ----
+// Mismo patrón que renderStatsChart (barras Sistólica/Diastólica), pero
+// agrupando por día en vez de por franja, y con un selector propio de franja
+// horaria (statsWeekdayTimeView) que acota los datos ANTES de agrupar por
+// día — para poder comparar, por ejemplo, solo las mañanas del lunes contra
+// las del viernes, no todas las horas del lunes contra todas las del viernes.
+function renderWeekdayChart() {
+  const canvas = document.getElementById("statsWeekdayChart");
+  if (!canvas) return;
+  const grouped = weekdayComparisonData(currentData, effectivePeriod_("weekday"), statsWeekdayTimeView);
+  const emptyEl = document.getElementById("statsWeekdayEmpty");
+  const hasData = grouped.some(g => g.sys != null || g.dia != null);
+  emptyEl.style.display = hasData ? "none" : "block";
+  canvas.style.display = hasData ? "" : "none";
+  if (statsWeekdayChartInstance) { statsWeekdayChartInstance.destroy(); statsWeekdayChartInstance = null; }
+  if (!hasData) return;
+  const ctx = canvas.getContext("2d");
+  statsWeekdayChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: grouped.map(g => g.label),
+      datasets: [
+        { label: "Sistólica (prom.)", data: grouped.map(g => g.sys), backgroundColor: "#2e6fd9" },
+        { label: "Diastólica (prom.)", data: grouped.map(g => g.dia), backgroundColor: "#5ba7d9" },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            afterBody(items) {
+              const point = grouped[items[0].dataIndex];
+              const parts = [];
+              if (point.hr != null) parts.push(`FC prom.: ${point.hr}`);
+              parts.push(`${point.count} lectura${point.count === 1 ? "" : "s"}`);
+              return parts;
+            },
+          },
+        },
+      },
+      scales: { y: { title: { display: true, text: "mmHg" }, beginAtZero: false } },
+    },
+  });
+}
+document.getElementById("statsWeekdayTimeView").addEventListener("change", e => {
+  statsWeekdayTimeView = e.target.value;
+  renderWeekdayChart();
+});
+
 document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
@@ -2115,6 +2197,7 @@ document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
   renderStatsChart();
+  renderWeekdayChart();
   renderLabHistoryCharts();
 });
 // Un solo listener delegado para las mini-toolbars de cada gráfica: al
@@ -2129,12 +2212,14 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
   // Solo esta gráfica cambió de periodo: se redibuja nada más ella, para que
   // las demás no parpadeen dando la falsa impresión de que también cambiaron.
   if (key === "timeOfDay") renderStatsChart();
+  else if (key === "weekday") renderWeekdayChart();
   else renderLabHistoryCharts([key]);
 });
 document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
   renderStatsChart();
+  renderWeekdayChart();
   renderLabHistoryCharts();
 });
 syncStatsFilterButtons_();
@@ -2244,7 +2329,7 @@ loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 // Estadísticas por si acaso quedó con el tamaño equivocado.
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
-    if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderLabHistoryCharts(); }
+    if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
   });
 });
 
@@ -2260,6 +2345,7 @@ function render() {
     document.getElementById("alertsContent").innerHTML = `<div style="color:var(--text-muted); font-size:13px;">Agrega o importa lecturas para ver alertas y tendencias.</div>`;
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
     renderStatsChart();
+    renderWeekdayChart();
     renderLabHistoryCharts();
     return;
   }
@@ -2299,6 +2385,7 @@ function render() {
 
   renderChart();
   renderStatsChart();
+  renderWeekdayChart();
   renderLabHistoryCharts();
 }
 

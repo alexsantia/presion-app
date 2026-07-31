@@ -175,6 +175,41 @@ function timeOfDayComparisonData(data, granularity) {
   });
 }
 
+// ---- Comparación por día de la semana (v30.14) ----
+// Para "Estadísticas": promedia sys/dia/hr agrupando las lecturas por día de
+// la semana (Lunes a Domingo), opcionalmente acotadas primero a una franja
+// horaria (reutiliza filterByTimeView — "todas" o mañana/tarde/noche/
+// madrugada) y siempre acotadas al periodo elegido (semana, mes o año).
+// Responde preguntas como "¿mis mañanas del lunes suelen ser más altas que
+// las del viernes?". Siempre regresa los 7 días en el mismo orden (lunes
+// primero), aunque alguno no tenga lecturas (sys/dia/hr en null, para que la
+// gráfica muestre el hueco en vez de desaparecer la barra).
+const WEEKDAY_BUCKETS_ = [
+  { key: 0, label: "Lunes" },
+  { key: 1, label: "Martes" },
+  { key: 2, label: "Miércoles" },
+  { key: 3, label: "Jueves" },
+  { key: 4, label: "Viernes" },
+  { key: 5, label: "Sábado" },
+  { key: 6, label: "Domingo" },
+];
+function dateStrToWeekday_(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
+}
+function weekdayComparisonData(data, granularity, timeView) {
+  const periodFiltered = filterByPeriod(data, granularity || "month");
+  const timeFiltered = filterByTimeView(periodFiltered, timeView);
+  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+  return WEEKDAY_BUCKETS_.map(bucket => {
+    const bucketData = timeFiltered.filter(r => dateStrToWeekday_(r.date) === bucket.key);
+    const sysVals = bucketData.map(r => r.sys).filter(v => v != null);
+    const diaVals = bucketData.map(r => r.dia).filter(v => v != null);
+    const hrVals = bucketData.map(r => r.hr).filter(v => v != null);
+    return { key: bucket.key, label: bucket.label, sys: avg(sysVals), dia: avg(diaVals), hr: avg(hrVals), count: bucketData.length };
+  });
+}
+
 // v30.7: mismo criterio que filterByPeriod, pero recibe el nombre del campo
 // de fecha a usar — las lecturas normales usan "date" y el historial de
 // laboratorio (lab_history) usa "fecha", y ahora las gráficas de
@@ -610,6 +645,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.14", changes: [
+    "Nueva gráfica en Estadísticas: Comparar por día de la semana. Agrupa tus lecturas por lunes, martes, etc., con la opción de acotarlas primero a una franja horaria (por ejemplo, comparar solo tus mañanas del lunes contra las del viernes).",
+  ] },
   { version: "30.13", changes: [
     "Corregido: la fecha de inicio de tratamiento en Medicamentos se veía descuadrada.",
     "Nuevo síntoma: temblor de ojo (tic palpebral).",
