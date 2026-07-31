@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.18"></script>
+<script src="/shared/common.js?v=30.19"></script>
 <style>
   :root {
     color-scheme: light;
@@ -295,6 +295,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
       </div>
+      <input type="date" class="chart-filter-mini-daypicker" data-chart-key="pam" style="display:none;">
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">PAM = (Sistólica + 2 × Diastólica) / 3. La banda verde de la gráfica marca el rango óptimo.</p>
     <div style="font-size:12px; color:var(--text-muted); margin:0 0 10px; display:flex; flex-direction:column; gap:3px;">
@@ -354,6 +355,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
       </div>
+      <input type="date" class="chart-filter-mini-daypicker" data-chart-key="hr" style="display:none;">
     </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsHrChart"></canvas></div>
     <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
@@ -487,7 +489,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.18</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.19</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -785,6 +787,8 @@ function renderChart() {
 // ver nota completa en index.html) ----
 let statsChartOverrides = { timeOfDay: null, weekday: null, pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
+// v30.19: día exacto elegido para PAM/FC (ver nota completa en index.html)
+let statsChartDay = { pam: todayStr(), hr: todayStr() };
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
   document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
@@ -792,6 +796,11 @@ function syncStatsFilterButtons_() {
     const eff = effectivePeriod_(key);
     wrap.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === eff));
     wrap.classList.toggle("is-override", !!statsChartOverrides[key]);
+  });
+  document.querySelectorAll(".chart-filter-mini-daypicker").forEach(input => {
+    const key = input.dataset.chartKey;
+    input.style.display = effectivePeriod_(key) === "day" ? "inline-block" : "none";
+    if (statsChartDay[key] && input.value !== statsChartDay[key]) input.value = statsChartDay[key];
   });
 }
 
@@ -917,6 +926,18 @@ document.getElementById("statsClearFiltersBtn").addEventListener("click", () => 
   renderWeekdayChart();
   renderLabHistoryCharts();
 });
+// v30.19: selector de fecha para el periodo "Día" (ver nota en index.html)
+document.getElementById("tabEstadisticas").addEventListener("change", e => {
+  const input = e.target.closest(".chart-filter-mini-daypicker");
+  if (!input) return;
+  const key = input.dataset.chartKey;
+  statsChartDay[key] = input.value || todayStr();
+  renderLabHistoryCharts([key]);
+});
+document.querySelectorAll(".chart-filter-mini-daypicker").forEach(input => {
+  input.max = todayStr();
+  input.value = statsChartDay[input.dataset.chartKey] || todayStr();
+});
 syncStatsFilterButtons_();
 
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
@@ -937,18 +958,26 @@ let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChar
     statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null, statsPamChartInstance = null;
 // v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas nada más,
 // para que el filtro propio de una gráfica no haga parpadear a las demás.
+// v30.19: filterForChartPeriod_ (ver nota en index.html) usa el día exacto
+// elegido cuando el periodo efectivo es "day".
+function filterForChartPeriod_(data, chartKey, dateField) {
+  const period = effectivePeriod_(chartKey);
+  return period === "day"
+    ? filterByExactDate_(data, statsChartDay[chartKey], dateField)
+    : filterByPeriodField_(data, period, dateField);
+}
 function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
   if (shouldRender("pam")) {
-    const pamData = filterByPeriodField_(currentData, effectivePeriod_("pam"), "date");
+    const pamData = filterForChartPeriod_(currentData, "pam", "date");
     statsPamChartInstance = renderMetricTrendChart(
       statsPamChartInstance, document.getElementById("statsPamChart"), document.getElementById("statsPamEmpty"),
       pamSeriesForReadings_(pamData), { label: "PAM", color: "#6E8FB0", unit: "mmHg", idealRange: PAM_IDEAL_RANGE }
     );
   }
   if (shouldRender("hr")) {
-    const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
+    const hrData = filterForChartPeriod_(currentData, "hr", "date");
     statsHrChartInstance = renderMetricTrendChart(
       statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
       readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
@@ -1060,7 +1089,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.18");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.19");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

@@ -226,6 +226,15 @@ function filterByPeriodField_(data, granularity, dateField) {
   const cutoffStr = localDateStr_(cutoff);
   return list.filter(r => r[dateField] >= cutoffStr);
 }
+// v30.19: cuando el periodo "Día" trae su propio selector de fecha (en vez
+// de fijarse siempre a "hoy"), esto filtra a ESE día exacto — a diferencia
+// de filterByPeriodField_(data, "day", ...), que siempre eran "las últimas
+// 24 horas desde ahora" (o sea, siempre hoy). dateField es "date" (lecturas)
+// o "fecha" (historial de laboratorio), igual que filterByPeriodField_.
+function filterByExactDate_(data, dateStr, dateField) {
+  if (!dateStr) return [];
+  return (data || []).filter(r => r[dateField] === dateStr);
+}
 
 // ---- Gráficas de una sola métrica en Estadísticas (v30.6, filtro de
 // periodo y observaciones agregados en v30.7): Frecuencia cardíaca y Peso
@@ -706,6 +715,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.19", changes: [
+    "Al elegir \"Día\" en las gráficas de PAM y Frecuencia cardíaca (Estadísticas), ahora aparece un selector de fecha para ver cualquier día concreto, en vez de fijarse siempre a hoy.",
+  ] },
   { version: "30.18", changes: [
     "En Estadísticas, la gráfica de Presión Arterial Media (PAM) ahora aparece hasta arriba, justo después del filtro general.",
     "Nuevo filtro \"Día\" en las gráficas de PAM y Frecuencia cardíaca.",
