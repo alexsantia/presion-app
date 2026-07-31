@@ -265,6 +265,35 @@ function pamSeriesForReadings_(data) {
     obs: filtered.map(r => r.obs || ""),
   };
 }
+// v30.17: rango "óptimo" de PAM citado por referencias clínicas generales
+// (70-100 mmHg garantiza buena perfusión de cerebro/riñones/corazón); por
+// debajo de 60-65 mmHg hay riesgo de isquemia, y sostenido por arriba de 100
+// implica esfuerzo excesivo para el corazón. Se usa para pintar la banda de
+// fondo de la gráfica de PAM en Estadísticas.
+const PAM_IDEAL_RANGE = { min: 70, max: 100, color: "rgba(111, 169, 140, 0.15)" };
+// v30.17: banda de fondo para un rango "ideal" (por ahora, solo la usa PAM)
+// — un plugin de Chart.js normal (no un plugin global registrado, que
+// afectaría TODAS las gráficas de la app) que se pasa por gráfica en el
+// arreglo `plugins` del constructor, así que solo pinta cuando el que llama
+// a renderMetricTrendChart manda opts.idealRange. Dibuja el rectángulo antes
+// de las líneas/puntos (beforeDatasetsDraw) usando la escala Y ya calculada,
+// para que la banda quede exactamente entre min y max del rango.
+function idealRangeBandPlugin_(range) {
+  return {
+    id: "idealRangeBand",
+    beforeDatasetsDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      const yScale = scales.y;
+      if (!chartArea || !yScale) return;
+      const yTop = yScale.getPixelForValue(range.max);
+      const yBottom = yScale.getPixelForValue(range.min);
+      ctx.save();
+      ctx.fillStyle = range.color || "rgba(111, 169, 140, 0.15)";
+      ctx.fillRect(chartArea.left, yTop, chartArea.right - chartArea.left, yBottom - yTop);
+      ctx.restore();
+    },
+  };
+}
 function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   if (prevInstance) prevInstance.destroy();
   const hasData = series.values.length > 0;
@@ -272,12 +301,23 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   if (canvasEl) canvasEl.style.display = hasData ? "" : "none";
   if (!hasData || !canvasEl) return null;
   const ctx = canvasEl.getContext("2d");
+  const idealRange = opts.idealRange;
+  // Con banda ideal: el eje siempre incluye ese rango (con algo de margen),
+  // aunque todas las lecturas caigan muy por arriba o por abajo — si no, la
+  // banda podría quedar fuera de la vista y parecer que no existe.
+  const yScaleOpts = { title: { display: true, text: opts.unit || "" }, beginAtZero: false };
+  if (idealRange) {
+    const vals = series.values.filter(v => v != null);
+    yScaleOpts.suggestedMin = Math.min(idealRange.min - 10, ...vals);
+    yScaleOpts.suggestedMax = Math.max(idealRange.max + 10, ...vals);
+  }
   return new Chart(ctx, {
     type: "line",
     data: { labels: series.labels, datasets: [{
       label: opts.label, data: series.values, borderColor: opts.color, backgroundColor: opts.color,
       tension: 0.25, spanGaps: true, pointRadius: 3,
     }] },
+    plugins: idealRange ? [idealRangeBandPlugin_(idealRange)] : [],
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
@@ -291,7 +331,7 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
           },
         },
       },
-      scales: { y: { title: { display: true, text: opts.unit || "" }, beginAtZero: false } },
+      scales: { y: yScaleOpts },
     },
   });
 }
@@ -666,6 +706,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.17", changes: [
+    "La gráfica de PAM en Estadísticas ahora muestra una banda verde con el rango óptimo (70-100 mmHg) de fondo, más una guía con la interpretación clínica (rango óptimo, límite crítico inferior y límite superior elevado).",
+  ] },
   { version: "30.16", changes: [
     "Nueva gráfica en Estadísticas: Presión Arterial Media (PAM), calculada como (Sistólica + 2 × Diastólica) / 3.",
     "En Medicamentos, la sección \"Medicamento eventual\" ahora aparece justo debajo de \"Tomas de hoy\".",
