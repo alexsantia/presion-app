@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.15"></script>
+<script src="/shared/common.js?v=30.16"></script>
 <style>
   :root {
     color-scheme: light;
@@ -324,6 +324,21 @@
     <div id="statsWeekdayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar por día de la semana.</div>
   </div>
 
+  <!-- v30.16: Presión Arterial Media (PAM), ver nota completa en index.html -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Presión Arterial Media (PAM)</h2>
+      <div class="chart-filter-mini" data-chart-key="pam" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">PAM = (Sistólica + 2 × Diastólica) / 3. Se calcula con cada lectura registrada; un rango de 70-100 mmHg suele considerarse adecuado para la perfusión de los órganos.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsPamChart"></canvas></div>
+    <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Frecuencia cardíaca</h2>
@@ -465,7 +480,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.15</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.16</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -761,7 +776,7 @@ function renderChart() {
 
 // ---- Estadísticas: filtro general + filtro propio por gráfica (v30.8,
 // ver nota completa en index.html) ----
-let statsChartOverrides = { timeOfDay: null, weekday: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
+let statsChartOverrides = { timeOfDay: null, weekday: null, pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -912,12 +927,19 @@ function exerciseDailyTotalsForChart_() {
 }
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null,
-    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null;
+    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null, statsPamChartInstance = null;
 // v30.10: onlyKeys (opcional) limita el redibujado a esas gráficas nada más,
 // para que el filtro propio de una gráfica no haga parpadear a las demás.
 function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
+  if (shouldRender("pam")) {
+    const pamData = filterByPeriodField_(currentData, effectivePeriod_("pam"), "date");
+    statsPamChartInstance = renderMetricTrendChart(
+      statsPamChartInstance, document.getElementById("statsPamChart"), document.getElementById("statsPamEmpty"),
+      pamSeriesForReadings_(pamData), { label: "PAM", color: "#6E8FB0", unit: "mmHg" }
+    );
+  }
   if (shouldRender("hr")) {
     const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
     statsHrChartInstance = renderMetricTrendChart(
@@ -1031,7 +1053,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.15");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.16");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

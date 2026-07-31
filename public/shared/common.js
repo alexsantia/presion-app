@@ -244,6 +244,27 @@ function labHistorySeriesForKey_(history, key) {
   const filtered = (history || []).filter(h => h[key] != null);
   return { labels: filtered.map(h => fmtDate(h.fecha)), values: filtered.map(h => h[key]), obs: filtered.map(() => "") };
 }
+
+// ---- Presión Arterial Media / PAM (v30.16) ----
+// PAM = (sistólica + 2 × diastólica) / 3 — el promedio de presión que en
+// realidad "sienten" los órganos durante todo el ciclo cardíaco (el corazón
+// pasa más tiempo en diástole que en sístole, por eso el diastólico pesa el
+// doble en la fórmula, no un simple promedio de los dos números). No
+// sustituye la clasificación AHA de cada lectura; es una métrica aparte que
+// se calcula al vuelo a partir de sys/dia, sin guardarse en la base de
+// datos.
+function pamValue_(sys, dia) {
+  if (sys == null || dia == null) return null;
+  return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
+}
+function pamSeriesForReadings_(data) {
+  const filtered = (data || []).filter(r => r.sys != null && r.dia != null);
+  return {
+    labels: filtered.map(r => fmtDate(r.date) + (r.time ? " " + r.time : "")),
+    values: filtered.map(r => pamValue_(r.sys, r.dia)),
+    obs: filtered.map(r => r.obs || ""),
+  };
+}
 function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   if (prevInstance) prevInstance.destroy();
   const hasData = series.values.length > 0;
@@ -645,6 +666,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "30.16", changes: [
+    "Nueva gráfica en Estadísticas: Presión Arterial Media (PAM), calculada como (Sistólica + 2 × Diastólica) / 3.",
+    "En Medicamentos, la sección \"Medicamento eventual\" ahora aparece justo debajo de \"Tomas de hoy\".",
+  ] },
   { version: "30.15", changes: [
     "Comparar por día de la semana ahora también muestra la frecuencia cardíaca promedio (línea, con su propio eje), no solo sistólica y diastólica.",
   ] },

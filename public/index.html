@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=30.15"></script>
+<script src="/shared/common.js?v=30.16"></script>
 <style>
   :root {
     color-scheme: light;
@@ -579,6 +579,24 @@
     <div id="statsWeekdayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar por día de la semana.</div>
   </div>
 
+  <!-- v30.16: Presión Arterial Media (PAM) = (sistólica + 2×diastólica) / 3
+       — el promedio de presión que en realidad "sienten" tus órganos durante
+       todo el ciclo cardíaco. Se calcula al vuelo a partir de tus lecturas,
+       no se guarda como campo aparte. -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Presión Arterial Media (PAM)</h2>
+      <div class="chart-filter-mini" data-chart-key="pam" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">PAM = (Sistólica + 2 × Diastólica) / 3. Se calcula con cada una de tus lecturas; un rango de 70-100 mmHg suele considerarse adecuado para la perfusión de tus órganos.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsPamChart"></canvas></div>
+    <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
+  </div>
+
   <div class="section section-chart">
     <div class="toolbar">
       <h2 style="flex:1">Frecuencia cardíaca</h2>
@@ -773,6 +791,30 @@
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Marca cada toma en cuanto la hagas. Si no la marcas, te seguimos recordando cada 30 minutos hasta la siguiente toma programada.</p>
     <div id="medDosesTodayWrap"></div>
   </div>
+
+  <!-- v30.13: medicamentos "fuera de plan" (aspirina, paracetamol,
+       antiácidos, etc.) — no llevan recordatorio ni horario, solo quedan
+       registrados para el historial/bitácora. v30.16: movida justo debajo de
+       "Tomas de hoy" (antes iba después de "Tus medicamentos"), para que
+       quede junto a lo que pasa hoy en vez de junto al catálogo de
+       medicamentos recurrentes. -->
+  <div class="section section-add">
+    <h2>Medicamento eventual</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Para tomas sueltas que no son parte de tu plan regular: aspirina, paracetamol, antiácidos, etc.</p>
+    <form class="add-form" id="eventualMedForm">
+      <div style="grid-column: span 2;"><label>Medicamento</label><input type="text" id="ev_nombre" required placeholder="Ej. Paracetamol"></div>
+      <div><label>Dosis</label><input type="text" id="ev_dosis" placeholder="Ej. 500 mg"></div>
+      <div><label>Fecha</label><input type="date" id="ev_fecha" required></div>
+      <div><label>Hora</label><input type="time" id="ev_hora"></div>
+      <div class="full">
+        <label>Notas</label>
+        <textarea id="ev_notas" rows="2" placeholder="Motivo, quién lo indicó, etc. (opcional)"></textarea>
+      </div>
+      <div class="row-actions"><button type="submit" class="btn-primary">Registrar</button></div>
+    </form>
+    <div id="eventualMedsListWrap" style="margin-top:14px;"></div>
+  </div>
+
   <div class="section section-add">
     <h2 id="medFormTitle">Agregar medicamento</h2>
     <form class="add-form" id="medicationForm">
@@ -821,26 +863,6 @@
     <h2>Tus medicamentos</h2>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">El calendario semanal se calcula solo a partir de la frecuencia; se repiten las mismas horas todos los días.</p>
     <div id="medicationsListWrap"></div>
-  </div>
-
-  <!-- v30.13: medicamentos "fuera de plan" (aspirina, paracetamol,
-       antiácidos, etc.) — no llevan recordatorio ni horario, solo quedan
-       registrados para el historial/bitácora. -->
-  <div class="section section-add">
-    <h2>Medicamento eventual</h2>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Para tomas sueltas que no son parte de tu plan regular: aspirina, paracetamol, antiácidos, etc.</p>
-    <form class="add-form" id="eventualMedForm">
-      <div style="grid-column: span 2;"><label>Medicamento</label><input type="text" id="ev_nombre" required placeholder="Ej. Paracetamol"></div>
-      <div><label>Dosis</label><input type="text" id="ev_dosis" placeholder="Ej. 500 mg"></div>
-      <div><label>Fecha</label><input type="date" id="ev_fecha" required></div>
-      <div><label>Hora</label><input type="time" id="ev_hora"></div>
-      <div class="full">
-        <label>Notas</label>
-        <textarea id="ev_notas" rows="2" placeholder="Motivo, quién lo indicó, etc. (opcional)"></textarea>
-      </div>
-      <div class="row-actions"><button type="submit" class="btn-primary">Registrar</button></div>
-    </form>
-    <div id="eventualMedsListWrap" style="margin-top:14px;"></div>
   </div>
 
   <!-- v30.13: Bitácora — resumen día por día de tomas programadas
@@ -925,7 +947,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.15</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v30.16</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1401,7 +1423,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("30.15");
+  showAboutOverlay_("30.16");
 });
 
 function openModal(id) {
@@ -2083,7 +2105,7 @@ function renderChart() {
 // statsChartOverrides guarda, por gráfica, un periodo propio que la
 // desliga del general; null significa "sigue al general". effectivePeriod_
 // es lo que de verdad usa cada gráfica al dibujarse.
-let statsChartOverrides = { timeOfDay: null, weekday: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
+let statsChartOverrides = { timeOfDay: null, weekday: null, pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -2237,7 +2259,7 @@ syncStatsFilterButtons_();
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null,
-    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null;
+    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null, statsPamChartInstance = null;
 // v30.11: agrega currentExercises (ya cargado para la pestaña Ejercicio) por
 // día, sumando calorías — varias sesiones el mismo día se ven como un solo
 // punto con el total del día.
@@ -2274,6 +2296,13 @@ function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
   const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
+  if (shouldRender("pam")) {
+    const pamData = filterByPeriodField_(currentData, effectivePeriod_("pam"), "date");
+    statsPamChartInstance = renderMetricTrendChart(
+      statsPamChartInstance, document.getElementById("statsPamChart"), document.getElementById("statsPamEmpty"),
+      pamSeriesForReadings_(pamData), { label: "PAM", color: "#6E8FB0", unit: "mmHg" }
+    );
+  }
   if (shouldRender("hr")) {
     const hrData = filterByPeriodField_(currentData, effectivePeriod_("hr"), "date");
     statsHrChartInstance = renderMetricTrendChart(
