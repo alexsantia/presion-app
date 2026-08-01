@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=30.19"></script>
+<script src="/shared/common.js?v=31.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -195,6 +195,7 @@
     </select>
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+  <div class="legend-hint" id="relatedChartLegend" style="display:none;"><span class="legend-hint-emoji">🟣</span> Punto morado = lectura relacionada con ejercicio, síntoma u otra actividad</div>
   <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
@@ -483,13 +484,23 @@
 <div id="tabEjercicio" class="tab-panel" style="display:none;">
 <div class="section">
   <h2>Ejercicio</h2>
-  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Ejercicio registrado (solo lectura). Las calorías son un estimado.</p>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Ejercicio registrado (solo lectura). Las calorías son un estimado. Incluye hora de inicio/fin y métricas especializadas por tipo cuando se capturaron.</p>
   <div id="exerciseTotalsWrap"></div>
   <div id="exercisesListWrap"></div>
 </div>
+<!-- v31: lecturas de presión durante actividad física (solo lectura) -->
+<div class="section section-chart">
+  <h2>Presión arterial durante actividad física</h2>
+  <div class="chart-wrap"><canvas id="exerciseReadingChart"></canvas></div>
+  <div id="exerciseReadingChartEmpty" style="display:none; color:var(--text-muted); font-size:13px; padding:10px 0;">Aún no hay lecturas de presión durante actividad física.</div>
+</div>
+<div class="section">
+  <h2>Historial</h2>
+  <div id="exerciseReadingsListWrap"></div>
+</div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v30.19</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v31.0</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -572,6 +583,10 @@ async function load() {
     currentMedAdherence = json.data.medAdherence || [];
     document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
     document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises, { readOnly: true });
+    // v31: lecturas de presión durante actividad física (solo lectura)
+    currentExerciseReadings = json.data.exerciseReadings || [];
+    document.getElementById("exerciseReadingsListWrap").innerHTML = renderExerciseReadingsListHTML(currentExerciseReadings, { readOnly: true });
+    renderExerciseReadingChart();
     ensureConsultationStyles_();
     document.getElementById("consultationsListWrap").innerHTML = renderConsultationsListHTML(json.data.consultations || [], {
       readOnly: true, photoBaseUrl: "/familia/" + encodeURIComponent(token) + "/consultations/",
@@ -762,11 +777,17 @@ function renderChart() {
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
+  // v31: "Relacionar con" — puntos ligados a ejercicio/síntoma/wellness se
+  // pintan de un color distinto (morado), ver relatedPointStyles_ en common.js.
+  const sysStyles = relatedPointStyles_(grouped, "#2e6fd9");
+  const diaStyles = relatedPointStyles_(grouped, "#5ba7d9");
+  const legendEl = document.getElementById("relatedChartLegend");
+  if (legendEl) legendEl.style.display = anyRelatedInGrouped_(grouped) ? "" : "none";
   chartInstance = new Chart(ctx, {
     type: "line",
     data: { labels, datasets: [
-      { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.sys },
-      { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia },
+      { label: "Sistólica", data: grouped.map(g => g.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.sys, ...sysStyles },
+      { label: "Diastólica", data: grouped.map(g => g.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true, hidden: hiddenDatasets.dia, ...diaStyles },
       { label: "FC", data: grouped.map(g => g.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4,3], tension: 0.25, yAxisID: "y1", spanGaps: true, hidden: hiddenDatasets.hr },
       { label: "Peso (kg)", data: grouped.map(g => g.weight), borderColor: "#9B8AC4", backgroundColor: "#9B8AC4", borderDash: [2,2], tension: 0.25, yAxisID: "y2", spanGaps: true, hidden: hiddenDatasets.weight },
       { label: document.getElementById("medLegendLabel").textContent, data: grouped.map(g => g.medicated), borderColor: "#4F9E8C", backgroundColor: "#4F9E8C", stepped: true, tension: 0, yAxisID: "y3", hidden: hiddenDatasets.medicated },
@@ -945,6 +966,38 @@ syncStatsFilterButtons_();
 let currentLabHistory = [];
 let currentExercises = [];
 let currentMedAdherence = [];
+let currentExerciseReadings = []; // v31
+let exerciseReadingChartInstance = null; // v31
+function renderExerciseReadingChart() {
+  const canvas = document.getElementById("exerciseReadingChart");
+  const emptyEl = document.getElementById("exerciseReadingChartEmpty");
+  const series = rawSeriesForChart(currentExerciseReadings);
+  const hasData = series.length > 0;
+  emptyEl.style.display = hasData ? "none" : "block";
+  canvas.style.display = hasData ? "" : "none";
+  if (exerciseReadingChartInstance) { exerciseReadingChartInstance.destroy(); exerciseReadingChartInstance = null; }
+  if (!hasData) return;
+  const ctx = canvas.getContext("2d");
+  exerciseReadingChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: series.map(s => s.label),
+      datasets: [
+        { label: "Sistólica", data: series.map(s => s.sys), borderColor: "#2e6fd9", backgroundColor: "#2e6fd9", tension: 0.25, yAxisID: "y", spanGaps: true },
+        { label: "Diastólica", data: series.map(s => s.dia), borderColor: "#5ba7d9", backgroundColor: "#5ba7d9", tension: 0.25, yAxisID: "y", spanGaps: true },
+        { label: "FC", data: series.map(s => s.hr), borderColor: "#8a8a8a", backgroundColor: "#8a8a8a", borderDash: [4, 3], tension: 0.25, yAxisID: "y1", spanGaps: true },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom" } },
+      scales: {
+        y: { position: "left", title: { display: true, text: "mmHg" } },
+        y1: { position: "right", title: { display: true, text: "FC" }, grid: { drawOnChartArea: false } },
+      },
+    },
+  });
+}
 function exerciseDailyTotalsForChart_() {
   const byDay = new Map();
   for (const ex of currentExercises || []) {
@@ -1089,7 +1142,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "30.19");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "31.0");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

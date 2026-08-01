@@ -397,3 +397,74 @@ CREATE TABLE IF NOT EXISTS medicamentos_eventuales (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_medicamentos_eventuales_patient ON medicamentos_eventuales(patient_id, fecha DESC);
+
+-- ============================================================
+-- v31
+-- ============================================================
+
+-- v31: hora de fin (además de la "hora" ya existente, que ahora se lee como
+-- hora de INICIO) para calcular la duración total del ejercicio; el usuario
+-- puede editarla a mano después de que se calculó sola. Métricas
+-- especializadas por tipo de ejercicio (ver EXERCISE_METRIC_FIELDS_ en
+-- common.js para saber cuáles aplican a cada tipo): distancia (carrera,
+-- caminata, hiking, ciclismo, natación, elíptica), FC promedio durante el
+-- ejercicio (la mayoría de las actividades), series/repeticiones/peso
+-- levantado (pesas), y escalones (subir escaleras). Todas nullable: un
+-- ejercicio se puede guardar sin ninguna métrica especializada.
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS hora_fin time;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS distancia_km numeric;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS fc_promedio numeric;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS series integer;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS repeticiones integer;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS peso_levantado_kg numeric;
+ALTER TABLE ejercicios ADD COLUMN IF NOT EXISTS escalones integer;
+
+-- v31: lecturas de presión tomadas DURANTE actividad física (sección
+-- Ejercicio) — deliberadamente una tabla separada de "lecturas" (reposo),
+-- con su propio panel de captura y su propia gráfica, para no mezclar ambos
+-- contextos ni alterar la gráfica/tabla principal de Presión Arterial.
+CREATE TABLE IF NOT EXISTS lecturas_actividad_fisica (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  date date,
+  time time,
+  sys integer,
+  dia integer,
+  hr integer,
+  obs text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lecturas_actividad_patient ON lecturas_actividad_fisica(patient_id);
+
+-- v31: sección Wellness — actividades de relajación/ocio en reposo
+-- (meditación, vapor, sauna, lectura/audiolibro en reposo, pintura, dibujo,
+-- escritura, etc.; ver WELLNESS_CATALOG en common.js). Estructura idéntica a
+-- "ejercicios" pero sin calorías (no son actividad física).
+CREATE TABLE IF NOT EXISTS wellness_entries (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  tipo text NOT NULL,
+  duracion_min numeric,
+  fecha date NOT NULL,
+  hora time,
+  notas text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_wellness_patient ON wellness_entries(patient_id, fecha DESC);
+
+-- v31: localización gráfica del dolor de cabeza (solo cuando sintomas.tipo =
+-- 'dolor_cabeza'). Selección múltiple de zonas de la cabeza (ver
+-- HEAD_PAIN_LOCATIONS en common.js) — deliberadamente solo ubicación, nunca
+-- un nombre de tipo de dolor de cabeza ni un diagnóstico.
+ALTER TABLE sintomas ADD COLUMN IF NOT EXISTS ubicaciones_dolor jsonb;
+
+-- v31: "Relacionar con" — liga una lectura de presión (en reposo) con un
+-- registro de otra sección (ejercicio, síntoma o wellness), para poder
+-- identificarla en las gráficas con un color distinto. related_label es una
+-- copia de texto (no una relación por llave foránea) para que la lectura
+-- conserve el contexto aunque el registro relacionado se borre después.
+ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_type text;
+ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_id uuid;
+ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_label text;

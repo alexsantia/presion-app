@@ -86,7 +86,7 @@ function aggregateReadings(data, granularity) {
   const groups = new Map();
   (data || []).forEach(r => {
     const { key, label } = periodKeyAndLabel_(r.date, granularity || "day", r.time);
-    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [], obs: [] });
+    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [], obs: [], related: [] });
     const g = groups.get(key);
     if (r.sys != null) g.sys.push(r.sys);
     if (r.dia != null) g.dia.push(r.dia);
@@ -94,11 +94,15 @@ function aggregateReadings(data, granularity) {
     if (r.weight != null) g.weight.push(r.weight);
     g.medicated.push(r.medicated ? 1 : 0);
     if (r.obs && String(r.obs).trim()) g.obs.push(String(r.obs).trim());
+    g.related.push(!!r.related_type);
   });
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return Array.from(groups.values())
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), obs: g.obs.join(" · "), count: Math.max(g.sys.length, g.dia.length) }));
+    .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), obs: g.obs.join(" · "), count: Math.max(g.sys.length, g.dia.length),
+      // v31: true si AL MENOS una lectura de este grupo (ej. de esta hora,
+      // si se agrupó por hora) está relacionada con otra sección.
+      related: g.related.some(Boolean) }));
 }
 // Convierte cada lectura en un punto individual para la gráfica (sin
 // agrupar ni promediar), ordenado cronológicamente y con el eje X mostrando
@@ -113,8 +117,31 @@ function rawSeriesForChart(data) {
       medicated: r.medicated ? 1 : 0,
       obs: r.obs ? String(r.obs).trim() : "",
       count: 1,
+      // v31: "Relacionar con" — si esta lectura está ligada a un ejercicio,
+      // síntoma o actividad de wellness, se marca para pintarse distinto en
+      // la gráfica de Tendencia (ver relatedPointStyles_ más abajo).
+      related: !!r.related_type,
     }));
 }
+// ---- v31: "Relacionar con" — colorear distinto en la gráfica las lecturas
+// ligadas a un ejercicio/síntoma/actividad de wellness. ----
+const RELATED_TYPE_LABELS_ = { exercise: "Ejercicio", symptom: "Síntoma", wellness: "Wellness" };
+const RELATED_POINT_COLOR_ = "#8B5CF6"; // morado, distinto de sys/dia/hr/peso
+// Arma los arreglos pointBackgroundColor/pointBorderColor/pointRadius que
+// Chart.js necesita para pintar solo ALGUNOS puntos de un dataset distinto
+// (los "related"), sin tocar el color de línea normal del resto.
+function relatedPointStyles_(grouped, baseColor) {
+  return {
+    pointBackgroundColor: grouped.map(g => g.related ? RELATED_POINT_COLOR_ : baseColor),
+    pointBorderColor: grouped.map(g => g.related ? RELATED_POINT_COLOR_ : baseColor),
+    pointRadius: grouped.map(g => g.related ? 6 : 3),
+    pointHoverRadius: grouped.map(g => g.related ? 8 : 5),
+  };
+}
+function anyRelatedInGrouped_(grouped) {
+  return (grouped || []).some(g => g.related);
+}
+
 // Vista por horario del día, independiente del filtro de periodo: acota las
 // lecturas a la franja de horas elegida antes de agregarlas/graficarlas.
 // "noche" cruza la medianoche (19:01 a 01:00), por eso usa OR en vez de AND.
@@ -715,6 +742,13 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "31.0", changes: [
+    "Ejercicio: hora de inicio y fin (la duración se calcula sola, editable a mano) y métricas especializadas por tipo (distancia, FC promedio, series/repeticiones/peso levantado, escalones, según aplique).",
+    "Nuevo panel de captura de presión arterial durante actividad física en la sección Ejercicio, con su propia gráfica e historial, independiente de la Presión Arterial en reposo.",
+    "Nueva sección Wellness: meditación, vapor, sauna, lectura/audiolibro en reposo, pintura, dibujo, escritura, etc.",
+    "Para el síntoma \"Dolor de cabeza\", nuevo selector gráfico de localización (puedes elegir más de una zona) — solo ubicación, no un diagnóstico.",
+    "Nuevo botón \"Relacionar con\" en Agregar Lectura: liga la lectura con un ejercicio, síntoma o actividad de wellness reciente, lo anota en Observaciones y la resalta en la gráfica de Tendencia.",
+  ] },
   { version: "30.19", changes: [
     "Al elegir \"Día\" en las gráficas de PAM y Frecuencia cardíaca (Estadísticas), ahora aparece un selector de fecha para ver cualquier día concreto, en vez de fijarse siempre a hoy.",
   ] },
@@ -1052,12 +1086,17 @@ function symptomEntryHTML_(s, opts) {
     const n = Math.round(Number(s.severidad));
     scaleChip = `<span class="symptom-scale-chip">Intensidad ${n}/10 – ${escapeHtml_(SYMPTOM_INTENSITY_LABELS_[n] || "")}</span>`;
   }
+  // v31: si el síntoma es dolor de cabeza y tiene ubicaciones guardadas, se
+  // muestran como chips de solo lectura (nunca el dibujo interactivo aquí,
+  // eso solo vive en el formulario de captura).
+  const headPainSummary = headPainLocationsSummaryHTML_(s.ubicaciones_dolor);
   return `
     <div class="habit-entry" data-symptom-id="${s.id}">
       <div class="habit-entry-icon">🌡️</div>
       <div class="habit-entry-body">
         <div class="habit-entry-title">${escapeHtml_(s.sintoma)}</div>
         ${scaleChip}
+        ${headPainSummary}
         ${s.descripcion ? `<div class="habit-entry-detail">${escapeHtml_(s.descripcion)}</div>` : ""}
         <div class="habit-entry-date">${fmtDate(s.fecha)}${s.hora ? " · " + escapeHtml_(s.hora) : ""}</div>
       </div>
@@ -1072,6 +1111,7 @@ function renderSymptomsListHTML(symptoms, opts) {
   return symptoms.map(s => symptomEntryHTML_(s, opts)).join("");
 }
 function ensureSymptomStyles_() {
+  ensureHeadPainStyles_(); // v31: estilos del selector/resumen de ubicación de dolor de cabeza
   if (typeof document === "undefined" || document.getElementById("bp-symptom-styles")) return;
   const style = document.createElement("style");
   style.id = "bp-symptom-styles";
@@ -1278,10 +1318,42 @@ function medicationDoseTodayHTML_(doses) {
     </label>`).join("");
 }
 
-// ---- Ejercicio (v30.10) ----
+// ---- Ejercicio (v30.10; hora de fin + métricas especializadas en v31) ----
 // Captura manual (tipo, duración, fecha); las calorías ya vienen calculadas
 // desde el servidor (ver calcExerciseCalories_ en db-postgres.js, usa MET del
 // tipo de ejercicio junto con peso, estatura, edad y género del paciente).
+// v31: qué métricas especializadas mostrar/capturar por tipo de ejercicio
+// (misma lista que EXERCISE_METRIC_FIELDS en db-postgres.js). Carrera,
+// caminata, hiking, ciclismo, natación y elíptica llevan distancia + FC
+// promedio; pesas lleva series/repeticiones/peso levantado; escaleras lleva
+// escalones + FC promedio; el resto (yoga, baile, fútbol, básquetbol) solo
+// FC promedio; "otro" no tiene ninguna métrica especializada.
+const EXERCISE_METRIC_FIELDS_ = {
+  caminata_ligera: ["distancia_km", "fc_promedio"],
+  caminata_rapida: ["distancia_km", "fc_promedio"],
+  trote: ["distancia_km", "fc_promedio"],
+  correr_rapido: ["distancia_km", "fc_promedio"],
+  hiking: ["distancia_km", "fc_promedio"],
+  ciclismo: ["distancia_km", "fc_promedio"],
+  natacion: ["distancia_km", "fc_promedio"],
+  yoga: ["fc_promedio"],
+  pesas: ["series", "repeticiones", "peso_levantado_kg"],
+  baile: ["fc_promedio"],
+  futbol: ["fc_promedio"],
+  basquetbol: ["fc_promedio"],
+  eliptica: ["distancia_km", "fc_promedio"],
+  escaleras: ["escalones", "fc_promedio"],
+  otro: [],
+};
+const EXERCISE_METRIC_META_ = {
+  distancia_km: { label: "Distancia (km)", type: "number", step: "0.01", min: "0", max: "500" },
+  fc_promedio: { label: "FC promedio (lpm)", type: "number", step: "1", min: "30", max: "220" },
+  series: { label: "Series", type: "number", step: "1", min: "1", max: "50" },
+  repeticiones: { label: "Repeticiones", type: "number", step: "1", min: "1", max: "999" },
+  peso_levantado_kg: { label: "Peso levantado (kg)", type: "number", step: "0.5", min: "0", max: "500" },
+  escalones: { label: "Escalones / pisos", type: "number", step: "1", min: "1", max: "9999" },
+};
+function exerciseMetricFieldsFor_(tipo) { return EXERCISE_METRIC_FIELDS_[tipo] || []; }
 function exerciseEntryHTML_(ex, opts) {
   opts = opts || {};
   const dateLabel = ex.fecha ? ex.fecha.split("-").reverse().join("/") : "";
@@ -1291,9 +1363,23 @@ function exerciseEntryHTML_(ex, opts) {
       <button type="button" class="btn-mini danger exercise-delete-btn" data-exercise-id="${ex.id}">Eliminar</button>
     </div>`;
   const detailParts = [dateLabel];
-  if (ex.hora) detailParts.push(escapeHtml_(ex.hora));
+  // v31: si hay hora de inicio Y de fin, se muestran ambas (ej. "07:00–07:45");
+  // si solo hay una (registros viejos, antes de v31, o capturada a mano sin
+  // hora de fin), se muestra igual que antes.
+  if (ex.hora && ex.hora_fin) detailParts.push(`${escapeHtml_(ex.hora)}–${escapeHtml_(ex.hora_fin)}`);
+  else if (ex.hora) detailParts.push(escapeHtml_(ex.hora));
   detailParts.push(`${ex.duracion_min} min`);
   if (ex.calorias != null) detailParts.push(`🔥 ${ex.calorias} kcal`);
+  // v31: métricas especializadas guardadas (se muestran las que tengan
+  // valor, sin depender de si el tipo actual las lista — así un registro
+  // viejo o de un tipo distinto no pierde su dato si lo tiene).
+  const metricParts = [];
+  if (ex.distancia_km != null) metricParts.push(`📏 ${ex.distancia_km} km`);
+  if (ex.fc_promedio != null) metricParts.push(`❤️ FC prom. ${ex.fc_promedio}`);
+  if (ex.series != null) metricParts.push(`${ex.series} series`);
+  if (ex.repeticiones != null) metricParts.push(`${ex.repeticiones} reps`);
+  if (ex.peso_levantado_kg != null) metricParts.push(`🏋️ ${ex.peso_levantado_kg} kg`);
+  if (ex.escalones != null) metricParts.push(`🪜 ${ex.escalones} escalones`);
   return `
     <div class="ex-entry" data-exercise-id="${ex.id}">
       <div class="ex-entry-header">
@@ -1301,6 +1387,7 @@ function exerciseEntryHTML_(ex, opts) {
         ${actions}
       </div>
       <div class="ex-entry-detail">${detailParts.join(" · ")}</div>
+      ${metricParts.length ? `<div class="ex-entry-metrics">${metricParts.join(" · ")}</div>` : ""}
       ${ex.notas ? `<div class="ex-entry-notes">${escapeHtml_(ex.notas)}</div>` : ""}
     </div>`;
 }
@@ -1328,8 +1415,190 @@ function ensureExerciseStyles_() {
     .ex-entry-title { font-weight: 650; font-size: 14px; }
     .ex-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .ex-entry-detail { font-size: 13px; color: var(--text); margin-top: 3px; }
+    .ex-entry-metrics { font-size: 12px; color: var(--accent); font-weight: 600; margin-top: 2px; }
     .ex-entry-notes { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
     .ex-totals { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  `;
+  document.head.appendChild(style);
+}
+
+// ---- v31: lecturas de presión durante actividad física (sección Ejercicio)
+// ----
+// Panel de captura idéntico en espíritu a "Agregar lectura" (Presión
+// Arterial), pero guardado en su propia tabla/gráfica: son mediciones en
+// actividad física, no en reposo, y el usuario pidió explícitamente no
+// mezclarlas con la gráfica/tabla principal.
+function exerciseReadingEntryHTML_(r, opts) {
+  opts = opts || {};
+  const dateLabel = r.date ? r.date.split("-").reverse().join("/") : "";
+  const actions = opts.readOnly ? "" : `
+    <div class="ex-entry-actions">
+      <button type="button" class="btn-mini exercise-reading-edit-btn" data-exercise-reading-id="${r.id}">Editar</button>
+      <button type="button" class="btn-mini danger exercise-reading-delete-btn" data-exercise-reading-id="${r.id}">Eliminar</button>
+    </div>`;
+  const parts = [dateLabel, r.time].filter(Boolean);
+  parts.push(`${r.sys ?? "–"}/${r.dia ?? "–"} mmHg`);
+  if (r.hr != null) parts.push(`FC ${r.hr}`);
+  return `
+    <div class="ex-entry" data-exercise-reading-id="${r.id}">
+      <div class="ex-entry-header">
+        <div class="ex-entry-title">💓 ${escapeHtml_(parts.join(" · "))}</div>
+        ${actions}
+      </div>
+      ${r.obs ? `<div class="ex-entry-notes">${escapeHtml_(r.obs)}</div>` : ""}
+    </div>`;
+}
+function renderExerciseReadingsListHTML(readings, opts) {
+  if (!readings || !readings.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay lecturas de presión capturadas durante actividad física.</div>`;
+  }
+  return [...readings].sort((a, b) => (b.date + "T" + b.time).localeCompare(a.date + "T" + a.time))
+    .map(r => exerciseReadingEntryHTML_(r, opts)).join("");
+}
+
+// ---- v31: sección Wellness ----
+// Actividades de relajación/ocio en reposo — no llevan calorías (no son
+// actividad física), solo tipo, duración y notas. "otro" al final por si el
+// paciente hace algo que no está en la lista.
+const WELLNESS_CATALOG = [
+  { value: "meditacion", label: "Meditación" },
+  { value: "respiracion", label: "Ejercicios de respiración" },
+  { value: "vapor", label: "Vapor" },
+  { value: "sauna", label: "Sauna" },
+  { value: "lectura_reposo", label: "Lectura en reposo" },
+  { value: "audiolibro_reposo", label: "Audiolibro en reposo" },
+  { value: "musica_relajante", label: "Música relajante" },
+  { value: "pintura", label: "Pintura" },
+  { value: "dibujo", label: "Dibujo" },
+  { value: "escritura", label: "Escritura" },
+  { value: "otro", label: "Otro" },
+];
+function wellnessCatalogEntry_(value) {
+  return WELLNESS_CATALOG.find(w => w.value === value) || null;
+}
+function wellnessEntryHTML_(w, opts) {
+  opts = opts || {};
+  const dateLabel = w.fecha ? w.fecha.split("-").reverse().join("/") : "";
+  const label = (wellnessCatalogEntry_(w.tipo) || {}).label || w.tipo;
+  const actions = opts.readOnly ? "" : `
+    <div class="ex-entry-actions">
+      <button type="button" class="btn-mini wellness-edit-btn" data-wellness-id="${w.id}">Editar</button>
+      <button type="button" class="btn-mini danger wellness-delete-btn" data-wellness-id="${w.id}">Eliminar</button>
+    </div>`;
+  const detailParts = [dateLabel];
+  if (w.hora) detailParts.push(escapeHtml_(w.hora));
+  if (w.duracion_min != null) detailParts.push(`${w.duracion_min} min`);
+  return `
+    <div class="ex-entry" data-wellness-id="${w.id}">
+      <div class="ex-entry-header">
+        <div class="ex-entry-title">🧘 ${escapeHtml_(label)}</div>
+        ${actions}
+      </div>
+      <div class="ex-entry-detail">${detailParts.join(" · ")}</div>
+      ${w.notas ? `<div class="ex-entry-notes">${escapeHtml_(w.notas)}</div>` : ""}
+    </div>`;
+}
+function renderWellnessListHTML(entries, opts) {
+  if (!entries || !entries.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ninguna actividad de wellness.</div>`;
+  }
+  return entries.map(w => wellnessEntryHTML_(w, opts)).join("");
+}
+function wellnessTotalsHTML_(entries) {
+  if (!entries || !entries.length) return "";
+  const totalMin = entries.reduce((a, e) => a + (Number(e.duracion_min) || 0), 0);
+  return `<div class="ex-totals">${entries.length} registro${entries.length === 1 ? "" : "s"}${totalMin ? ` · ${totalMin} min en total` : ""}</div>`;
+}
+
+// ---- v31: localización gráfica del dolor de cabeza ----
+// Solo aplica al síntoma "dolor_cabeza". Deliberadamente son solo zonas de
+// ubicación (nunca nombres de tipos de dolor de cabeza ni diagnóstico):
+// selección múltiple, sobre dos vistas (frontal y posterior) de una cabeza.
+const HEAD_PAIN_LOCATIONS = [
+  { value: "frente", label: "Frente", view: "front" },
+  { value: "sien_izquierda", label: "Sien izquierda", view: "front" },
+  { value: "sien_derecha", label: "Sien derecha", view: "front" },
+  { value: "ojo_izquierdo", label: "Alrededor del ojo izquierdo", view: "front" },
+  { value: "ojo_derecho", label: "Alrededor del ojo derecho", view: "front" },
+  { value: "mejilla_mandibula_izquierda", label: "Mejilla / mandíbula izquierda", view: "front" },
+  { value: "mejilla_mandibula_derecha", label: "Mejilla / mandíbula derecha", view: "front" },
+  { value: "coronilla", label: "Coronilla (arriba de la cabeza)", view: "back" },
+  { value: "nuca", label: "Nuca / parte trasera", view: "back" },
+  { value: "toda_la_cabeza", label: "Toda la cabeza", view: "back" },
+];
+function headPainLocationLabel_(value) {
+  const entry = HEAD_PAIN_LOCATIONS.find(h => h.value === value);
+  return entry ? entry.label : value;
+}
+// Panel interactivo (paciente): dos siluetas de cabeza (frontal/posterior)
+// con zonas clickeables + una lista de chips redundante (más fácil de tocar
+// en móvil que una zona pequeña del dibujo) — ambos controlan la misma
+// selección. selected: array de values ya elegidos.
+function headPainPickerHTML_(selected) {
+  selected = selected || [];
+  const isSel = v => selected.includes(v);
+  const chip = (v, label) => `<button type="button" class="head-pain-chip${isSel(v) ? " selected" : ""}" data-head-pain-value="${v}">${escapeHtml_(label)}</button>`;
+  const frontLocs = HEAD_PAIN_LOCATIONS.filter(h => h.view === "front");
+  const backLocs = HEAD_PAIN_LOCATIONS.filter(h => h.view === "back");
+  return `
+    <div class="head-pain-picker">
+      <div class="head-pain-views">
+        <div class="head-pain-view">
+          <div class="head-pain-view-label">Vista frontal</div>
+          <svg viewBox="0 0 200 220" class="head-pain-svg">
+            <ellipse cx="100" cy="115" rx="72" ry="88" class="head-pain-outline"/>
+            <path data-head-pain-value="frente" class="head-pain-zone${isSel("frente") ? " selected" : ""}" d="M40,70 A72,88 0 0 1 160,70 L160,95 A85,85 0 0 0 40,95 Z"/>
+            <path data-head-pain-value="sien_izquierda" class="head-pain-zone${isSel("sien_izquierda") ? " selected" : ""}" d="M30,95 a18,26 0 1 0 0.1,0 Z"/>
+            <path data-head-pain-value="sien_derecha" class="head-pain-zone${isSel("sien_derecha") ? " selected" : ""}" d="M170,95 a18,26 0 1 0 0.1,0 Z"/>
+            <circle data-head-pain-value="ojo_izquierdo" class="head-pain-zone${isSel("ojo_izquierdo") ? " selected" : ""}" cx="72" cy="120" r="16"/>
+            <circle data-head-pain-value="ojo_derecho" class="head-pain-zone${isSel("ojo_derecho") ? " selected" : ""}" cx="128" cy="120" r="16"/>
+            <path data-head-pain-value="mejilla_mandibula_izquierda" class="head-pain-zone${isSel("mejilla_mandibula_izquierda") ? " selected" : ""}" d="M35,140 A72,88 0 0 0 90,198 L75,170 A50,60 0 0 1 50,150 Z"/>
+            <path data-head-pain-value="mejilla_mandibula_derecha" class="head-pain-zone${isSel("mejilla_mandibula_derecha") ? " selected" : ""}" d="M165,140 A72,88 0 0 1 110,198 L125,170 A50,60 0 0 0 150,150 Z"/>
+          </svg>
+        </div>
+        <div class="head-pain-view">
+          <div class="head-pain-view-label">Vista posterior</div>
+          <svg viewBox="0 0 200 220" class="head-pain-svg">
+            <ellipse cx="100" cy="115" rx="72" ry="88" class="head-pain-outline"/>
+            <ellipse data-head-pain-value="coronilla" class="head-pain-zone${isSel("coronilla") ? " selected" : ""}" cx="100" cy="45" rx="55" ry="30"/>
+            <path data-head-pain-value="nuca" class="head-pain-zone${isSel("nuca") ? " selected" : ""}" d="M45,110 A70,85 0 0 0 155,110 L155,150 A72,88 0 0 1 45,150 Z"/>
+            <path data-head-pain-value="toda_la_cabeza" class="head-pain-zone${isSel("toda_la_cabeza") ? " selected" : ""}" d="M45,155 A72,88 0 0 0 155,155 L155,190 A72,88 0 0 1 45,190 Z"/>
+          </svg>
+        </div>
+      </div>
+      <div class="head-pain-chips">
+        ${frontLocs.map(h => chip(h.value, h.label)).join("")}
+        ${backLocs.map(h => chip(h.value, h.label)).join("")}
+      </div>
+      <div class="head-pain-hint">Toca una o varias zonas donde sientes el dolor (puedes elegir más de una). Solo indica la ubicación — no es un diagnóstico.</div>
+    </div>`;
+}
+// Vista de solo lectura (lista de chips, sin dibujo interactivo) para
+// mostrar dentro del historial de síntomas (paciente y doctor.html).
+function headPainLocationsSummaryHTML_(locations) {
+  if (!locations || !locations.length) return "";
+  const chips = locations.map(v => `<span class="head-pain-chip-static">${escapeHtml_(headPainLocationLabel_(v))}</span>`).join("");
+  return `<div class="head-pain-summary">📍 ${chips}</div>`;
+}
+function ensureHeadPainStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-head-pain-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-head-pain-styles";
+  style.textContent = `
+    .head-pain-picker { margin-top: 6px; }
+    .head-pain-views { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
+    .head-pain-view { text-align: center; }
+    .head-pain-view-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .head-pain-svg { width: 130px; height: 143px; }
+    .head-pain-outline { fill: #F3EFEA; stroke: var(--border); stroke-width: 2; }
+    .head-pain-zone { fill: rgba(139, 92, 246, 0.12); stroke: rgba(139, 92, 246, 0.35); stroke-width: 1; cursor: pointer; transition: fill 0.15s; }
+    .head-pain-zone:hover { fill: rgba(139, 92, 246, 0.28); }
+    .head-pain-zone.selected { fill: rgba(139, 92, 246, 0.75); stroke: #6D28D9; }
+    .head-pain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .head-pain-chip { border: 1px solid var(--border); background: var(--card-bg, #fff); border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: var(--text); }
+    .head-pain-chip.selected { background: #8B5CF6; border-color: #6D28D9; color: #fff; font-weight: 600; }
+    .head-pain-chip-static { display: inline-block; background: rgba(139, 92, 246, 0.12); color: #6D28D9; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; margin: 2px 4px 2px 0; }
+    .head-pain-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center; }
   `;
   document.head.appendChild(style);
 }

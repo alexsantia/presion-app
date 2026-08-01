@@ -204,12 +204,18 @@ function readingRowToObject(row) {
     created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
     updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : "",
     medicated: !!row.medicated,
+    // v31: "Relacionar con" — liga con un registro de ejercicio/síntoma/
+    // wellness, para colorearla distinto en las gráficas.
+    related_type: row.related_type || null,
+    related_id: row.related_id || null,
+    related_label: row.related_label || "",
   };
 }
 async function listReadings(patientId) {
   const { rows } = await pool.query(
     `SELECT id, patient_id, to_char(date, 'YYYY-MM-DD') AS date, to_char(time, 'HH24:MI') AS time,
-            sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated
+            sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated,
+            related_type, related_id, related_label
      FROM lecturas WHERE patient_id = $1 ORDER BY date, time`,
     [patientId]
   );
@@ -238,7 +244,7 @@ async function listHabits(patientId) {
 // SYMPTOM_CATALOG en common.js). ----
 async function listSymptoms(patientId) {
   const { rows } = await pool.query(
-    `SELECT id, patient_id, sintoma, tipo, severidad, temperatura,
+    `SELECT id, patient_id, sintoma, tipo, severidad, temperatura, ubicaciones_dolor,
             to_char(fecha, 'YYYY-MM-DD') AS fecha, to_char(hora, 'HH24:MI') AS hora, descripcion, created_at
      FROM sintomas WHERE patient_id = $1 ORDER BY fecha DESC, hora DESC NULLS LAST, created_at DESC`,
     [patientId]
@@ -247,6 +253,12 @@ async function listSymptoms(patientId) {
     id: r.id, patient_id: r.patient_id, sintoma: r.sintoma, tipo: r.tipo || null,
     severidad: r.severidad != null ? Number(r.severidad) : null,
     temperatura: r.temperatura != null ? Number(r.temperatura) : null,
+    // v31: zonas de la cabeza elegidas gráficamente (solo cuando tipo ===
+    // "dolor_cabeza"; ver HEAD_PAIN_LOCATIONS en common.js). pg-mem/pg
+    // regresan jsonb ya parseado como array; por seguridad se acepta también
+    // si llegara como string.
+    ubicaciones_dolor: Array.isArray(r.ubicaciones_dolor) ? r.ubicaciones_dolor
+      : (typeof r.ubicaciones_dolor === "string" && r.ubicaciones_dolor ? JSON.parse(r.ubicaciones_dolor) : []),
     fecha: r.fecha, hora: r.hora || "",
     descripcion: r.descripcion || "", created_at: new Date(r.created_at).toISOString(),
   }));
@@ -541,6 +553,7 @@ const EXERCISE_MET_TABLE = {
   caminata_rapida: { label: "Caminata rápida", met: 4.3 },
   trote: { label: "Trote / correr suave", met: 7.0 },
   correr_rapido: { label: "Correr rápido", met: 11.0 },
+  hiking: { label: "Hiking / senderismo", met: 6.0 }, // v31
   ciclismo: { label: "Ciclismo", met: 6.8 },
   natacion: { label: "Natación", met: 6.0 },
   yoga: { label: "Yoga", met: 3.0 },
@@ -552,6 +565,39 @@ const EXERCISE_MET_TABLE = {
   escaleras: { label: "Subir escaleras", met: 8.0 },
   otro: { label: "Otro", met: 4.0 },
 };
+// v31: qué métricas especializadas aplican a cada tipo de ejercicio (misma
+// lista que EXERCISE_METRIC_FIELDS_ en common.js, usada ahí para pintar solo
+// los campos que aplican en el formulario). Aquí solo se usa para saber qué
+// columnas puede traer el body sin validar de más: cualquier campo que no
+// aplique a un tipo simplemente se ignora si llega vacío.
+const EXERCISE_METRIC_FIELDS = {
+  caminata_ligera: ["distancia_km", "fc_promedio"],
+  caminata_rapida: ["distancia_km", "fc_promedio"],
+  trote: ["distancia_km", "fc_promedio"],
+  correr_rapido: ["distancia_km", "fc_promedio"],
+  hiking: ["distancia_km", "fc_promedio"],
+  ciclismo: ["distancia_km", "fc_promedio"],
+  natacion: ["distancia_km", "fc_promedio"],
+  yoga: ["fc_promedio"],
+  pesas: ["series", "repeticiones", "peso_levantado_kg"],
+  baile: ["fc_promedio"],
+  futbol: ["fc_promedio"],
+  basquetbol: ["fc_promedio"],
+  eliptica: ["distancia_km", "fc_promedio"],
+  escaleras: ["escalones", "fc_promedio"],
+  otro: [],
+};
+// v31: duración en minutos a partir de hora de inicio/fin (HH:MM). Si el fin
+// es antes que el inicio, se asume que cruzó la medianoche (ej. una caminata
+// nocturna de 23:30 a 00:15). Regresa null si falta cualquiera de las dos.
+function computeExerciseDurationMinutes_(horaInicio, horaFin) {
+  if (!horaInicio || !horaFin) return null;
+  const start = timeStrToMinutes_(horaInicio);
+  const end = timeStrToMinutes_(horaFin);
+  let diff = end - start;
+  if (diff <= 0) diff += 24 * 60;
+  return diff;
+}
 function ageFromBirthdate_(birthdate) {
   if (!birthdate) return null;
   const b = new Date(birthdate);
@@ -588,20 +634,78 @@ function exerciseRowToObject_(row) {
     tipo_label: (EXERCISE_MET_TABLE[row.tipo] || EXERCISE_MET_TABLE.otro).label,
     duracion_min: row.duracion_min != null ? Number(row.duracion_min) : null,
     fecha: row.fecha || "",
-    hora: row.hora || "",
+    hora: row.hora || "", // v31: hora de INICIO
+    hora_fin: row.hora_fin || "",
     calorias: row.calorias != null ? Number(row.calorias) : null,
     notas: row.notas || "",
+    // v31: métricas especializadas por tipo de ejercicio (nullable).
+    distancia_km: row.distancia_km != null ? Number(row.distancia_km) : null,
+    fc_promedio: row.fc_promedio != null ? Number(row.fc_promedio) : null,
+    series: row.series != null ? Number(row.series) : null,
+    repeticiones: row.repeticiones != null ? Number(row.repeticiones) : null,
+    peso_levantado_kg: row.peso_levantado_kg != null ? Number(row.peso_levantado_kg) : null,
+    escalones: row.escalones != null ? Number(row.escalones) : null,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
   };
 }
 async function listExercises(patientId) {
   const { rows } = await pool.query(
     `SELECT id, patient_id, tipo, duracion_min, to_char(fecha, 'YYYY-MM-DD') AS fecha,
-            to_char(hora, 'HH24:MI') AS hora, calorias, notas, created_at
+            to_char(hora, 'HH24:MI') AS hora, to_char(hora_fin, 'HH24:MI') AS hora_fin,
+            calorias, notas, distancia_km, fc_promedio, series, repeticiones,
+            peso_levantado_kg, escalones, created_at
      FROM ejercicios WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
     [patientId]
   );
   return rows.map(exerciseRowToObject_);
+}
+
+// ---- v31: lecturas de presión durante actividad física ----
+function exerciseReadingRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    date: row.date || "",
+    time: row.time || "",
+    sys: num(row.sys),
+    dia: num(row.dia),
+    hr: num(row.hr),
+    obs: row.obs || "",
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listExerciseReadings(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, to_char(date, 'YYYY-MM-DD') AS date, to_char(time, 'HH24:MI') AS time,
+            sys, dia, hr, obs, created_at
+     FROM lecturas_actividad_fisica WHERE patient_id = $1 ORDER BY date, time`,
+    [patientId]
+  );
+  return rows.map(exerciseReadingRowToObject_);
+}
+
+// ---- v31: Wellness (meditación, sauna, vapor, lectura/audiolibro en
+// reposo, pintura, dibujo, escritura, etc.) ----
+function wellnessRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    tipo: row.tipo,
+    duracion_min: row.duracion_min != null ? Number(row.duracion_min) : null,
+    fecha: row.fecha || "",
+    hora: row.hora || "",
+    notas: row.notas || "",
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listWellness(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, tipo, duracion_min, to_char(fecha, 'YYYY-MM-DD') AS fecha,
+            to_char(hora, 'HH24:MI') AS hora, notas, created_at
+     FROM wellness_entries WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(wellnessRowToObject_);
 }
 
 // ---- Consultas médicas (v30.12) ----
@@ -1238,6 +1342,12 @@ async function handleGet(params) {
   if (action === "list_today_doses") {
     return { ok: true, data: await listTodayDoses(params.patient_id) };
   }
+  if (action === "list_exercise_readings") {
+    return { ok: true, data: await listExerciseReadings(params.patient_id) };
+  }
+  if (action === "list_wellness") {
+    return { ok: true, data: await listWellness(params.patient_id) };
+  }
   if (action === "list_exercises") {
     return { ok: true, data: await listExercises(params.patient_id) };
   }
@@ -1334,9 +1444,10 @@ async function handlePost(body) {
   if (body.action === "add") {
     const id = uuid();
     await pool.query(
-      `INSERT INTO lecturas (id, patient_id, date, time, sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12)`,
-      [id, body.patient_id, body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated]
+      `INSERT INTO lecturas (id, patient_id, date, time, sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated, related_type, related_id, related_label)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15)`,
+      [id, body.patient_id, body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated,
+        body.related_type || null, body.related_id || null, body.related_label || null]
     );
     if (body.sys != null && body.dia != null) {
       const cat = classifyReading(Number(body.sys), Number(body.dia));
@@ -1355,9 +1466,11 @@ async function handlePost(body) {
   }
   if (body.action === "update") {
     const { rowCount } = await pool.query(
-      `UPDATE lecturas SET date=$1, time=$2, sys=$3, dia=$4, hr=$5, weight=$6, obs=$7, flag=$8, updated_at=$9, medicated=$10
-       WHERE id = $11 AND patient_id = $12`,
-      [body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated, body.id, body.patient_id]
+      `UPDATE lecturas SET date=$1, time=$2, sys=$3, dia=$4, hr=$5, weight=$6, obs=$7, flag=$8, updated_at=$9, medicated=$10,
+              related_type=$11, related_id=$12, related_label=$13
+       WHERE id = $14 AND patient_id = $15`,
+      [body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated,
+        body.related_type || null, body.related_id || null, body.related_label || null, body.id, body.patient_id]
     );
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "reading");
@@ -1387,11 +1500,15 @@ async function handlePost(body) {
       temperatura = num(body.temperatura);
       if (temperatura == null || temperatura < 30 || temperatura > 45) return { ok: false, error: "la temperatura debe ser un número entre 30 y 45 °C" };
     }
+    // v31: ubicaciones_dolor solo aplica (y solo se guarda) cuando el tipo es
+    // "dolor_cabeza" — para el resto de los síntomas siempre queda NULL.
+    const ubicacionesDolor = (body.tipo === "dolor_cabeza" && Array.isArray(body.ubicaciones_dolor) && body.ubicaciones_dolor.length)
+      ? JSON.stringify(body.ubicaciones_dolor) : null;
     const id = uuid();
     await pool.query(
-      `INSERT INTO sintomas (id, patient_id, sintoma, tipo, severidad, temperatura, fecha, hora, descripcion, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
-      [id, body.patient_id, body.sintoma, body.tipo || null, severidad, temperatura, body.fecha, body.hora || null, body.descripcion || "", now]
+      `INSERT INTO sintomas (id, patient_id, sintoma, tipo, severidad, temperatura, ubicaciones_dolor, fecha, hora, descripcion, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11)`,
+      [id, body.patient_id, body.sintoma, body.tipo || null, severidad, temperatura, ubicacionesDolor, body.fecha, body.hora || null, body.descripcion || "", now]
     );
     emitChange(body.patient_id, "symptom");
     return { ok: true, id };
@@ -1469,28 +1586,51 @@ async function handlePost(body) {
     return { ok: true };
   }
 
-  // ---- Ejercicio (v30.10) ----
+  // ---- Ejercicio (v30.10; hora de fin + métricas especializadas en v31) ----
   if (body.action === "add_exercise" || body.action === "update_exercise") {
-    if (!body.tipo || !hasValue(body.duracion_min) || !body.fecha) {
+    // v31: si no mandan duracion_min pero sí hora de inicio/fin, se calcula
+    // sola aquí (red de seguridad — el cliente ya la calcula y la manda, pero
+    // por si acaso llega vacía). Si el usuario la editó a mano en el
+    // formulario, lo que llega en body.duracion_min ya es su valor manual y
+    // gana sobre el cálculo.
+    let duracionMin = hasValue(body.duracion_min) ? num(body.duracion_min) : null;
+    if (duracionMin == null) duracionMin = computeExerciseDurationMinutes_(body.hora, body.hora_fin);
+    if (!body.tipo || !hasValue(duracionMin) || !body.fecha) {
       return { ok: false, error: "faltan datos (tipo, duración y fecha son obligatorios)" };
     }
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
-    const calorias = calcExerciseCalories_(body.tipo, num(body.duracion_min), num(p.weight), num(p.height), p.birthdate, p.gender);
+    const calorias = calcExerciseCalories_(body.tipo, duracionMin, num(p.weight), num(p.height), p.birthdate, p.gender);
+    // v31: métricas especializadas — cualquiera puede venir vacía; se guardan
+    // tal cual lleguen, sin exigir que correspondan exactamente a las que
+    // EXERCISE_METRIC_FIELDS lista para ese tipo (el formulario ya solo
+    // manda las que aplican, pero no pasa nada si algún día cambian).
+    const distanciaKm = hasValue(body.distancia_km) ? num(body.distancia_km) : null;
+    const fcPromedio = hasValue(body.fc_promedio) ? num(body.fc_promedio) : null;
+    const series = hasValue(body.series) ? num(body.series) : null;
+    const repeticiones = hasValue(body.repeticiones) ? num(body.repeticiones) : null;
+    const pesoLevantadoKg = hasValue(body.peso_levantado_kg) ? num(body.peso_levantado_kg) : null;
+    const escalones = hasValue(body.escalones) ? num(body.escalones) : null;
     if (body.action === "add_exercise") {
       const id = uuid();
       await pool.query(
-        `INSERT INTO ejercicios (id, patient_id, tipo, duracion_min, fecha, hora, calorias, notas, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
-        [id, body.patient_id, body.tipo, num(body.duracion_min), body.fecha, body.hora || null, calorias, body.notas || "", now]
+        `INSERT INTO ejercicios (id, patient_id, tipo, duracion_min, fecha, hora, hora_fin, calorias, notas,
+                                  distancia_km, fc_promedio, series, repeticiones, peso_levantado_kg, escalones,
+                                  created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)`,
+        [id, body.patient_id, body.tipo, duracionMin, body.fecha, body.hora || null, body.hora_fin || null, calorias, body.notas || "",
+          distanciaKm, fcPromedio, series, repeticiones, pesoLevantadoKg, escalones, now]
       );
       emitChange(body.patient_id, "exercise");
       return { ok: true, id, calorias };
     } else {
       const { rowCount } = await pool.query(
-        `UPDATE ejercicios SET tipo = $1, duracion_min = $2, fecha = $3, hora = $4, calorias = $5, notas = $6, updated_at = $7
-         WHERE id = $8 AND patient_id = $9`,
-        [body.tipo, num(body.duracion_min), body.fecha, body.hora || null, calorias, body.notas || "", now, body.id, body.patient_id]
+        `UPDATE ejercicios SET tipo = $1, duracion_min = $2, fecha = $3, hora = $4, hora_fin = $5, calorias = $6, notas = $7,
+                                distancia_km = $8, fc_promedio = $9, series = $10, repeticiones = $11,
+                                peso_levantado_kg = $12, escalones = $13, updated_at = $14
+         WHERE id = $15 AND patient_id = $16`,
+        [body.tipo, duracionMin, body.fecha, body.hora || null, body.hora_fin || null, calorias, body.notas || "",
+          distanciaKm, fcPromedio, series, repeticiones, pesoLevantadoKg, escalones, now, body.id, body.patient_id]
       );
       if (!rowCount) return { ok: false, error: "no encontrado" };
       emitChange(body.patient_id, "exercise");
@@ -1501,6 +1641,70 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM ejercicios WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "exercise");
+    return { ok: true };
+  }
+
+  // ---- v31: lecturas de presión durante actividad física (sección
+  // Ejercicio) — tabla y gráfica separadas de las lecturas en reposo. ----
+  if (body.action === "add_exercise_reading" || body.action === "update_exercise_reading") {
+    if (!body.date || !body.time) return { ok: false, error: "faltan datos (fecha y hora son obligatorias)" };
+    if (body.action === "add_exercise_reading") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO lecturas_actividad_fisica (id, patient_id, date, time, sys, dia, hr, obs, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
+        [id, body.patient_id, body.date, body.time, num(body.sys), num(body.dia), num(body.hr), body.obs || "", now]
+      );
+      emitChange(body.patient_id, "exercise_reading");
+      return { ok: true, id };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE lecturas_actividad_fisica SET date = $1, time = $2, sys = $3, dia = $4, hr = $5, obs = $6, updated_at = $7
+         WHERE id = $8 AND patient_id = $9`,
+        [body.date, body.time, num(body.sys), num(body.dia), num(body.hr), body.obs || "", now, body.id, body.patient_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "exercise_reading");
+      return { ok: true };
+    }
+  }
+  if (body.action === "delete_exercise_reading") {
+    const { rowCount } = await pool.query(`DELETE FROM lecturas_actividad_fisica WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "exercise_reading");
+    return { ok: true };
+  }
+
+  // ---- v31: sección Wellness (meditación, sauna, vapor, lectura/audiolibro
+  // en reposo, pintura, dibujo, escritura, etc. — ver WELLNESS_CATALOG en
+  // common.js). Misma estructura que ejercicios pero sin calorías. ----
+  if (body.action === "add_wellness" || body.action === "update_wellness") {
+    if (!body.tipo || !body.fecha) return { ok: false, error: "faltan datos (tipo y fecha son obligatorios)" };
+    const duracionMin = hasValue(body.duracion_min) ? num(body.duracion_min) : null;
+    if (body.action === "add_wellness") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO wellness_entries (id, patient_id, tipo, duracion_min, fecha, hora, notas, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)`,
+        [id, body.patient_id, body.tipo, duracionMin, body.fecha, body.hora || null, body.notas || "", now]
+      );
+      emitChange(body.patient_id, "wellness");
+      return { ok: true, id };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE wellness_entries SET tipo = $1, duracion_min = $2, fecha = $3, hora = $4, notas = $5, updated_at = $6
+         WHERE id = $7 AND patient_id = $8`,
+        [body.tipo, duracionMin, body.fecha, body.hora || null, body.notas || "", now, body.id, body.patient_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "wellness");
+      return { ok: true };
+    }
+  }
+  if (body.action === "delete_wellness") {
+    const { rowCount } = await pool.query(`DELETE FROM wellness_entries WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "wellness");
     return { ok: true };
   }
 

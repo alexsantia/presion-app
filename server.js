@@ -450,6 +450,11 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const labHistoryResult = await callSheetsApi({ action: "list_lab_history", patient_id: patient.id });
   const medicationsResult = await callSheetsApi({ action: "list_medications", patient_id: patient.id });
   const exercisesResult = await callSheetsApi({ action: "list_exercises", patient_id: patient.id });
+  // v31: lecturas de presión durante actividad física — familia.html sí
+  // muestra la pestaña Ejercicio (a diferencia de Síntomas/Malos hábitos,
+  // que quedan fuera de este enlace público), así que también le toca esta
+  // gráfica de solo lectura.
+  const exerciseReadingsResult = await callSheetsApi({ action: "list_exercise_readings", patient_id: patient.id });
   const medAdherenceResult = await callSheetsApi({ action: "list_medication_adherence", patient_id: patient.id });
   const consultationsResult = await callSheetsApi({ action: "list_consultations", patient_id: patient.id });
   const eventualMedicationsResult = await callSheetsApi({ action: "list_eventual_medications", patient_id: patient.id });
@@ -464,6 +469,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       labHistory: labHistoryResult.ok ? labHistoryResult.data : [],
       medications: medicationsResult.ok ? medicationsResult.data : [],
       exercises: exercisesResult.ok ? exercisesResult.data : [],
+      exerciseReadings: exerciseReadingsResult.ok ? exerciseReadingsResult.data : [],
       medAdherence: medAdherenceResult.ok ? medAdherenceResult.data : [],
       consultations: consultationsResult.ok ? consultationsResult.data : [],
       eventualMedications: eventualMedicationsResult.ok ? eventualMedicationsResult.data : [],
@@ -637,6 +643,37 @@ app.put("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res
 }));
 app.delete("/api/exercises/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "delete_exercise", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+// ---- v31: lecturas de presión durante actividad física (sección Ejercicio)
+// — tabla, panel de captura y gráfica separados de las lecturas en reposo. ----
+app.get("/api/exercise-readings", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_exercise_readings", patient_id: req.session.patientId }));
+}));
+app.post("/api/exercise-readings", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_exercise_reading", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/exercise-readings/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_exercise_reading", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/exercise-readings/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_exercise_reading", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+// ---- v31: sección Wellness (meditación, sauna, vapor, lectura/audiolibro en
+// reposo, pintura, dibujo, escritura, etc. — ver WELLNESS_CATALOG en
+// common.js, no necesita ida y vuelta al servidor). ----
+app.get("/api/wellness", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_wellness", patient_id: req.session.patientId }));
+}));
+app.post("/api/wellness", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_wellness", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/wellness/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_wellness", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/wellness/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_wellness", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
 // ---- Consultas médicas (v30.12) ----
