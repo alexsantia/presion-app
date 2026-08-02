@@ -742,6 +742,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "31.1", changes: [
+    "El selector de localización de dolor de cabeza ahora usa las 14 imágenes de referencia reales (en vez del dibujo esquemático anterior), para identificar mejor dónde duele.",
+  ] },
   { version: "31.0", changes: [
     "Ejercicio: hora de inicio y fin (la duración se calcula sola, editable a mano) y métricas especializadas por tipo (distancia, FC promedio, series/repeticiones/peso levantado, escalones, según aplique).",
     "Nuevo panel de captura de presión arterial durante actividad física en la sección Ejercicio, con su propia gráfica e historial, independiente de la Presión Arterial en reposo.",
@@ -1510,75 +1513,51 @@ function wellnessTotalsHTML_(entries) {
   return `<div class="ex-totals">${entries.length} registro${entries.length === 1 ? "" : "s"}${totalMin ? ` · ${totalMin} min en total` : ""}</div>`;
 }
 
-// ---- v31: localización gráfica del dolor de cabeza ----
-// Solo aplica al síntoma "dolor_cabeza". Deliberadamente son solo zonas de
+// ---- v31.1: localización gráfica del dolor de cabeza ----
+// Solo aplica al síntoma "dolor_cabeza". Deliberadamente son solo imágenes de
 // ubicación (nunca nombres de tipos de dolor de cabeza ni diagnóstico):
-// selección múltiple, sobre dos vistas (frontal y posterior) de una cabeza.
-const HEAD_PAIN_LOCATIONS = [
-  { value: "frente", label: "Frente", view: "front" },
-  { value: "sien_izquierda", label: "Sien izquierda", view: "front" },
-  { value: "sien_derecha", label: "Sien derecha", view: "front" },
-  { value: "ojo_izquierdo", label: "Alrededor del ojo izquierdo", view: "front" },
-  { value: "ojo_derecho", label: "Alrededor del ojo derecho", view: "front" },
-  { value: "mejilla_mandibula_izquierda", label: "Mejilla / mandíbula izquierda", view: "front" },
-  { value: "mejilla_mandibula_derecha", label: "Mejilla / mandíbula derecha", view: "front" },
-  { value: "coronilla", label: "Coronilla (arriba de la cabeza)", view: "back" },
-  { value: "nuca", label: "Nuca / parte trasera", view: "back" },
-  { value: "toda_la_cabeza", label: "Toda la cabeza", view: "back" },
-];
+// selección múltiple sobre las 14 ilustraciones reales que el usuario dejó
+// en Images/Head (servidas como /shared/head-pain/HeadN.png), reemplazando
+// el dibujo SVG hecho a mano de la v31.0 original — el usuario reportó que
+// esas zonas dibujadas no servían para identificar bien la localización.
+// Las etiquetas son deliberadamente neutras ("Zona N"), no descriptivas ni
+// diagnósticas: la imagen es la que comunica la ubicación, el texto es solo
+// para accesibilidad (alt/aria).
+const HEAD_PAIN_LOCATIONS = Array.from({ length: 14 }, (_, i) => {
+  const n = i + 1;
+  return { value: `head${n}`, label: `Zona ${n}`, img: `/shared/head-pain/Head${n}.png` };
+});
 function headPainLocationLabel_(value) {
   const entry = HEAD_PAIN_LOCATIONS.find(h => h.value === value);
   return entry ? entry.label : value;
 }
-// Panel interactivo (paciente): dos siluetas de cabeza (frontal/posterior)
-// con zonas clickeables + una lista de chips redundante (más fácil de tocar
-// en móvil que una zona pequeña del dibujo) — ambos controlan la misma
-// selección. selected: array de values ya elegidos.
+function headPainLocationImg_(value) {
+  const entry = HEAD_PAIN_LOCATIONS.find(h => h.value === value);
+  return entry ? entry.img : "";
+}
+// Panel interactivo (paciente): cuadrícula con las 14 imágenes; tocar una
+// imagen la selecciona/deselecciona (selección múltiple). selected: array de
+// values ya elegidos.
 function headPainPickerHTML_(selected) {
   selected = selected || [];
   const isSel = v => selected.includes(v);
-  const chip = (v, label) => `<button type="button" class="head-pain-chip${isSel(v) ? " selected" : ""}" data-head-pain-value="${v}">${escapeHtml_(label)}</button>`;
-  const frontLocs = HEAD_PAIN_LOCATIONS.filter(h => h.view === "front");
-  const backLocs = HEAD_PAIN_LOCATIONS.filter(h => h.view === "back");
+  const cards = HEAD_PAIN_LOCATIONS.map(h => `
+    <button type="button" class="head-pain-card${isSel(h.value) ? " selected" : ""}" data-head-pain-value="${h.value}" aria-pressed="${isSel(h.value)}" aria-label="${escapeHtml_(h.label)}">
+      <img src="${h.img}" alt="${escapeHtml_(h.label)}" loading="lazy">
+      <span class="head-pain-card-check">✓</span>
+    </button>`).join("");
   return `
     <div class="head-pain-picker">
-      <div class="head-pain-views">
-        <div class="head-pain-view">
-          <div class="head-pain-view-label">Vista frontal</div>
-          <svg viewBox="0 0 200 220" class="head-pain-svg">
-            <ellipse cx="100" cy="115" rx="72" ry="88" class="head-pain-outline"/>
-            <path data-head-pain-value="frente" class="head-pain-zone${isSel("frente") ? " selected" : ""}" d="M40,70 A72,88 0 0 1 160,70 L160,95 A85,85 0 0 0 40,95 Z"/>
-            <path data-head-pain-value="sien_izquierda" class="head-pain-zone${isSel("sien_izquierda") ? " selected" : ""}" d="M30,95 a18,26 0 1 0 0.1,0 Z"/>
-            <path data-head-pain-value="sien_derecha" class="head-pain-zone${isSel("sien_derecha") ? " selected" : ""}" d="M170,95 a18,26 0 1 0 0.1,0 Z"/>
-            <circle data-head-pain-value="ojo_izquierdo" class="head-pain-zone${isSel("ojo_izquierdo") ? " selected" : ""}" cx="72" cy="120" r="16"/>
-            <circle data-head-pain-value="ojo_derecho" class="head-pain-zone${isSel("ojo_derecho") ? " selected" : ""}" cx="128" cy="120" r="16"/>
-            <path data-head-pain-value="mejilla_mandibula_izquierda" class="head-pain-zone${isSel("mejilla_mandibula_izquierda") ? " selected" : ""}" d="M35,140 A72,88 0 0 0 90,198 L75,170 A50,60 0 0 1 50,150 Z"/>
-            <path data-head-pain-value="mejilla_mandibula_derecha" class="head-pain-zone${isSel("mejilla_mandibula_derecha") ? " selected" : ""}" d="M165,140 A72,88 0 0 1 110,198 L125,170 A50,60 0 0 0 150,150 Z"/>
-          </svg>
-        </div>
-        <div class="head-pain-view">
-          <div class="head-pain-view-label">Vista posterior</div>
-          <svg viewBox="0 0 200 220" class="head-pain-svg">
-            <ellipse cx="100" cy="115" rx="72" ry="88" class="head-pain-outline"/>
-            <ellipse data-head-pain-value="coronilla" class="head-pain-zone${isSel("coronilla") ? " selected" : ""}" cx="100" cy="45" rx="55" ry="30"/>
-            <path data-head-pain-value="nuca" class="head-pain-zone${isSel("nuca") ? " selected" : ""}" d="M45,110 A70,85 0 0 0 155,110 L155,150 A72,88 0 0 1 45,150 Z"/>
-            <path data-head-pain-value="toda_la_cabeza" class="head-pain-zone${isSel("toda_la_cabeza") ? " selected" : ""}" d="M45,155 A72,88 0 0 0 155,155 L155,190 A72,88 0 0 1 45,190 Z"/>
-          </svg>
-        </div>
-      </div>
-      <div class="head-pain-chips">
-        ${frontLocs.map(h => chip(h.value, h.label)).join("")}
-        ${backLocs.map(h => chip(h.value, h.label)).join("")}
-      </div>
-      <div class="head-pain-hint">Toca una o varias zonas donde sientes el dolor (puedes elegir más de una). Solo indica la ubicación — no es un diagnóstico.</div>
+      <div class="head-pain-grid">${cards}</div>
+      <div class="head-pain-hint">Toca una o varias imágenes que se parezcan a dónde sientes el dolor (puedes elegir más de una). Solo indica la ubicación — no es un diagnóstico.</div>
     </div>`;
 }
-// Vista de solo lectura (lista de chips, sin dibujo interactivo) para
-// mostrar dentro del historial de síntomas (paciente y doctor.html).
+// Vista de solo lectura (miniaturas, sin interacción) para mostrar dentro
+// del historial de síntomas (paciente y doctor.html).
 function headPainLocationsSummaryHTML_(locations) {
   if (!locations || !locations.length) return "";
-  const chips = locations.map(v => `<span class="head-pain-chip-static">${escapeHtml_(headPainLocationLabel_(v))}</span>`).join("");
-  return `<div class="head-pain-summary">📍 ${chips}</div>`;
+  const thumbs = locations.map(v => `<img class="head-pain-thumb-static" src="${headPainLocationImg_(v)}" alt="${escapeHtml_(headPainLocationLabel_(v))}" title="${escapeHtml_(headPainLocationLabel_(v))}">`).join("");
+  return `<div class="head-pain-summary">📍 ${thumbs}</div>`;
 }
 function ensureHeadPainStyles_() {
   if (typeof document === "undefined" || document.getElementById("bp-head-pain-styles")) return;
@@ -1586,18 +1565,14 @@ function ensureHeadPainStyles_() {
   style.id = "bp-head-pain-styles";
   style.textContent = `
     .head-pain-picker { margin-top: 6px; }
-    .head-pain-views { display: flex; gap: 18px; flex-wrap: wrap; justify-content: center; }
-    .head-pain-view { text-align: center; }
-    .head-pain-view-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-    .head-pain-svg { width: 130px; height: 143px; }
-    .head-pain-outline { fill: #F3EFEA; stroke: var(--border); stroke-width: 2; }
-    .head-pain-zone { fill: rgba(139, 92, 246, 0.12); stroke: rgba(139, 92, 246, 0.35); stroke-width: 1; cursor: pointer; transition: fill 0.15s; }
-    .head-pain-zone:hover { fill: rgba(139, 92, 246, 0.28); }
-    .head-pain-zone.selected { fill: rgba(139, 92, 246, 0.75); stroke: #6D28D9; }
-    .head-pain-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-    .head-pain-chip { border: 1px solid var(--border); background: var(--card-bg, #fff); border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; color: var(--text); }
-    .head-pain-chip.selected { background: #8B5CF6; border-color: #6D28D9; color: #fff; font-weight: 600; }
-    .head-pain-chip-static { display: inline-block; background: rgba(139, 92, 246, 0.12); color: #6D28D9; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; margin: 2px 4px 2px 0; }
+    .head-pain-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+    .head-pain-card { position: relative; border: 2px solid var(--border); background: var(--card-bg, #fff); border-radius: 10px; padding: 3px; cursor: pointer; line-height: 0; transition: border-color 0.15s, box-shadow 0.15s; }
+    .head-pain-card img { width: 100%; height: auto; border-radius: 7px; display: block; }
+    .head-pain-card:hover { border-color: rgba(139, 92, 246, 0.5); }
+    .head-pain-card.selected { border-color: #6D28D9; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.35); }
+    .head-pain-card-check { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%; background: #6D28D9; color: #fff; font-size: 11px; line-height: 18px; text-align: center; display: none; }
+    .head-pain-card.selected .head-pain-card-check { display: block; }
+    .head-pain-thumb-static { width: 34px; height: auto; border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.4); margin: 2px 4px 2px 0; vertical-align: middle; }
     .head-pain-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center; }
   `;
   document.head.appendChild(style);
