@@ -455,6 +455,10 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   // que quedan fuera de este enlace público), así que también le toca esta
   // gráfica de solo lectura.
   const exerciseReadingsResult = await callSheetsApi({ action: "list_exercise_readings", patient_id: patient.id });
+  // v32: sueño se comporta como ejercicio para efectos de familia.html (dato
+  // tipo vital que sí se comparte, a diferencia de Síntomas/Malos
+  // hábitos/Wellness, que quedan fuera de este enlace público).
+  const sleepResult = await callSheetsApi({ action: "list_sleep", patient_id: patient.id });
   const medAdherenceResult = await callSheetsApi({ action: "list_medication_adherence", patient_id: patient.id });
   const consultationsResult = await callSheetsApi({ action: "list_consultations", patient_id: patient.id });
   const eventualMedicationsResult = await callSheetsApi({ action: "list_eventual_medications", patient_id: patient.id });
@@ -470,6 +474,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       medications: medicationsResult.ok ? medicationsResult.data : [],
       exercises: exercisesResult.ok ? exercisesResult.data : [],
       exerciseReadings: exerciseReadingsResult.ok ? exerciseReadingsResult.data : [],
+      sleep: sleepResult.ok ? sleepResult.data : [],
       medAdherence: medAdherenceResult.ok ? medAdherenceResult.data : [],
       consultations: consultationsResult.ok ? consultationsResult.data : [],
       eventualMedications: eventualMedicationsResult.ok ? eventualMedicationsResult.data : [],
@@ -675,6 +680,44 @@ app.put("/api/wellness/:id", requireRole("patient"), asyncRoute(async (req, res)
 app.delete("/api/wellness/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "delete_wellness", patient_id: req.session.patientId, id: req.params.id }));
 }));
+
+// ---- v32: sección Sueño (hora de inicio/fin, duración calculada sola o
+// editable a mano, calidad opcional 1-10). ----
+app.get("/api/sleep", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_sleep", patient_id: req.session.patientId }));
+}));
+app.post("/api/sleep", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_sleep", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_sleep", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_sleep", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+// ---- v32: interpretación con IA — junta todas las capturas del paciente en
+// un JSON, genera una liga temporal (~1 hora) hacia ese JSON, y llama a la
+// API de Anthropic para generar una interpretación en español. origin se
+// arma igual que en "Olvidé mi contraseña" (requestOrigin_), para que la
+// liga use el dominio real que está usando el paciente. Solo existe con
+// backend Postgres (igual que fotos de avatar/receta): el backend Sheets
+// nunca tuvo un análogo de exportación temporal por token. ----
+app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "add_ai_interpretation", patient_id: req.session.patientId,
+    period: req.body.period, origin: requestOrigin_(req),
+  }));
+}));
+if (DB_BACKEND === "postgres") {
+  app.get("/api/ai-export/:token", asyncRoute(async (req, res) => {
+    const { getAiExportPayload } = require("./db-postgres");
+    const result = await getAiExportPayload(req.params.token);
+    if (result.error === "not_found") return res.status(404).json({ ok: false, error: "liga no válida" });
+    if (result.error === "expired") return res.status(410).json({ ok: false, error: "esta liga ya expiró" });
+    res.json({ ok: true, data: result.payload });
+  }));
+}
 
 // ---- Consultas médicas (v30.12) ----
 app.get("/api/consultations", requireAnyRole, asyncRoute(async (req, res) => {

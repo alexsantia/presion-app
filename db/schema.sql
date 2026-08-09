@@ -468,3 +468,62 @@ ALTER TABLE sintomas ADD COLUMN IF NOT EXISTS ubicaciones_dolor jsonb;
 ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_type text;
 ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_id uuid;
 ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS related_label text;
+
+-- ============================================================
+-- v32
+-- ============================================================
+
+-- v32: sección Sueño — hora de inicio y de fin (la mayoría de los registros
+-- cruzan la medianoche, ej. 23:00 a 07:00), duración total calculada sola
+-- (mismo patrón que hora/hora_fin de ejercicios) pero editable a mano, y
+-- calidad de sueño opcional en escala 1-10 (misma escala tipo "intensidad"
+-- que ya se usa en Síntomas). fecha se guarda como la fecha en que INICIÓ el
+-- sueño (la noche de referencia), no la fecha en que se despertó.
+CREATE TABLE IF NOT EXISTS sueno (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  fecha date NOT NULL,
+  hora_inicio time,
+  hora_fin time,
+  duracion_min numeric,
+  calidad integer,
+  notas text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sueno_patient ON sueno(patient_id, fecha DESC);
+
+-- v32: interpretación con IA — exportación temporal de todas las capturas
+-- del paciente (lecturas/PAM, sueño, ejercicio, malos hábitos, síntomas,
+-- wellness, medicamentos/apego, historial de laboratorio, consultas) en un
+-- solo JSON, expuesta por una liga de un solo uso repetido dentro de su
+-- ventana de vigencia (no de un solo GET, para que la propia llamada del
+-- servidor a la IA y cualquier verificación manual del paciente puedan
+-- usarla mientras siga vigente). El token es opaco (uuid), no lleva datos
+-- identificables del paciente en la URL, y expira típicamente 1 hora
+-- después de creado — ver createAiExportToken/getAiExportPayload en
+-- db-postgres.js.
+CREATE TABLE IF NOT EXISTS ai_export_tokens (
+  id uuid PRIMARY KEY,
+  token text NOT NULL UNIQUE,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  period text NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_export_tokens_patient ON ai_export_tokens(patient_id, created_at DESC);
+
+-- v32: historial de interpretaciones generadas por IA (texto de respuesta,
+-- para no tener que volver a llamar a la IA solo para reabrir la pantalla).
+-- export_token queda guardado como referencia/auditoría aunque ya haya
+-- expirado.
+CREATE TABLE IF NOT EXISTS ai_interpretations (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  period text NOT NULL,
+  export_token text,
+  response_text text NOT NULL,
+  model text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_interpretations_patient ON ai_interpretations(patient_id, created_at DESC);

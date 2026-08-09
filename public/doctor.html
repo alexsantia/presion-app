@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=31.1"></script>
+<script src="/shared/common.js?v=32.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -239,6 +239,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="consultas">🩺 Consultas</button>
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn" data-page-tab="wellness">🧘 Wellness</button>
+  <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
   <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
@@ -541,6 +542,34 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="statsMedAdherenceChart"></canvas></div>
     <div id="statsMedAdherenceEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay medicamentos con tomas programadas.</div>
   </div>
+
+  <!-- v32: gráficas de Sueño -->
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Duración de sueño</h2>
+      <div class="chart-filter-mini" data-chart-key="sleepDuration" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Horas dormidas por noche, según lo registrado por el paciente.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsSleepDurationChart"></canvas></div>
+    <div id="statsSleepDurationEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay sueño registrado.</div>
+  </div>
+  <div class="section section-chart">
+    <div class="toolbar">
+      <h2 style="flex:1">Calidad de sueño</h2>
+      <div class="chart-filter-mini" data-chart-key="sleepQuality" role="group" aria-label="Periodo de esta gráfica">
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Calidad de sueño (1-10) en las noches en que el paciente la capturó.</p>
+    <div class="chart-wrap" style="height:220px;"><canvas id="statsSleepQualityChart"></canvas></div>
+    <div id="statsSleepQualityEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay calidad de sueño registrada.</div>
+  </div>
 </div>
 
 <div id="tabHabitos" class="tab-panel" style="display:none;">
@@ -713,6 +742,16 @@
   </div>
 </div>
 
+<!-- v32: sección Sueño (solo lectura) -->
+<div id="tabSueno" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>Sueño</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Sueño que el paciente tiene registrado (solo lectura): hora de inicio/fin, duración y calidad (1-10) cuando la capturó.</p>
+    <div id="sleepTotalsWrap"></div>
+    <div id="sleepListWrap"></div>
+  </div>
+</div>
+
 <div class="section section-password">
   <h2>Cambiar mi contraseña</h2>
   <form class="pw-form" id="passwordForm">
@@ -756,7 +795,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v31.1</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v32.0</button></footer>
 
 <script>
 let chartInstance = null;
@@ -796,6 +835,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabConsultas").style.display = btn.dataset.pageTab === "consultas" ? "" : "none";
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     document.getElementById("tabWellness").style.display = btn.dataset.pageTab === "wellness" ? "" : "none";
+    document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
   });
 });
@@ -1247,7 +1287,7 @@ function renderChart() {
 
 // ---- Estadísticas: filtro general + filtro propio por gráfica (v30.8,
 // ver nota completa en index.html) ----
-let statsChartOverrides = { timeOfDay: null, weekday: null, pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null };
+let statsChartOverrides = { timeOfDay: null, weekday: null, pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null, sleepDuration: null, sleepQuality: null };
 function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || statsChartPeriod; }
 // v30.19: día exacto elegido para PAM/FC (ver nota completa en index.html)
 let statsChartDay = { pam: todayStr(), hr: todayStr() };
@@ -1495,6 +1535,16 @@ async function loadWellness() {
   document.getElementById("wellnessTotalsWrap").innerHTML = wellnessTotalsHTML_(currentWellness);
   document.getElementById("wellnessListWrap").innerHTML = renderWellnessListHTML(currentWellness, { readOnly: true });
 }
+
+// ---- v32: Sueño (solo lectura) ----
+let currentSleep = [];
+async function loadSleep() {
+  ensureExerciseStyles_();
+  ensureSymptomStyles_();
+  try { currentSleep = await apiGet("/api/sleep"); } catch (err) { currentSleep = []; }
+  document.getElementById("sleepTotalsWrap").innerHTML = sleepTotalsHTML_(currentSleep);
+  document.getElementById("sleepListWrap").innerHTML = renderSleepListHTML(currentSleep, { readOnly: true });
+}
 function exerciseDailyTotalsForChart_() {
   const byDay = new Map();
   for (const ex of currentExercises || []) {
@@ -1512,7 +1562,8 @@ async function loadMedicationAdherence() {
 let currentLabHistory = [];
 let statsHrChartInstance = null, statsWeightChartInstance = null, statsWaistChartInstance = null,
     statsTriglyceridesChartInstance = null, statsCholesterolChartInstance = null,
-    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null, statsPamChartInstance = null;
+    statsExerciseChartInstance = null, statsMedAdherenceChartInstance = null, statsPamChartInstance = null,
+    statsSleepDurationChartInstance = null, statsSleepQualityChartInstance = null;
 async function loadLabHistory() {
   try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
   renderLabHistoryCharts();
@@ -1584,6 +1635,20 @@ function renderLabHistoryCharts(onlyKeys) {
     statsMedAdherenceChartInstance = renderMetricTrendChart(
       statsMedAdherenceChartInstance, document.getElementById("statsMedAdherenceChart"), document.getElementById("statsMedAdherenceEmpty"),
       labHistorySeriesForKey_(adherenceHistory, "pct"), { label: "% de apego", color: "#D9A15F", unit: "%" }
+    );
+  }
+  if (shouldRender("sleepDuration")) {
+    const sleepHistory = filterByPeriodField_(currentSleep, effectivePeriod_("sleepDuration"), "fecha");
+    statsSleepDurationChartInstance = renderMetricTrendChart(
+      statsSleepDurationChartInstance, document.getElementById("statsSleepDurationChart"), document.getElementById("statsSleepDurationEmpty"),
+      sleepDurationSeriesForChart_(sleepHistory), { label: "Duración", color: "#6E8FB0", unit: "h" }
+    );
+  }
+  if (shouldRender("sleepQuality")) {
+    const sleepHistory = filterByPeriodField_(currentSleep, effectivePeriod_("sleepQuality"), "fecha");
+    statsSleepQualityChartInstance = renderMetricTrendChart(
+      statsSleepQualityChartInstance, document.getElementById("statsSleepQualityChart"), document.getElementById("statsSleepQualityEmpty"),
+      sleepQualitySeriesForChart_(sleepHistory), { label: "Calidad", color: "#9B8AC4", unit: "/10" }
     );
   }
 }
@@ -1679,7 +1744,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "31.1");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "32.0");
 
 loadPatient();
 loadAndRender();
@@ -1695,6 +1760,7 @@ loadMedicationLog();
 loadExercises();
 loadExerciseReadings(); // v31
 loadWellness(); // v31
+loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
 loadConsultations();
 loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 wireBroadcastBanner(document.getElementById("broadcastBanner"));
@@ -1742,6 +1808,7 @@ connectRealtime("/api/stream", kind => {
   }
   if (kind === "exercise_reading") loadExerciseReadings(); // v31
   if (kind === "wellness") loadWellness(); // v31
+  if (kind === "sleep") loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
   if (kind === "consultation") loadConsultations();
   if (kind === "reaction") {
     loadReactions().then(() => {

@@ -598,6 +598,11 @@ function computeExerciseDurationMinutes_(horaInicio, horaFin) {
   if (diff <= 0) diff += 24 * 60;
   return diff;
 }
+// v32: misma lógica de cruce de medianoche que el ejercicio, reutilizada
+// para el sueño (donde cruzar la medianoche es lo normal, no la excepción).
+function computeSleepDurationMinutes_(horaInicio, horaFin) {
+  return computeExerciseDurationMinutes_(horaInicio, horaFin);
+}
 function ageFromBirthdate_(birthdate) {
   if (!birthdate) return null;
   const b = new Date(birthdate);
@@ -706,6 +711,31 @@ async function listWellness(patientId) {
     [patientId]
   );
   return rows.map(wellnessRowToObject_);
+}
+
+// ---- v32: sección Sueño ----
+function sleepRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    fecha: row.fecha || "",
+    hora_inicio: row.hora_inicio || "",
+    hora_fin: row.hora_fin || "",
+    duracion_min: row.duracion_min != null ? Number(row.duracion_min) : null,
+    calidad: row.calidad != null ? Number(row.calidad) : null,
+    notas: row.notas || "",
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listSleep(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, to_char(fecha, 'YYYY-MM-DD') AS fecha,
+            to_char(hora_inicio, 'HH24:MI') AS hora_inicio, to_char(hora_fin, 'HH24:MI') AS hora_fin,
+            duracion_min, calidad, notas, created_at
+     FROM sueno WHERE patient_id = $1 ORDER BY fecha DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(sleepRowToObject_);
 }
 
 // ---- Consultas médicas (v30.12) ----
@@ -868,6 +898,113 @@ async function listMedicationLog(patientId) {
     if (scheduled.length || eventual.length) results.push({ fecha: d, scheduled, eventual });
   }
   return results; // más reciente primero
+}
+
+// ---- v32: interpretación con IA — exportación temporal de todas las
+// capturas del paciente (JSON) para que un modelo de lenguaje las analice, y
+// llamada automática a la API de Anthropic con ese mismo contenido. Requiere
+// ANTHROPIC_API_KEY en el entorno; si falta, la función add_ai_interpretation
+// regresa un error claro en vez de tronar (mismo patrón que VAPID_* con
+// notificaciones push). ----
+const AI_EXPORT_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hora
+const AI_PERIOD_DAYS_ = { "7d": 7, "30d": 30, "90d": 90, all: null };
+const AI_PERIOD_LABELS_ = { "7d": "últimos 7 días", "30d": "últimos 30 días", "90d": "últimos 90 días", all: "todo el historial disponible" };
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const AI_MODEL = process.env.AI_MODEL || "claude-sonnet-5";
+const aiEnabled = !!ANTHROPIC_API_KEY;
+if (!aiEnabled) {
+  console.warn("[ai] falta ANTHROPIC_API_KEY en el entorno: la interpretación con IA queda desactivada");
+}
+function filterByPeriodDays_(rows, days, dateField) {
+  if (days == null) return rows || [];
+  const { dateStr: today } = nowInAppTz_();
+  const cutoff = addDaysToDateStr_(today, -days);
+  return (rows || []).filter(r => r[dateField] && r[dateField] >= cutoff);
+}
+// Arma el JSON completo (todas las secciones), filtrado al periodo pedido.
+// Deliberadamente sin nombre/email/contraseña del paciente en el bloque
+// "paciente": solo datos clínicos + edad/género/peso/estatura como contexto
+// (útiles para que la IA pueda comentar sobre IMC o dosis relativas a peso,
+// por ejemplo), ya que este JSON viaja por una liga pública aunque sea
+// temporal.
+async function buildAiExportPayload_(patientId, period) {
+  const days = AI_PERIOD_DAYS_.hasOwnProperty(period) ? AI_PERIOD_DAYS_[period] : 90;
+  const p = await findPatientById(patientId);
+  if (!p) return null;
+  const [readings, habits, symptoms, labHistory, medications, exercises, exerciseReadings,
+    wellness, sleep, consultations, adherence, eventualMeds] = await Promise.all([
+    listReadings(patientId), listHabits(patientId), listSymptoms(patientId), listLabHistory(patientId),
+    listMedications(patientId), listExercises(patientId), listExerciseReadings(patientId),
+    listWellness(patientId), listSleep(patientId), listConsultations(patientId),
+    listMedicationAdherence(patientId), listEventualMedications(patientId),
+  ]);
+  return {
+    generado_en: nowIso(),
+    periodo: period,
+    paciente: {
+      edad: ageFromBirthdate_(p.birthdate), genero: p.gender || null,
+      peso_kg: num(p.weight), estatura_cm: num(p.height), cintura_cm: num(p.waist),
+      colesterol: num(p.cholesterol), trigliceridos: num(p.triglycerides),
+      medicamento_principal: p.med_brand || null,
+    },
+    lecturas_presion_arterial: filterByPeriodDays_(readings, days, "date"),
+    sueno: filterByPeriodDays_(sleep, days, "fecha"),
+    ejercicio: filterByPeriodDays_(exercises, days, "fecha"),
+    lecturas_presion_durante_ejercicio: filterByPeriodDays_(exerciseReadings, days, "date"),
+    malos_habitos: filterByPeriodDays_(habits, days, "fecha"),
+    sintomas: filterByPeriodDays_(symptoms, days, "fecha"),
+    wellness: filterByPeriodDays_(wellness, days, "fecha"),
+    medicamentos_activos: medications,
+    apego_medicamentos: filterByPeriodDays_(adherence, days, "fecha"),
+    medicamentos_eventuales: filterByPeriodDays_(eventualMeds, days, "fecha"),
+    historial_laboratorio: filterByPeriodDays_(labHistory, days, "fecha"),
+    consultas_medicas: filterByPeriodDays_(consultations, days, "fecha"),
+  };
+}
+async function createAiExportToken_(patientId, period) {
+  const token = uuid();
+  const id = uuid();
+  const expiresAt = new Date(Date.now() + AI_EXPORT_TOKEN_TTL_MS);
+  await pool.query(
+    `INSERT INTO ai_export_tokens (id, token, patient_id, period, expires_at, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [id, token, patientId, period, expiresAt.toISOString(), nowIso()]
+  );
+  return { token, expiresAt };
+}
+// Público (sin sesión) pero solo funciona con un token vigente — mismo nivel
+// de exposición que el enlace de familia (uuid impredecible, imposible de
+// adivinar), pero de vida mucho más corta (1 hora), porque aquí sí viaja el
+// detalle clínico completo del periodo elegido. El JSON se arma al vuelo en
+// cada consulta (no se guarda un snapshot), así que siempre refleja los
+// datos más recientes mientras el token siga vigente.
+async function getAiExportPayload(token) {
+  const { rows } = await pool.query(`SELECT patient_id, period, expires_at FROM ai_export_tokens WHERE token = $1`, [token]);
+  const row = rows[0];
+  if (!row) return { error: "not_found" };
+  if (new Date(row.expires_at).getTime() < Date.now()) return { error: "expired" };
+  const payload = await buildAiExportPayload_(row.patient_id, row.period);
+  return { payload };
+}
+// Disclaimer clínico fijo: va tanto en el prompt que recibe el modelo como
+// pegado al inicio de la respuesta que ve el paciente, por si el modelo no
+// lo repite con suficiente claridad.
+const AI_DISCLAIMER = "Esta interpretación fue generada por un modelo de inteligencia artificial con fines meramente informativos y educativos. No es un diagnóstico médico ni sustituye la valoración de un profesional de la salud. Ante cualquier síntoma de alarma o duda sobre tu tratamiento, consulta a tu médico.";
+async function callAnthropicInterpretation_(payload, exportUrl, period) {
+  const periodLabel = AI_PERIOD_LABELS_[period] || period;
+  const system = "Eres un asistente de apoyo que ayuda a un paciente con hipertensión a entender sus propios datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, apego a medicamentos, laboratorios y consultas médicas). Responde siempre en español, en tono cercano y claro, evitando tecnicismos innecesarios. Señala patrones relevantes y posibles relaciones entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial), pero deja siempre claro que esto no es un diagnóstico. Nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
+  const userText = `Aquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, system, messages: [{ role: "user", content: userText }] }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Anthropic API ${resp.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  return text || "(la IA no devolvió texto)";
 }
 
 // ---- Pacientes ----
@@ -1348,6 +1485,9 @@ async function handleGet(params) {
   if (action === "list_wellness") {
     return { ok: true, data: await listWellness(params.patient_id) };
   }
+  if (action === "list_sleep") {
+    return { ok: true, data: await listSleep(params.patient_id) };
+  }
   if (action === "list_exercises") {
     return { ok: true, data: await listExercises(params.patient_id) };
   }
@@ -1706,6 +1846,75 @@ async function handlePost(body) {
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "wellness");
     return { ok: true };
+  }
+
+  // ---- v32: sección Sueño — hora_inicio/hora_fin con duración calculada
+  // sola (misma red de seguridad que ejercicio: si el cliente no manda
+  // duracion_min, se calcula aquí; si sí la manda —porque el usuario la
+  // editó a mano—, esa gana). calidad es opcional, 1-10; se guarda null si
+  // no se captura. ----
+  if (body.action === "add_sleep" || body.action === "update_sleep") {
+    let duracionMin = hasValue(body.duracion_min) ? num(body.duracion_min) : null;
+    if (duracionMin == null) duracionMin = computeSleepDurationMinutes_(body.hora_inicio, body.hora_fin);
+    if (!body.fecha || !hasValue(duracionMin)) {
+      return { ok: false, error: "faltan datos (fecha y duración —u hora de inicio/fin— son obligatorios)" };
+    }
+    let calidad = hasValue(body.calidad) ? num(body.calidad) : null;
+    if (calidad != null) calidad = Math.min(10, Math.max(1, Math.round(calidad)));
+    if (body.action === "add_sleep") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO sueno (id, patient_id, fecha, hora_inicio, hora_fin, duracion_min, calidad, notas, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
+        [id, body.patient_id, body.fecha, body.hora_inicio || null, body.hora_fin || null, duracionMin, calidad, body.notas || "", now]
+      );
+      emitChange(body.patient_id, "sleep");
+      return { ok: true, id };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE sueno SET fecha = $1, hora_inicio = $2, hora_fin = $3, duracion_min = $4, calidad = $5, notas = $6, updated_at = $7
+         WHERE id = $8 AND patient_id = $9`,
+        [body.fecha, body.hora_inicio || null, body.hora_fin || null, duracionMin, calidad, body.notas || "", now, body.id, body.patient_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "sleep");
+      return { ok: true };
+    }
+  }
+  if (body.action === "delete_sleep") {
+    const { rowCount } = await pool.query(`DELETE FROM sueno WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "sleep");
+    return { ok: true };
+  }
+
+  // ---- v32: interpretación con IA. body.origin viene de requestOrigin_(req)
+  // en server.js, para armar la liga temporal con el dominio real que está
+  // usando el paciente (rbp.alexsantia.com), igual que en "Olvidé mi
+  // contraseña". ----
+  if (body.action === "add_ai_interpretation") {
+    if (!aiEnabled) return { ok: false, error: "la interpretación con IA no está configurada en el servidor (falta ANTHROPIC_API_KEY)" };
+    const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
+    const p = await findPatientById(body.patient_id);
+    if (!p) return { ok: false, error: "no encontrado" };
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
+    const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
+    const payload = await buildAiExportPayload_(body.patient_id, period);
+    let responseText;
+    try {
+      responseText = await callAnthropicInterpretation_(payload, exportUrl, period);
+    } catch (err) {
+      console.error("[ai] error llamando a Anthropic:", err);
+      return { ok: false, error: "no se pudo generar la interpretación en este momento, intenta de nuevo en unos minutos" };
+    }
+    const fullText = `${AI_DISCLAIMER}\n\n${responseText}`;
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO ai_interpretations (id, patient_id, period, export_token, response_text, model, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [id, body.patient_id, period, token, fullText, AI_MODEL, nowIso()]
+    );
+    return { ok: true, id, period, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- Consultas médicas (v30.12) ----
@@ -2329,4 +2538,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders, getConsultationReceta };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders, getConsultationReceta, getAiExportPayload };

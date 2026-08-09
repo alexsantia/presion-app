@@ -742,6 +742,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "32.0", changes: [
+    "Nueva sección Sueño: hora de inicio y fin (la duración se calcula sola, editable a mano) y calidad de sueño opcional en escala 1-10. Nuevas gráficas de duración y calidad de sueño en Estadísticas.",
+    "Nueva Interpretación con IA en Estadísticas: junta tus capturas del periodo elegido (presión, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y laboratorios) y genera una lectura en lenguaje sencillo. No sustituye a tu médico.",
+  ] },
   { version: "31.1", changes: [
     "El selector de localización de dolor de cabeza ahora usa las 14 imágenes de referencia reales (en vez del dibujo esquemático anterior), para identificar mejor dónde duele.",
   ] },
@@ -1511,6 +1515,87 @@ function wellnessTotalsHTML_(entries) {
   if (!entries || !entries.length) return "";
   const totalMin = entries.reduce((a, e) => a + (Number(e.duracion_min) || 0), 0);
   return `<div class="ex-totals">${entries.length} registro${entries.length === 1 ? "" : "s"}${totalMin ? ` · ${totalMin} min en total` : ""}</div>`;
+}
+
+// ---- v32: sección Sueño — hora de inicio/fin (casi siempre cruza la
+// medianoche), duración calculada sola pero editable a mano (mismo patrón
+// que Ejercicio), y calidad de sueño opcional en escala 1-10 (misma idea que
+// la intensidad de Síntomas, pero para qué tan bien durmió esa noche). ----
+const SLEEP_QUALITY_LABELS_ = {
+  1: "Muy mala", 2: "Mala", 3: "Mala-regular", 4: "Regular", 5: "Regular-buena",
+  6: "Buena", 7: "Buena-muy buena", 8: "Muy buena", 9: "Excelente", 10: "Óptima",
+};
+function sleepDurationLabel_(min) {
+  if (min == null) return "";
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+function sleepEntryHTML_(s, opts) {
+  opts = opts || {};
+  const dateLabel = s.fecha ? s.fecha.split("-").reverse().join("/") : "";
+  const actions = opts.readOnly ? "" : `
+    <div class="ex-entry-actions">
+      <button type="button" class="btn-mini sleep-edit-btn" data-sleep-id="${s.id}">Editar</button>
+      <button type="button" class="btn-mini danger sleep-delete-btn" data-sleep-id="${s.id}">Eliminar</button>
+    </div>`;
+  const detailParts = [dateLabel];
+  if (s.hora_inicio && s.hora_fin) detailParts.push(`${escapeHtml_(s.hora_inicio)}–${escapeHtml_(s.hora_fin)}`);
+  else if (s.hora_inicio) detailParts.push(escapeHtml_(s.hora_inicio));
+  if (s.duracion_min != null) detailParts.push(sleepDurationLabel_(s.duracion_min));
+  const qualityChip = s.calidad != null
+    ? `<span class="symptom-scale-chip">Calidad ${s.calidad}/10 – ${escapeHtml_(SLEEP_QUALITY_LABELS_[s.calidad] || "")}</span>`
+    : "";
+  return `
+    <div class="ex-entry" data-sleep-id="${s.id}">
+      <div class="ex-entry-header">
+        <div class="ex-entry-title">🌙 Sueño</div>
+        ${actions}
+      </div>
+      <div class="ex-entry-detail">${detailParts.join(" · ")}</div>
+      ${qualityChip ? `<div style="margin-top:3px;">${qualityChip}</div>` : ""}
+      ${s.notas ? `<div class="ex-entry-notes">${escapeHtml_(s.notas)}</div>` : ""}
+    </div>`;
+}
+function renderSleepListHTML(entries, opts) {
+  if (!entries || !entries.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún sueño.</div>`;
+  }
+  return entries.map(s => sleepEntryHTML_(s, opts)).join("");
+}
+function sleepTotalsHTML_(entries) {
+  if (!entries || !entries.length) return "";
+  const withDuration = entries.filter(e => e.duracion_min != null);
+  const withQuality = entries.filter(e => e.calidad != null);
+  const parts = [`${entries.length} registro${entries.length === 1 ? "" : "s"}`];
+  if (withDuration.length) {
+    const avgMin = withDuration.reduce((a, e) => a + Number(e.duracion_min), 0) / withDuration.length;
+    parts.push(`promedio ${sleepDurationLabel_(avgMin)}`);
+  }
+  if (withQuality.length) {
+    const avgQ = withQuality.reduce((a, e) => a + Number(e.calidad), 0) / withQuality.length;
+    parts.push(`calidad promedio ${Math.round(avgQ * 10) / 10}/10`);
+  }
+  return `<div class="ex-totals">${parts.join(" · ")}</div>`;
+}
+// Serie para la gráfica de Estadísticas: duración en HORAS (más legible que
+// minutos en el eje de una gráfica), reutilizando el mismo formato
+// {labels, values, obs} que ya entiende renderMetricTrendChart.
+function sleepDurationSeriesForChart_(entries) {
+  const filtered = (entries || []).filter(e => e.duracion_min != null);
+  return {
+    labels: filtered.map(e => fmtDate(e.fecha)),
+    values: filtered.map(e => Math.round((Number(e.duracion_min) / 60) * 100) / 100),
+    obs: filtered.map(e => e.notas || ""),
+  };
+}
+function sleepQualitySeriesForChart_(entries) {
+  const filtered = (entries || []).filter(e => e.calidad != null);
+  return {
+    labels: filtered.map(e => fmtDate(e.fecha)),
+    values: filtered.map(e => Number(e.calidad)),
+    obs: filtered.map(e => e.notas || ""),
+  };
 }
 
 // ---- v31.1: localización gráfica del dolor de cabeza ----
