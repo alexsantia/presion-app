@@ -742,6 +742,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "32.1", changes: [
+    "Se corrigió que la Interpretación con IA a veces se cortaba a media frase.",
+    "Nuevo modo \"Mi propia IA\": además de la IA interna automática, ahora puedes elegir generar el prompt con la liga a tus datos y copiarlo/pegarlo en ChatGPT, Gemini u otra IA de tu preferencia.",
+    "La Interpretación con IA ahora también está disponible en la pestaña Presión Arterial, no solo en Estadísticas.",
+    "En Estadísticas ahora puedes arrastrar las gráficas para reordenarlas a tu gusto; el orden se recuerda en este dispositivo.",
+  ] },
   { version: "32.0", changes: [
     "Nueva sección Sueño: hora de inicio y fin (la duración se calcula sola, editable a mano) y calidad de sueño opcional en escala 1-10. Nuevas gráficas de duración y calidad de sueño en Estadísticas.",
     "Nueva Interpretación con IA en Estadísticas: junta tus capturas del periodo elegido (presión, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y laboratorios) y genera una lectura en lenguaje sencillo. No sustituye a tu médico.",
@@ -1596,6 +1602,120 @@ function sleepQualitySeriesForChart_(entries) {
     values: filtered.map(e => Number(e.calidad)),
     obs: filtered.map(e => e.notas || ""),
   };
+}
+
+// ---- v32.1: Interpretación con IA — bloque reusable, montado dos veces en
+// index.html (pestaña Presión Arterial y pestaña Estadísticas) con un
+// prefijo de ids distinto cada vez, para no duplicar la lógica a mano en dos
+// lugares. Dos modos: "interna" (el servidor llama a Anthropic y regresa el
+// texto ya interpretado) o "propia" (el servidor solo arma la liga temporal
+// + el prompt, y el paciente lo copia/pega en la IA de su preferencia). ----
+function aiInterpretationSectionHTML_(prefix) {
+  return `
+    <div class="toolbar">
+      <h2 style="flex:1">🤖 Interpretación con IA</h2>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Analiza tus capturas del periodo elegido (presión, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y laboratorios) y te da una lectura en lenguaje sencillo. No es un diagnóstico ni sustituye a tu médico.</p>
+    <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:13px; margin-bottom:6px;">
+      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="interna" checked> IA interna (automática)</label>
+      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="propia"> Mi propia IA (copiar y pegar)</label>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px;">
+      <label for="${prefix}_ai_period" style="font-size:13px; font-weight:600;">Periodo</label>
+      <select id="${prefix}_ai_period" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <option value="7d">Últimos 7 días</option>
+        <option value="30d">Últimos 30 días</option>
+        <option value="90d" selected>Últimos 90 días</option>
+        <option value="all">Todo el historial</option>
+      </select>
+      <button type="button" class="btn-primary" id="${prefix}_aiActionBtn">Generar interpretación</button>
+    </div>
+    <div id="${prefix}_aiInterpretationResult" style="display:none; margin-top:10px; padding:12px 14px; background:var(--bg-page); border:1px solid var(--border); border-radius:10px; font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
+    <div id="${prefix}_aiPromptResult" style="display:none; margin-top:10px;">
+      <p style="font-size:12px; color:var(--text-muted); margin:0 0 6px;">Copia este texto y pégalo en la IA de tu preferencia, o ábrelo directo abajo. La liga incluida es válida por ~1 hora.</p>
+      <textarea id="${prefix}_aiPromptText" readonly rows="6" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:12px; font-family:monospace; resize:vertical;"></textarea>
+      <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button type="button" class="btn-secondary" id="${prefix}_aiCopyBtn">Copiar texto</button>
+        <button type="button" class="btn-secondary" id="${prefix}_aiChatGptBtn">🤖 Abrir en ChatGPT</button>
+        <button type="button" class="btn-secondary" id="${prefix}_aiGeminiBtn">✨ Abrir en Gemini</button>
+        <span id="${prefix}_aiCopyStatus" style="font-size:12px; color:var(--accent); display:none;">Copiado ✓</span>
+      </div>
+      <div class="disclaimer" style="margin-top:6px;">ChatGPT abre con el texto ya escrito, solo falta que presiones Enter. Gemini no permite precargar el texto, así que se copia al portapapeles: pégalo (Cmd+V) en cuanto se abra.</div>
+    </div>
+    <div id="${prefix}_aiInterpretationError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
+  `;
+}
+// La página que llama a esto ya debe tener definidas apiPost (fetch POST con
+// manejo de {ok,error}) en su alcance global — no se referencia hasta que se
+// dispara un click, así que no importa el orden de carga entre common.js y
+// el <script> de la página.
+function wireAiInterpretationSection_(prefix) {
+  const actionBtn = document.getElementById(`${prefix}_aiActionBtn`);
+  if (!actionBtn) return; // esta página no montó esta sección
+  const resultBox = document.getElementById(`${prefix}_aiInterpretationResult`);
+  const promptWrap = document.getElementById(`${prefix}_aiPromptResult`);
+  const promptText = document.getElementById(`${prefix}_aiPromptText`);
+  const copyBtn = document.getElementById(`${prefix}_aiCopyBtn`);
+  const copyStatus = document.getElementById(`${prefix}_aiCopyStatus`);
+  const errorBox = document.getElementById(`${prefix}_aiInterpretationError`);
+  const periodSelect = document.getElementById(`${prefix}_ai_period`);
+  const modeRadios = document.querySelectorAll(`input[name="${prefix}_ai_mode"]`);
+
+  function currentMode() {
+    const checked = document.querySelector(`input[name="${prefix}_ai_mode"]:checked`);
+    return checked ? checked.value : "interna";
+  }
+  function updateButtonLabel() {
+    actionBtn.textContent = currentMode() === "interna" ? "Generar interpretación" : "Generar prompt";
+  }
+  modeRadios.forEach(r => r.addEventListener("change", updateButtonLabel));
+  updateButtonLabel();
+
+  actionBtn.addEventListener("click", async () => {
+    resultBox.style.display = "none";
+    promptWrap.style.display = "none";
+    errorBox.style.display = "none";
+    actionBtn.disabled = true;
+    const mode = currentMode();
+    actionBtn.textContent = mode === "interna" ? "Generando… puede tardar unos segundos" : "Generando prompt…";
+    try {
+      if (mode === "interna") {
+        const result = await apiPost(`/api/ai-interpretation`, { period: periodSelect.value });
+        resultBox.textContent = result.response_text;
+        resultBox.style.display = "";
+      } else {
+        const result = await apiPost(`/api/ai-export-link`, { period: periodSelect.value });
+        promptText.value = result.prompt;
+        promptWrap.style.display = "";
+        copyStatus.style.display = "none";
+      }
+    } catch (err) {
+      errorBox.textContent = "No se pudo generar: " + err.message;
+      errorBox.style.display = "";
+    } finally {
+      actionBtn.disabled = false;
+      updateButtonLabel();
+    }
+  });
+
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(promptText.value);
+      } catch (err) {
+        promptText.removeAttribute("readonly");
+        promptText.select();
+        document.execCommand("copy");
+        promptText.setAttribute("readonly", "readonly");
+      }
+      copyStatus.style.display = "";
+      setTimeout(() => { copyStatus.style.display = "none"; }, 2000);
+    });
+  }
+  // Reusa el mismo helper de enlaces directos que ya existía para el
+  // "Análisis con IA" (solo lecturas, v25) — aquí apunta al textarea nuevo
+  // con el prompt completo (todas las secciones + liga temporal).
+  wireAiDeepLinks({ chatGptBtnId: `${prefix}_aiChatGptBtn`, geminiBtnId: `${prefix}_aiGeminiBtn`, outputId: `${prefix}_aiPromptText` });
 }
 
 // ---- v31.1: localización gráfica del dolor de cabeza ----

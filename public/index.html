@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=32.0"></script>
+<script src="/shared/common.js?v=32.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -141,6 +141,12 @@
   .chart-filter-mini .chart-filter-btn { font-size: 11px; padding: 3px 8px; }
   .chart-filter-mini.is-override { border-color: var(--accent); }
   .chart-filter-mini-label { font-size: 11px; color: var(--text-muted); margin-right: 4px; align-self: center; }
+  /* v32.1: reordenar gráficas de Estadísticas arrastrando */
+  .chart-drag-handle { cursor: grab; color: var(--text-muted); margin-right: 6px; font-size: 15px; user-select: none; display: inline-block; }
+  .chart-drag-handle:active { cursor: grabbing; }
+  .section-chart.is-dragging { opacity: 0.4; }
+  .section-chart.drag-over-top { box-shadow: inset 0 3px 0 var(--accent); }
+  .section-chart.drag-over-bottom { box-shadow: inset 0 -3px 0 var(--accent); }
   .chart-day-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-family: inherit; color: var(--text); }
   .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
   .pagination-controls { display: flex; align-items: center; gap: 10px; }
@@ -484,33 +490,12 @@
   </div>
 </div>
 
-<div class="section section-ai">
-  <h2>Análisis con IA</h2>
-  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un texto con tus resultados para pegarlo en ChatGPT, Gemini o cualquier otro asistente de IA y obtener un análisis de apoyo sobre tu propia salud.</p>
-  <div class="ai-controls">
-    <label>Periodo a analizar
-      <select id="aiPeriod">
-        <option value="day">Día</option>
-        <option value="week" selected>Semana</option>
-        <option value="month">Mes</option>
-        <option value="quarter">Trimestre</option>
-        <option value="year">Año</option>
-        <option value="all">Todo el histórico</option>
-      </select>
-    </label>
-    <button type="button" class="btn-secondary" id="aiGenerateBtn">🤖 Analiza con IA</button>
-  </div>
-  <div id="aiWrap" style="display:none; margin-top:14px;">
-    <textarea id="aiOutput" readonly></textarea>
-    <div class="disclaimer">Copia este texto y pégalo en tu asistente de IA favorito para obtener un análisis. Esto no sustituye una consulta médica.</div>
-    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button type="button" class="btn-secondary" id="aiCopyBtn">Copiar texto</button>
-      <button type="button" class="btn-secondary" id="aiChatGptBtn">🤖 Abrir en ChatGPT</button>
-      <button type="button" class="btn-secondary" id="aiGeminiBtn">✨ Abrir en Gemini</button>
-    </div>
-    <div class="disclaimer" id="aiLinkHint" style="margin-top:6px;">ChatGPT abre con el texto ya escrito, solo falta que presiones Enter. Gemini no permite precargar el texto, así que se copia al portapapeles: pégalo (Cmd+V) en cuanto se abra.</div>
-  </div>
-</div>
+<!-- v32.1: "Análisis con IA" (solo lecturas, v25) se reemplaza por la misma
+     Interpretación con IA de Estadísticas (todas las secciones: presión,
+     sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y
+     laboratorios), montada aquí con prefijo "pa" para no chocar de ids con
+     la copia de Estadísticas (prefijo "es"). -->
+<div class="section section-ai" id="pa_aiInterpretationSection"></div>
 
 <div class="section section-share">
   <h2>Compartir Mediciones</h2>
@@ -550,35 +535,27 @@
     <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
   </div>
 
-  <!-- v32: interpretación con IA — junta todas tus capturas (presión, sueño,
-       ejercicio, malos hábitos, síntomas, wellness, medicamentos, laboratorios
-       y consultas) del periodo elegido y pide a una IA que las interprete.
-       Nunca sustituye a tu médico (ver disclaimer que acompaña la respuesta). -->
-  <div class="section" id="aiInterpretationSection">
-    <div class="toolbar">
-      <h2 style="flex:1">🤖 Interpretación con IA</h2>
-    </div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Analiza tus capturas del periodo elegido (presión, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y laboratorios) y te da una lectura en lenguaje sencillo. No es un diagnóstico ni sustituye a tu médico.</p>
-    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px;">
-      <label for="ai_period" style="font-size:13px; font-weight:600;">Periodo</label>
-      <select id="ai_period" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-        <option value="7d">Últimos 7 días</option>
-        <option value="30d">Últimos 30 días</option>
-        <option value="90d" selected>Últimos 90 días</option>
-        <option value="all">Todo el historial</option>
-      </select>
-      <button type="button" class="btn-primary" id="aiInterpretBtn">Generar interpretación</button>
-    </div>
-    <div id="aiInterpretationResult" style="display:none; margin-top:10px; padding:12px 14px; background:var(--bg-page); border:1px solid var(--border); border-radius:10px; font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
-    <div id="aiInterpretationError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
-  </div>
+  <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
+       sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos,
+       laboratorios y consultas) del periodo elegido y pide a una IA que las
+       interprete (automática, o copiar/pegar en la IA de tu preferencia).
+       Nunca sustituye a tu médico (ver disclaimer que acompaña la respuesta).
+       Contenido montado por JS (aiInterpretationSectionHTML_) con prefijo
+       "es", para compartir la misma lógica con la copia de este bloque en la
+       pestaña Presión Arterial (prefijo "pa"). -->
+  <div class="section" id="es_aiInterpretationSection"></div>
 
+  <!-- v32.1: contenedor de gráficas reordenables — cada .section-chart de
+       aquí adentro lleva data-order-key + draggable="true"; el orden
+       preferido se guarda en localStorage (ver wireStatsChartReorder_ en el
+       bloque de JavaScript de abajo) y se vuelve a aplicar al cargar. -->
+  <div id="statsChartsContainer">
   <!-- v30.18: PAM movida hasta arriba de Estadísticas, antes de "Comparar por
        franja horaria" (ver nota completa de la fórmula más abajo en su
        versión original de v30.16). -->
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="pam" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Presión Arterial Media (PAM)</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Presión Arterial Media (PAM)</h2>
       <div class="chart-filter-mini" data-chart-key="pam" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
@@ -597,9 +574,9 @@
     <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="timeOfDay" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Comparar por franja horaria</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Comparar por franja horaria</h2>
       <div class="chart-filter-mini" data-chart-key="timeOfDay" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -615,9 +592,9 @@
        franja horaria — para preguntas como "¿mis mañanas del lunes suelen
        ser más altas que las del viernes?". Reutiliza el mismo mini-filtro de
        periodo (chart-filter-mini) que las demás gráficas de esta pestaña. -->
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="weekday" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Comparar por día de la semana</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Comparar por día de la semana</h2>
       <div class="chart-filter-mini" data-chart-key="weekday" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -639,9 +616,9 @@
     <div id="statsWeekdayEmpty" style="display:none; color:var(--text-muted); font-size:13px; margin-top:10px;">No hay lecturas suficientes en este periodo para comparar por día de la semana.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="hr" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Frecuencia cardíaca</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Frecuencia cardíaca</h2>
       <div class="chart-filter-mini" data-chart-key="hr" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
@@ -654,9 +631,9 @@
     <div id="statsHrEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con frecuencia cardíaca registrada.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="weight" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Peso</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Peso</h2>
       <div class="chart-filter-mini" data-chart-key="weight" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -667,9 +644,9 @@
     <div id="statsWeightEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas con peso registrado.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="waist" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Perímetro abdominal</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Perímetro abdominal</h2>
       <div class="chart-filter-mini" data-chart-key="waist" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -681,9 +658,9 @@
     <div id="statsWaistEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de perímetro abdominal. Se registrará la próxima vez que lo guardes en Parámetros.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="triglycerides" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Triglicéridos</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Triglicéridos</h2>
       <div class="chart-filter-mini" data-chart-key="triglycerides" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -695,9 +672,9 @@
     <div id="statsTriglyceridesEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay historial de triglicéridos. Se registrará la próxima vez que los guardes en Parámetros.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="cholesterol" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Colesterol</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Colesterol</h2>
       <div class="chart-filter-mini" data-chart-key="cholesterol" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -710,9 +687,9 @@
   </div>
 
   <!-- v30.11: gráficas de Ejercicio y apego a medicamentos -->
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="exercise" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Ejercicio (calorías quemadas)</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Ejercicio (calorías quemadas)</h2>
       <div class="chart-filter-mini" data-chart-key="exercise" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -724,9 +701,9 @@
     <div id="statsExerciseEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay ejercicio registrado.</div>
   </div>
 
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="medAdherence" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Apego a medicamentos</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Apego a medicamentos</h2>
       <div class="chart-filter-mini" data-chart-key="medAdherence" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -739,9 +716,9 @@
   </div>
 
   <!-- v32: gráficas de Sueño -->
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="sleepDuration" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Duración de sueño</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Duración de sueño</h2>
       <div class="chart-filter-mini" data-chart-key="sleepDuration" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -752,9 +729,9 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="statsSleepDurationChart"></canvas></div>
     <div id="statsSleepDurationEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay sueño registrado.</div>
   </div>
-  <div class="section section-chart">
+  <div class="section section-chart" data-order-key="sleepQuality" draggable="true">
     <div class="toolbar">
-      <h2 style="flex:1">Calidad de sueño</h2>
+      <h2 style="flex:1"><span class="chart-drag-handle" title="Arrastra para reordenar">⠿</span> Calidad de sueño</h2>
       <div class="chart-filter-mini" data-chart-key="sleepQuality" role="group" aria-label="Periodo de esta gráfica">
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
@@ -765,6 +742,8 @@
     <div class="chart-wrap" style="height:220px;"><canvas id="statsSleepQualityChart"></canvas></div>
     <div id="statsSleepQualityEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay calidad de sueño registrada.</div>
   </div>
+  </div>
+  <!-- /statsChartsContainer -->
 </div>
 
 <div id="tabHabitos" class="tab-panel" style="display:none;">
@@ -1128,7 +1107,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v32.0</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v32.1</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1604,7 +1583,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("32.0");
+  showAboutOverlay_("32.1");
 });
 
 function openModal(id) {
@@ -1913,26 +1892,86 @@ document.getElementById("regenerateFamilyLink").addEventListener("click", async 
   }
 });
 
-document.getElementById("aiGenerateBtn").addEventListener("click", () => {
-  const granularity = document.getElementById("aiPeriod").value;
-  const filtered = filterByPeriod(currentData, granularity);
-  const age = currentAccount ? calcAge(currentAccount.birthdate) : null;
-  const firstName = currentAccount && currentAccount.name ? currentAccount.name.trim().split(/\s+/)[0] : "";
-  const prompt = buildAiAnalysisPrompt(filtered, {
-    firstName,
-    ageText: age != null ? age + " años" : "",
-    granularity,
-    audience: "patient",
-  });
-  document.getElementById("aiOutput").value = prompt;
-  document.getElementById("aiWrap").style.display = "block";
-});
-document.getElementById("aiCopyBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText(document.getElementById("aiOutput").value);
-});
-wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outputId: "aiOutput" });
+// v32.1: Interpretación con IA — montada dos veces (pestaña Presión Arterial
+// con prefijo "pa", pestaña Estadísticas con prefijo "es"), misma lógica
+// compartida vía aiInterpretationSectionHTML_/wireAiInterpretationSection_
+// en common.js.
+document.getElementById("pa_aiInterpretationSection").innerHTML = aiInterpretationSectionHTML_("pa");
+document.getElementById("es_aiInterpretationSection").innerHTML = aiInterpretationSectionHTML_("es");
+wireAiInterpretationSection_("pa");
+wireAiInterpretationSection_("es");
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
+
+// v32.1: reordenar gráficas de Estadísticas arrastrando (orden guardado en
+// localStorage, por dispositivo — no sincronizado entre médico/familia/paciente
+// porque cada quien puede querer un orden distinto de todas formas).
+function wireStatsChartReorder_() {
+  const STORAGE_KEY = "bp_stats_chart_order_v1";
+  const container = document.getElementById("statsChartsContainer");
+  if (!container) return;
+
+  function applyStoredOrder() {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (err) { saved = []; }
+    if (!Array.isArray(saved) || !saved.length) return;
+    const items = Array.from(container.children).filter(el => el.dataset && el.dataset.orderKey);
+    const byKey = {};
+    items.forEach(el => { byKey[el.dataset.orderKey] = el; });
+    const seen = new Set();
+    saved.forEach(key => {
+      const el = byKey[key];
+      if (el && !seen.has(key)) { container.appendChild(el); seen.add(key); }
+    });
+    // Cualquier gráfica nueva que no estaba en el orden guardado (por ejemplo
+    // agregada en una versión futura) se queda al final, en su orden original.
+    items.forEach(el => { if (!seen.has(el.dataset.orderKey)) container.appendChild(el); });
+  }
+
+  function saveCurrentOrder() {
+    const order = Array.from(container.children)
+      .filter(el => el.dataset && el.dataset.orderKey)
+      .map(el => el.dataset.orderKey);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(order)); } catch (err) { /* ignorar cuota llena */ }
+  }
+
+  applyStoredOrder();
+
+  let dragEl = null;
+  container.querySelectorAll(":scope > [data-order-key]").forEach(el => {
+    el.addEventListener("dragstart", e => {
+      dragEl = el;
+      el.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", el.dataset.orderKey); } catch (err) {}
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("is-dragging");
+      container.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach(x => x.classList.remove("drag-over-top", "drag-over-bottom"));
+      dragEl = null;
+    });
+    el.addEventListener("dragover", e => {
+      if (!dragEl || dragEl === el) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      el.classList.toggle("drag-over-top", before);
+      el.classList.toggle("drag-over-bottom", !before);
+    });
+    el.addEventListener("dragleave", () => { el.classList.remove("drag-over-top", "drag-over-bottom"); });
+    el.addEventListener("drop", e => {
+      e.preventDefault();
+      el.classList.remove("drag-over-top", "drag-over-bottom");
+      if (!dragEl || dragEl === el) return;
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      container.insertBefore(dragEl, before ? el : el.nextSibling);
+      saveCurrentOrder();
+    });
+  });
+}
+wireStatsChartReorder_();
 
 // ---- Previsualizar el panel como lo ve el médico o la familia (v25) ----
 // No es una réplica exacta de doctor.html/familia.html — es el mismo panel

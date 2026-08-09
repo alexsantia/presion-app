@@ -709,6 +709,14 @@ app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req
     period: req.body.period, origin: requestOrigin_(req),
   }));
 }));
+// v32.1: modo "mi propia IA" — arma la liga temporal + el prompt de
+// copiar/pegar, sin llamar a Anthropic (no gasta créditos del servidor).
+app.post("/api/ai-export-link", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "create_ai_export_link", patient_id: req.session.patientId,
+    period: req.body.period, origin: requestOrigin_(req),
+  }));
+}));
 if (DB_BACKEND === "postgres") {
   app.get("/api/ai-export/:token", asyncRoute(async (req, res) => {
     const { getAiExportPayload } = require("./db-postgres");

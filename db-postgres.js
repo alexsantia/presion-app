@@ -989,22 +989,45 @@ async function getAiExportPayload(token) {
 // pegado al inicio de la respuesta que ve el paciente, por si el modelo no
 // lo repite con suficiente claridad.
 const AI_DISCLAIMER = "Esta interpretación fue generada por un modelo de inteligencia artificial con fines meramente informativos y educativos. No es un diagnóstico médico ni sustituye la valoración de un profesional de la salud. Ante cualquier síntoma de alarma o duda sobre tu tratamiento, consulta a tu médico.";
-async function callAnthropicInterpretation_(payload, exportUrl, period) {
+// v32.1: instrucciones/persona separadas del texto de datos, para poder
+// reusarlas tanto en la llamada automática a Anthropic (como "system") como
+// en el prompt de copiar/pegar para que el paciente use la IA de su
+// preferencia (ahí no hay un rol "system" aparte, así que todo va junto).
+const AI_SYSTEM_INSTRUCTIONS_ = "Eres un asistente de apoyo que ayuda a un paciente con hipertensión a entender sus propios datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Responde siempre en español, en tono cercano y claro, evitando tecnicismos innecesarios. Señala patrones relevantes y posibles relaciones entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial), pero deja siempre claro que esto NO es un diagnóstico. Nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
+function buildAiUserMessage_(payload, exportUrl, period) {
   const periodLabel = AI_PERIOD_LABELS_[period] || period;
-  const system = "Eres un asistente de apoyo que ayuda a un paciente con hipertensión a entender sus propios datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, apego a medicamentos, laboratorios y consultas médicas). Responde siempre en español, en tono cercano y claro, evitando tecnicismos innecesarios. Señala patrones relevantes y posibles relaciones entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial), pero deja siempre claro que esto no es un diagnóstico. Nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
-  const userText = `Aquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
+  return `Aquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
+}
+// v32.1: texto completo (instrucciones + datos + liga) listo para que el
+// paciente lo copie y pegue en la IA de su preferencia (ChatGPT, Gemini,
+// etc.) — modo "mi propia IA", alternativa a la llamada automática.
+function buildAiExternalPromptText_(payload, exportUrl, period) {
+  return `${AI_SYSTEM_INSTRUCTIONS_}\n\n${buildAiUserMessage_(payload, exportUrl, period)}`;
+}
+async function callAnthropicInterpretation_(payload, exportUrl, period) {
+  const userText = buildAiUserMessage_(payload, exportUrl, period);
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: AI_MODEL, max_tokens: 1500, system, messages: [{ role: "user", content: userText }] }),
+    // v32.1: max_tokens subido de 1500 a 4096 — con 1500 la respuesta se
+    // cortaba a media frase en periodos con muchos datos (90 días/todo el
+    // historial genera un análisis largo).
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: 4096, system: AI_SYSTEM_INSTRUCTIONS_, messages: [{ role: "user", content: userText }] }),
   });
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
     throw new Error(`Anthropic API ${resp.status}: ${errText.slice(0, 300)}`);
   }
   const data = await resp.json();
-  const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
-  return text || "(la IA no devolvió texto)";
+  let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
+  if (!text) text = "(la IA no devolvió texto)";
+  // v32.1: si aun con 4096 tokens el modelo se quedó corto (stop_reason
+  // "max_tokens"), se avisa explícitamente en vez de dejar la respuesta
+  // cortada a media frase sin explicación.
+  if (data.stop_reason === "max_tokens") {
+    text += "\n\n(La respuesta se cortó por longitud. Prueba con un periodo más corto, como 30 días, para obtener el análisis completo.)";
+  }
+  return text;
 }
 
 // ---- Pacientes ----
@@ -1915,6 +1938,23 @@ async function handlePost(body) {
       [id, body.patient_id, period, token, fullText, AI_MODEL, nowIso()]
     );
     return { ok: true, id, period, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
+  }
+
+  // ---- v32.1: modo "mi propia IA" — el paciente prefiere usar ChatGPT,
+  // Gemini u otra IA en vez de la llamada automática. Genera la misma liga
+  // temporal y el mismo texto de instrucciones + datos, listo para copiar y
+  // pegar, pero sin llamar a Anthropic ni gastar créditos de la cuenta del
+  // servidor. No requiere ANTHROPIC_API_KEY (no llama a ningún proveedor de
+  // IA desde aquí), así que funciona aunque esa variable no esté configurada.
+  if (body.action === "create_ai_export_link") {
+    const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
+    const p = await findPatientById(body.patient_id);
+    if (!p) return { ok: false, error: "no encontrado" };
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
+    const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
+    const payload = await buildAiExportPayload_(body.patient_id, period);
+    const prompt = buildAiExternalPromptText_(payload, exportUrl, period);
+    return { ok: true, period, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- Consultas médicas (v30.12) ----
