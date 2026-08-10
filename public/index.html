@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=32.3"></script>
+<script src="/shared/common.js?v=33.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -356,6 +356,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn" data-page-tab="wellness">🧘 Wellness</button>
   <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metas">🎯 Metas</button>
   <!-- v30.10: el Directorio Médico (antes "Catálogo de médicos") se movió al
        extremo derecho y lleva un fondo distinto (.page-tab-btn-directory)
        porque no es parte de la captura habitual de datos del paciente, sino
@@ -1124,7 +1125,48 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v32.3</footer>
+<!-- v33: sección Metas — objetivos con fecha límite, opcionalmente ligados a
+     un evento, dando seguimiento a uno o varios indicadores a la vez. Cada
+     indicador se resuelve contra la lectura/valor más reciente que ya existe
+     en la app (Parámetros, lecturas, sueño, apego a medicamentos), sin
+     duplicar ninguna captura. -->
+<div id="tabMetas" class="tab-panel" style="display:none;">
+  <div class="section section-add">
+    <h2 id="metaFormTitle">Nueva meta</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Elige uno o varios indicadores y para cada uno decide si quieres reducirlo, aumentarlo, o llegar a un valor específico. El evento es opcional, solo para darle contexto a la meta.</p>
+    <form class="add-form" id="metaForm">
+      <div class="full">
+        <label>Evento (opcional)</label>
+        <input type="text" id="meta_evento" list="metaEventoSuggestions" placeholder="Ej. Boda, cumpleaños, vacaciones de verano">
+        <datalist id="metaEventoSuggestions">
+          <option value="Boda">
+          <option value="Cumpleaños">
+          <option value="Vacaciones de verano">
+          <option value="Revisión médica">
+          <option value="Reunión familiar">
+          <option value="Aniversario">
+          <option value="Graduación">
+          <option value="Sin evento en particular">
+        </datalist>
+      </div>
+      <div><label>Fecha límite</label><input type="date" id="meta_fecha_limite" required></div>
+      <div class="full">
+        <label>Indicadores a seguir</label>
+        <div id="metaIndicadoresPicker"></div>
+        <div id="metaFormError" style="display:none; margin-top:6px; font-size:13px; color:#B0554B;"></div>
+      </div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary" id="metaFormSubmitBtn">Crear meta</button>
+      </div>
+    </form>
+  </div>
+  <div class="section">
+    <h2>🎯 Tus metas</h2>
+    <div id="metasListWrap"></div>
+  </div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.0</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1600,7 +1642,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("32.3");
+  showAboutOverlay_("33.0");
 });
 
 function openModal(id) {
@@ -1641,6 +1683,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     document.getElementById("tabWellness").style.display = btn.dataset.pageTab === "wellness" ? "" : "none";
     document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
+    document.getElementById("tabMetas").style.display = btn.dataset.pageTab === "metas" ? "" : "none";
   });
 });
 
@@ -2661,6 +2704,11 @@ loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
+    // v33: se vuelve a dibujar el picker de indicadores cada vez que se
+    // entra a Metas, para que "valor actual" refleje datos que hayan
+    // cargado después del arranque inicial de la página (peso, lecturas,
+    // sueño, apego a medicamentos cargan todos por su cuenta y en paralelo).
+    if (btn.dataset.pageTab === "metas") renderGoalIndicatorPicker_();
   });
 });
 
@@ -3947,33 +3995,139 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
 });
 document.getElementById("sl_fecha").value = todayDateStr_();
 
-// ---- v32: interpretación con IA — junta todas las capturas del periodo
-// elegido y le pide a la API de Anthropic (configurada del lado del
-// servidor) una lectura en lenguaje sencillo. Puede tardar varios segundos
-// (llamada real a un modelo de lenguaje), por eso el botón se deshabilita y
-// cambia de texto mientras espera, igual que otros botones de guardado
-// lentos en esta app. ----
-document.getElementById("aiInterpretBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("aiInterpretBtn");
-  const resultBox = document.getElementById("aiInterpretationResult");
-  const errorBox = document.getElementById("aiInterpretationError");
-  resultBox.style.display = "none";
+// ---- v33: sección Metas — objetivos con fecha límite, opcionalmente
+// ligados a un evento, dando seguimiento a uno o varios indicadores. Cada
+// indicador aquí (GOAL_INDICATOR_DEFS_) debe coincidir con
+// META_INDICADOR_LABELS_/META_INDICADOR_UNIDADES_ en db-postgres.js — se
+// mantienen separados a propósito (mismo patrón que SLEEP_QUALITY_LABELS_ o
+// EXERCISE_MET_TABLE en otras secciones), el backend siempre manda la
+// verdad final (valor_actual/progreso) en list_goals, esto solo es para
+// dibujar el formulario de creación con una referencia razonable.
+const GOAL_INDICATOR_DEFS_ = [
+  { key: "peso", label: "Peso", unidad: "kg" },
+  { key: "cintura", label: "Cintura", unidad: "cm" },
+  { key: "sistolica", label: "Presión sistólica", unidad: "mmHg" },
+  { key: "diastolica", label: "Presión diastólica", unidad: "mmHg" },
+  { key: "fc", label: "Frecuencia cardiaca", unidad: "lpm" },
+  { key: "colesterol", label: "Colesterol", unidad: "mg/dL" },
+  { key: "trigliceridos", label: "Triglicéridos", unidad: "mg/dL" },
+  { key: "sueno_horas", label: "Horas de sueño (prom. 7 días)", unidad: "h" },
+  { key: "adherencia_medicamentos", label: "Apego a medicamentos (prom. 7 días)", unidad: "%" },
+];
+function resolveIndicadorValorActualLocal_(indicador) {
+  if (indicador === "peso") return currentAccount && currentAccount.weight != null ? Number(currentAccount.weight) : null;
+  if (indicador === "cintura") return currentAccount && currentAccount.waist != null ? Number(currentAccount.waist) : null;
+  if (indicador === "colesterol") return currentAccount && currentAccount.cholesterol != null ? Number(currentAccount.cholesterol) : null;
+  if (indicador === "trigliceridos") return currentAccount && currentAccount.triglycerides != null ? Number(currentAccount.triglycerides) : null;
+  if (indicador === "sistolica" || indicador === "diastolica" || indicador === "fc") {
+    for (let i = currentData.length - 1; i >= 0; i--) {
+      const r = currentData[i];
+      const val = indicador === "sistolica" ? r.sys : indicador === "diastolica" ? r.dia : r.hr;
+      if (val != null) return val;
+    }
+    return null;
+  }
+  if (indicador === "sueno_horas") {
+    const recientes = currentSleep.slice(0, 7).filter(s => s.duracion_min != null);
+    if (!recientes.length) return null;
+    const promedioMin = recientes.reduce((sum, s) => sum + Number(s.duracion_min), 0) / recientes.length;
+    return Math.round((promedioMin / 60) * 10) / 10;
+  }
+  if (indicador === "adherencia_medicamentos") {
+    const recientes = currentMedAdherence.slice(-7);
+    if (!recientes.length) return null;
+    return Math.round(recientes.reduce((sum, d) => sum + d.pct, 0) / recientes.length);
+  }
+  return null;
+}
+function renderGoalIndicatorPicker_() {
+  const wrap = document.getElementById("metaIndicadoresPicker");
+  wrap.innerHTML = GOAL_INDICATOR_DEFS_.map(def => {
+    const actual = resolveIndicadorValorActualLocal_(def.key);
+    const actualLabel = actual != null ? `(actual: ${actual} ${def.unidad})` : `(sin dato todavía)`;
+    return `
+      <div class="goal-ind-row">
+        <label class="checkbox-label" style="font-weight:600;">
+          <input type="checkbox" class="goal-ind-toggle" data-indicador="${def.key}">
+          ${escapeHtml_(def.label)} <span style="font-weight:400; color:var(--text-muted); font-size:12px;">${actualLabel}</span>
+        </label>
+        <div class="goal-ind-config" data-indicador="${def.key}" style="display:none; margin-top:8px; padding-left:24px;">
+          <div style="display:flex; gap:14px; flex-wrap:wrap; font-size:13px; margin-bottom:6px;">
+            <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="radio" name="goal_modo_${def.key}" value="reducir" checked> Reducir en</label>
+            <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="radio" name="goal_modo_${def.key}" value="aumentar"> Aumentar en</label>
+            <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="radio" name="goal_modo_${def.key}" value="manual"> Valor específico</label>
+          </div>
+          <input type="number" step="0.1" class="goal-ind-input" data-indicador="${def.key}" placeholder="Cantidad a reducir (${def.unidad})" style="max-width:220px; padding:7px 9px; border:1px solid var(--border); border-radius:8px;">
+        </div>
+      </div>`;
+  }).join("");
+  wrap.querySelectorAll(".goal-ind-toggle").forEach(cb => {
+    cb.addEventListener("change", () => {
+      wrap.querySelector(`.goal-ind-config[data-indicador="${cb.dataset.indicador}"]`).style.display = cb.checked ? "" : "none";
+    });
+  });
+  GOAL_INDICATOR_DEFS_.forEach(def => {
+    wrap.querySelectorAll(`input[name="goal_modo_${def.key}"]`).forEach(r => {
+      r.addEventListener("change", () => {
+        const input = wrap.querySelector(`.goal-ind-input[data-indicador="${def.key}"]`);
+        const modo = wrap.querySelector(`input[name="goal_modo_${def.key}"]:checked`).value;
+        input.placeholder = modo === "manual" ? `Valor objetivo (${def.unidad})` : `Cantidad a ${modo === "reducir" ? "reducir" : "aumentar"} (${def.unidad})`;
+      });
+    });
+  });
+}
+// goalStatusBadgeHTML_/goalIndicatorRowHTML_/goalCardHTML_/renderGoalsListHTML/
+// wireGoalsListInteractions_ viven en common.js (compartidas con las
+// versiones de solo lectura de doctor.html/familia.html).
+let currentGoals = [];
+async function loadGoals() {
+  ensureGoalStyles_();
+  try { currentGoals = await apiGet("/api/goals"); } catch (err) { currentGoals = []; }
+  document.getElementById("metasListWrap").innerHTML = renderGoalsListHTML(currentGoals, { readOnly: false });
+}
+wireGoalsListInteractions_("metasListWrap", loadGoals);
+renderGoalIndicatorPicker_();
+document.getElementById("meta_fecha_limite").value = "";
+document.getElementById("metaForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errorBox = document.getElementById("metaFormError");
   errorBox.style.display = "none";
-  btn.disabled = true;
-  const original = btn.textContent;
-  btn.textContent = "Generando… puede tardar unos segundos";
+  const evento = document.getElementById("meta_evento").value.trim();
+  const fecha_limite = document.getElementById("meta_fecha_limite").value;
+  if (!fecha_limite) return;
+  const wrap = document.getElementById("metaIndicadoresPicker");
+  const indicadores = [];
+  let faltaValor = false;
+  wrap.querySelectorAll(".goal-ind-toggle:checked").forEach(cb => {
+    const key = cb.dataset.indicador;
+    const modo = wrap.querySelector(`input[name="goal_modo_${key}"]:checked`).value;
+    const valorInput = wrap.querySelector(`.goal-ind-input[data-indicador="${key}"]`);
+    const valor = valorInput.value !== "" ? Number(valorInput.value) : null;
+    if (valor == null) { faltaValor = true; return; }
+    const entry = { indicador: key, modo };
+    if (modo === "manual") entry.valor_objetivo = valor; else entry.cantidad = valor;
+    indicadores.push(entry);
+  });
+  if (!indicadores.length) {
+    errorBox.textContent = faltaValor ? "Falta capturar el valor de al menos uno de los indicadores que marcaste." : "Elige al menos un indicador para dar seguimiento.";
+    errorBox.style.display = "";
+    return;
+  }
+  const submitBtn = document.getElementById("metaFormSubmitBtn");
+  submitBtn.disabled = true;
   try {
-    const result = await apiPost("/api/ai-interpretation", { period: document.getElementById("ai_period").value });
-    resultBox.textContent = result.response_text;
-    resultBox.style.display = "";
+    await apiPost("/api/goals", { evento, fecha_limite, indicadores });
+    document.getElementById("metaForm").reset();
+    renderGoalIndicatorPicker_();
+    await loadGoals();
   } catch (err) {
-    errorBox.textContent = "No se pudo generar la interpretación: " + err.message;
+    errorBox.textContent = "No se pudo crear la meta: " + err.message;
     errorBox.style.display = "";
   } finally {
-    btn.disabled = false;
-    btn.textContent = original;
+    submitBtn.disabled = false;
   }
 });
+loadGoals();
 
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
@@ -4001,6 +4155,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "exercise_reading") loadExerciseReadings(); // v31
   if (kind === "wellness") loadWellness(); // v31
   if (kind === "sleep") loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
+  if (kind === "metas") loadGoals(); // v33
   if (kind === "consultation") loadConsultations();
   if (kind === "reaction") {
     loadReactions().then(() => {

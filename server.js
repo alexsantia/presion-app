@@ -463,6 +463,10 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
   const consultationsResult = await callSheetsApi({ action: "list_consultations", patient_id: patient.id });
   const eventualMedicationsResult = await callSheetsApi({ action: "list_eventual_medications", patient_id: patient.id });
   const medicationLogResult = await callSheetsApi({ action: "list_medication_log", patient_id: patient.id });
+  // v33: metas — igual que sueño/ejercicio, sí se comparte con familia
+  // (progreso hacia un objetivo es justo el tipo de cosa que la familia
+  // quiere poder ver y apoyar), a diferencia de Síntomas/Malos hábitos.
+  const goalsResult = await callSheetsApi({ action: "list_goals", patient_id: patient.id });
   res.json({
     ok: true,
     data: {
@@ -479,6 +483,7 @@ app.get("/api/familia/:token", asyncRoute(async (req, res) => {
       consultations: consultationsResult.ok ? consultationsResult.data : [],
       eventualMedications: eventualMedicationsResult.ok ? eventualMedicationsResult.data : [],
       medicationLog: medicationLogResult.ok ? medicationLogResult.data : [],
+      goals: goalsResult.ok ? goalsResult.data : [],
     },
   });
 }));
@@ -694,6 +699,24 @@ app.put("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res) =>
 }));
 app.delete("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "delete_sleep", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
+// ---- v33: Metas — objetivos con fecha límite, opcionalmente ligados a un
+// evento, que dan seguimiento a uno o varios indicadores (peso, cintura,
+// presión, FC, colesterol, triglicéridos, sueño, apego a medicamentos).
+// Solo el paciente crea/edita/borra; médico y familia solo listan (mismo
+// patrón que el resto de las secciones de solo lectura).
+app.get("/api/goals", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_goals", patient_id: req.session.patientId }));
+}));
+app.post("/api/goals", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_meta", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/goals/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_meta", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/goals/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_meta", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
 // ---- v32: interpretación con IA — junta todas las capturas del paciente en

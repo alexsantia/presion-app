@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=32.3"></script>
+<script src="/shared/common.js?v=33.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -167,6 +167,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="consultas">🩺 Consultas</button>
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metas">🎯 Metas</button>
   <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
@@ -539,7 +540,16 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v32.3</button></footer>
+<!-- v33: sección Metas (solo lectura) -->
+<div id="tabMetas" class="tab-panel" style="display:none;">
+<div class="section">
+  <h2>🎯 Metas</h2>
+  <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Metas del paciente (solo lectura): fecha límite, evento si aplica, y progreso de cada indicador.</p>
+  <div id="metasListWrap"></div>
+</div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.0</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -557,6 +567,7 @@ let statsWeekdayChartInstance = null;
 let statsWeekdayTimeView = "regular";
 let statsChartPeriod = "month";
 let currentSleep = []; // v32
+let currentGoals = []; // v33
 
 // ---- Navegación por pestañas (v30.4) ----
 // v30.7: destello (flash) en la pestaña seleccionada, además del subrayado.
@@ -576,6 +587,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabConsultas").style.display = btn.dataset.pageTab === "consultas" ? "" : "none";
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
+    document.getElementById("tabMetas").style.display = btn.dataset.pageTab === "metas" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
   });
 });
@@ -639,6 +651,9 @@ async function load() {
     document.getElementById("consultationsListWrap").innerHTML = renderConsultationsListHTML(json.data.consultations || [], {
       readOnly: true, photoBaseUrl: "/familia/" + encodeURIComponent(token) + "/consultations/",
     });
+    ensureGoalStyles_(); // v33
+    currentGoals = json.data.goals || [];
+    document.getElementById("metasListWrap").innerHTML = renderGoalsListHTML(currentGoals, { readOnly: true });
     checkNewReactionsSinceLastVisit_();
     renderBroadcastBannerFromList(document.getElementById("broadcastBanner"), json.data.broadcasts || []);
     render();
@@ -1205,7 +1220,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "32.3");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.0");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {

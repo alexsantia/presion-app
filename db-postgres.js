@@ -1483,6 +1483,106 @@ async function listTicketMessages(ticketId) {
 }
 
 // ============================================================
+// Metas (v33) — objetivos con fecha límite, opcionalmente ligados a un
+// evento libre ("Boda", "Vacaciones de verano"), que dan seguimiento a uno o
+// varios indicadores. Cada indicador se resuelve contra la fuente de datos
+// que ya existe en el resto de la app (última lectura, Parámetros, promedio
+// reciente de sueño/apego) — Metas no duplica ninguna captura, solo compara
+// el valor más reciente contra el objetivo que se fijó al crear la meta.
+// ============================================================
+const META_INDICADOR_LABELS_ = {
+  peso: "Peso", cintura: "Cintura", sistolica: "Presión sistólica", diastolica: "Presión diastólica",
+  fc: "Frecuencia cardiaca", colesterol: "Colesterol", trigliceridos: "Triglicéridos",
+  sueno_horas: "Horas de sueño (promedio 7 días)", adherencia_medicamentos: "Apego a medicamentos (promedio 7 días)",
+};
+const META_INDICADOR_UNIDADES_ = {
+  peso: "kg", cintura: "cm", sistolica: "mmHg", diastolica: "mmHg", fc: "lpm",
+  colesterol: "mg/dL", trigliceridos: "mg/dL", sueno_horas: "h", adherencia_medicamentos: "%",
+};
+// Valor más reciente de cada indicador para un paciente — usado tanto para
+// fijar valor_base al crear una meta como para calcular el progreso cada vez
+// que se lista. Devuelve null si todavía no hay ningún dato de esa fuente
+// (por ejemplo un paciente que nunca ha capturado colesterol).
+async function resolveIndicadorValorActual_(patientId, indicador) {
+  if (indicador === "peso" || indicador === "cintura" || indicador === "colesterol" || indicador === "trigliceridos") {
+    const p = await findPatientById(patientId);
+    if (!p) return null;
+    const field = indicador === "peso" ? "weight" : indicador === "cintura" ? "waist" : indicador;
+    return num(p[field]);
+  }
+  if (indicador === "sistolica" || indicador === "diastolica" || indicador === "fc") {
+    const readings = await listReadings(patientId); // orden ascendente por fecha/hora
+    for (let i = readings.length - 1; i >= 0; i--) {
+      const r = readings[i];
+      const val = indicador === "sistolica" ? r.sys : indicador === "diastolica" ? r.dia : r.hr;
+      if (val != null) return num(val);
+    }
+    return null;
+  }
+  if (indicador === "sueno_horas") {
+    const sleep = await listSleep(patientId); // orden descendente, más reciente primero
+    const recientes = sleep.slice(0, 7).filter(s => s.duracion_min != null);
+    if (!recientes.length) return null;
+    const promedioMin = recientes.reduce((sum, s) => sum + Number(s.duracion_min), 0) / recientes.length;
+    return Math.round((promedioMin / 60) * 10) / 10;
+  }
+  if (indicador === "adherencia_medicamentos") {
+    const adherencia = await listMedicationAdherence(patientId); // orden ascendente por fecha
+    const recientes = adherencia.slice(-7);
+    if (!recientes.length) return null;
+    return Math.round(recientes.reduce((sum, d) => sum + d.pct, 0) / recientes.length);
+  }
+  return null;
+}
+function metaIndicadorRowToObject_(row, valorActual) {
+  const base = row.valor_base != null ? Number(row.valor_base) : null;
+  const objetivo = Number(row.valor_objetivo);
+  let progreso_pct = null;
+  let lograda = null;
+  if (valorActual != null && base != null && objetivo !== base) {
+    progreso_pct = Math.round(Math.max(0, Math.min(1, (valorActual - base) / (objetivo - base))) * 100);
+    lograda = objetivo >= base ? valorActual >= objetivo : valorActual <= objetivo;
+  } else if (valorActual != null && objetivo === base) {
+    lograda = valorActual === objetivo;
+  }
+  return {
+    id: row.id, meta_id: row.meta_id, indicador: row.indicador,
+    label: META_INDICADOR_LABELS_[row.indicador] || row.indicador,
+    unidad: META_INDICADOR_UNIDADES_[row.indicador] || "",
+    modo: row.modo, cantidad: row.cantidad != null ? Number(row.cantidad) : null,
+    valor_base: base, valor_objetivo: objetivo, valor_actual: valorActual,
+    progreso_pct, lograda,
+  };
+}
+async function listGoals(patientId) {
+  const { rows: metas } = await pool.query(
+    `SELECT id, patient_id, evento, to_char(fecha_limite, 'YYYY-MM-DD') AS fecha_limite, created_at, updated_at
+     FROM metas WHERE patient_id = $1 ORDER BY fecha_limite`,
+    [patientId]
+  );
+  const { dateStr: hoy } = nowInAppTz_();
+  const result = [];
+  for (const m of metas) {
+    const { rows: indicadorRows } = await pool.query(
+      `SELECT id, meta_id, indicador, modo, cantidad, valor_base, valor_objetivo FROM meta_indicadores WHERE meta_id = $1 ORDER BY created_at`,
+      [m.id]
+    );
+    const indicadores = [];
+    for (const row of indicadorRows) {
+      const valorActual = await resolveIndicadorValorActual_(patientId, row.indicador);
+      indicadores.push(metaIndicadorRowToObject_(row, valorActual));
+    }
+    result.push({
+      id: m.id, patient_id: m.patient_id, evento: m.evento || "",
+      fecha_limite: m.fecha_limite, vencida: m.fecha_limite < hoy,
+      created_at: m.created_at ? new Date(m.created_at).toISOString() : "",
+      indicadores,
+    });
+  }
+  return result;
+}
+
+// ============================================================
 // doGet equivalente
 // ============================================================
 async function handleGet(params) {
@@ -1563,6 +1663,9 @@ async function handleGet(params) {
   }
   if (action === "list_sleep") {
     return { ok: true, data: await listSleep(params.patient_id) };
+  }
+  if (action === "list_goals") {
+    return { ok: true, data: await listGoals(params.patient_id) };
   }
   if (action === "list_exercises") {
     return { ok: true, data: await listExercises(params.patient_id) };
@@ -1961,6 +2064,69 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM sueno WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "sleep");
+    return { ok: true };
+  }
+
+  // ---- v33: Metas — evento/fecha_limite se pueden editar después, pero los
+  // indicadores no: valor_base queda fijo al momento de crear la meta (es el
+  // "punto de partida" contra el que se mide el progreso), así que cambiar
+  // qué se está siguiendo después no tendría un punto de partida claro. Si
+  // el paciente quiere seguir otros indicadores, borra la meta y crea una
+  // nueva — más simple de entender que reabrir valor_base a medio camino.
+  if (body.action === "add_meta") {
+    if (!body.fecha_limite) return { ok: false, error: "falta la fecha límite" };
+    const indicadoresIn = Array.isArray(body.indicadores) ? body.indicadores : [];
+    if (!indicadoresIn.length) return { ok: false, error: "elige al menos un indicador para dar seguimiento" };
+    const resueltos = [];
+    for (const ind of indicadoresIn) {
+      if (!META_INDICADOR_LABELS_.hasOwnProperty(ind.indicador)) {
+        return { ok: false, error: `indicador no reconocido: ${ind.indicador}` };
+      }
+      const modo = ["manual", "reducir", "aumentar"].includes(ind.modo) ? ind.modo : "manual";
+      const label = META_INDICADOR_LABELS_[ind.indicador];
+      let valorBase = null, valorObjetivo = null, cantidad = null;
+      if (modo === "manual") {
+        if (!hasValue(ind.valor_objetivo)) return { ok: false, error: `falta el valor objetivo para ${label}` };
+        valorObjetivo = num(ind.valor_objetivo);
+        valorBase = await resolveIndicadorValorActual_(body.patient_id, ind.indicador); // solo como referencia de progreso, no obligatorio
+      } else {
+        if (!hasValue(ind.cantidad)) return { ok: false, error: `falta la cantidad a ${modo === "reducir" ? "reducir" : "aumentar"} para ${label}` };
+        cantidad = num(ind.cantidad);
+        valorBase = await resolveIndicadorValorActual_(body.patient_id, ind.indicador);
+        if (valorBase == null) {
+          return { ok: false, error: `todavía no hay un valor reciente de "${label}" para calcular la meta — captúralo primero, o usa "valor específico" en vez de "${modo === "reducir" ? "reducir" : "aumentar"}"` };
+        }
+        valorObjetivo = modo === "reducir" ? valorBase - cantidad : valorBase + cantidad;
+      }
+      resueltos.push({ indicador: ind.indicador, modo, cantidad, valorBase, valorObjetivo });
+    }
+    const metaId = uuid();
+    await pool.query(
+      `INSERT INTO metas (id, patient_id, evento, fecha_limite, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$5)`,
+      [metaId, body.patient_id, (body.evento || "").trim(), body.fecha_limite, now]
+    );
+    for (const r of resueltos) {
+      await pool.query(
+        `INSERT INTO meta_indicadores (id, meta_id, indicador, modo, cantidad, valor_base, valor_objetivo, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [uuid(), metaId, r.indicador, r.modo, r.cantidad, r.valorBase, r.valorObjetivo, now]
+      );
+    }
+    emitChange(body.patient_id, "metas");
+    return { ok: true, id: metaId };
+  }
+  if (body.action === "update_meta") {
+    const { rowCount } = await pool.query(
+      `UPDATE metas SET evento = $1, fecha_limite = $2, updated_at = $3 WHERE id = $4 AND patient_id = $5`,
+      [(body.evento || "").trim(), body.fecha_limite, now, body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrada" };
+    emitChange(body.patient_id, "metas");
+    return { ok: true };
+  }
+  if (body.action === "delete_meta") {
+    const { rowCount } = await pool.query(`DELETE FROM metas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrada" };
+    emitChange(body.patient_id, "metas");
     return { ok: true };
   }
 

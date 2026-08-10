@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=32.3"></script>
+<script src="/shared/common.js?v=33.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -240,6 +240,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
   <button type="button" class="page-tab-btn" data-page-tab="wellness">🧘 Wellness</button>
   <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metas">🎯 Metas</button>
   <button type="button" class="page-tab-btn page-tab-btn-directory" data-page-tab="catalogo">🩺 Directorio Médico</button>
 </div>
 
@@ -752,6 +753,15 @@
   </div>
 </div>
 
+<!-- v33: sección Metas (solo lectura) -->
+<div id="tabMetas" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>🎯 Metas</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Metas que el paciente se ha puesto (solo lectura): fecha límite, evento si aplica, y progreso de cada indicador que decidió seguir.</p>
+    <div id="metasListWrap"></div>
+  </div>
+</div>
+
 <div class="section section-password">
   <h2>Cambiar mi contraseña</h2>
   <form class="pw-form" id="passwordForm">
@@ -795,7 +805,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v32.3</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.0</button></footer>
 
 <script>
 let chartInstance = null;
@@ -836,6 +846,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     document.getElementById("tabWellness").style.display = btn.dataset.pageTab === "wellness" ? "" : "none";
     document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
+    document.getElementById("tabMetas").style.display = btn.dataset.pageTab === "metas" ? "" : "none";
     if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
   });
 });
@@ -1545,6 +1556,15 @@ async function loadSleep() {
   document.getElementById("sleepTotalsWrap").innerHTML = sleepTotalsHTML_(currentSleep);
   document.getElementById("sleepListWrap").innerHTML = renderSleepListHTML(currentSleep, { readOnly: true });
 }
+
+// ---- v33: Metas (solo lectura) ----
+let currentGoals = [];
+async function loadGoals() {
+  ensureGoalStyles_();
+  try { currentGoals = await apiGet("/api/goals"); } catch (err) { currentGoals = []; }
+  document.getElementById("metasListWrap").innerHTML = renderGoalsListHTML(currentGoals, { readOnly: true });
+}
+loadGoals();
 function exerciseDailyTotalsForChart_() {
   const byDay = new Map();
   for (const ex of currentExercises || []) {
@@ -1744,7 +1764,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "32.3");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.0");
 
 loadPatient();
 loadAndRender();
@@ -1809,6 +1829,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "exercise_reading") loadExerciseReadings(); // v31
   if (kind === "wellness") loadWellness(); // v31
   if (kind === "sleep") loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
+  if (kind === "metas") loadGoals(); // v33
   if (kind === "consultation") loadConsultations();
   if (kind === "reaction") {
     loadReactions().then(() => {

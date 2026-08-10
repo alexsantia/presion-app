@@ -535,3 +535,36 @@ CREATE TABLE IF NOT EXISTS ai_interpretations (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_interpretations_patient ON ai_interpretations(patient_id, created_at DESC);
+
+-- v33: Metas — objetivos con fecha límite, opcionalmente ligados a un evento
+-- (texto libre, ej. "Boda", "Vacaciones de verano"), que pueden dar
+-- seguimiento a uno o varios indicadores a la vez. Cada indicador dentro de
+-- una meta vive en su propia fila (meta_indicadores) con su propio modo
+-- (reducir/aumentar una cantidad, o un valor manual específico) — así cada
+-- uno se configura por separado aunque compartan la misma fecha límite y
+-- evento. valor_base es el valor del indicador al momento de crear la meta
+-- (el punto de partida) y valor_objetivo es siempre el número final ya
+-- resuelto (calculado a partir de valor_base+cantidad si el modo es
+-- reducir/aumentar, o copiado directo si es manual) — esto deja el cálculo
+-- de progreso simple en cualquier momento: no hay que volver a interpretar
+-- "modo" para saber hacia dónde va el número.
+CREATE TABLE IF NOT EXISTS metas (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  evento text NOT NULL DEFAULT '',
+  fecha_limite date NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_metas_patient ON metas(patient_id, fecha_limite);
+CREATE TABLE IF NOT EXISTS meta_indicadores (
+  id uuid PRIMARY KEY,
+  meta_id uuid NOT NULL REFERENCES metas(id) ON DELETE CASCADE,
+  indicador text NOT NULL,
+  modo text NOT NULL DEFAULT 'manual',
+  cantidad numeric,
+  valor_base numeric,
+  valor_objetivo numeric NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_meta_indicadores_meta ON meta_indicadores(meta_id);

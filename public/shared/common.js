@@ -742,6 +742,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.0", changes: [
+    "Nueva sección Metas: ponte objetivos con fecha límite (reducir, aumentar o llegar a un valor específico) para peso, cintura, presión, frecuencia cardiaca, colesterol, triglicéridos, sueño o apego a medicamentos, y da seguimiento a tu progreso. Puedes ligar la meta a un evento opcional (una boda, tu cumpleaños, vacaciones, etc.). También visible, solo lectura, para tu médico y familia.",
+  ] },
   { version: "32.3", changes: [
     "Se corrigió el error al abrir \"Mi propia IA\" en ChatGPT (URL demasiado larga): ahora el texto a copiar es corto y solo lleva la liga; la liga misma ya trae las instrucciones y los datos completos para que la IA los consulte ahí.",
   ] },
@@ -1611,6 +1614,130 @@ function sleepQualitySeriesForChart_(entries) {
     values: filtered.map(e => Number(e.calidad)),
     obs: filtered.map(e => e.notas || ""),
   };
+}
+
+// Fecha de HOY en formato YYYY-MM-DD según la hora local del dispositivo
+// (no UTC) — movida aquí en v33 porque antes solo vivía en index.html, pero
+// las tarjetas de Metas (goalStatusBadgeHTML_) también la necesitan en
+// doctor.html/familia.html, que nunca la habían necesitado hasta ahora.
+function todayDateStr_() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+// ---- v33: Metas — HTML de solo mostrar (el formulario de creación es
+// exclusivo de index.html, ver GOAL_INDICATOR_DEFS_/renderGoalIndicatorPicker_
+// ahí). readOnly=true (doctor.html/familia.html) oculta los botones
+// Editar/Eliminar y el mini-formulario de edición inline. ----
+function goalStatusBadgeHTML_(g) {
+  if (g.vencida) return `<span class="goal-badge goal-badge-vencida">Vencida</span>`;
+  const dias = Math.ceil((new Date(g.fecha_limite + "T00:00:00") - new Date(todayDateStr_() + "T00:00:00")) / 86400000);
+  const texto = dias <= 0 ? "Hoy" : `${dias} día${dias === 1 ? "" : "s"} restante${dias === 1 ? "" : "s"}`;
+  return `<span class="goal-badge goal-badge-active">${texto}</span>`;
+}
+function goalIndicatorRowHTML_(ind) {
+  const pct = ind.progreso_pct != null ? ind.progreso_pct : 0;
+  const actualTxt = ind.valor_actual != null ? `${ind.valor_actual} ${ind.unidad}` : "sin dato";
+  const logradaTxt = ind.lograda === true ? " ✓" : "";
+  return `
+    <div style="margin-top:9px;">
+      <div style="display:flex; justify-content:space-between; gap:8px; font-size:12.5px; margin-bottom:3px;">
+        <span>${escapeHtml_(ind.label)}${logradaTxt}</span>
+        <span style="color:var(--text-muted); white-space:nowrap;">${actualTxt} → ${ind.valor_objetivo} ${ind.unidad}</span>
+      </div>
+      <div class="goal-progress-track"><div class="goal-progress-fill${ind.lograda ? " is-lograda" : ""}" style="width:${pct}%;"></div></div>
+    </div>`;
+}
+function goalCardHTML_(g, opts) {
+  opts = opts || {};
+  const eventoLabel = g.evento ? escapeHtml_(g.evento) : "Meta sin evento";
+  const indicadoresHtml = g.indicadores.map(goalIndicatorRowHTML_).join("");
+  const actions = opts.readOnly ? "" : `
+      <div style="margin-top:11px; display:flex; gap:8px;">
+        <button type="button" class="btn-secondary goal-edit-btn" data-goal-id="${g.id}" style="font-size:12px; padding:5px 10px;">Editar</button>
+        <button type="button" class="btn-secondary goal-delete-btn" data-goal-id="${g.id}" style="font-size:12px; padding:5px 10px; color:#B0554B;">Eliminar</button>
+      </div>
+      <div class="goal-edit-form" data-goal-id="${g.id}" style="display:none; margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <input type="text" class="goal-edit-evento" value="${escapeHtml_(g.evento || "")}" placeholder="Evento (opcional)" style="flex:1; min-width:140px; padding:7px 9px; border:1px solid var(--border); border-radius:8px;">
+          <input type="date" class="goal-edit-fecha" value="${g.fecha_limite}" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px;">
+          <button type="button" class="btn-primary goal-edit-save-btn" data-goal-id="${g.id}" style="padding:7px 12px;">Guardar</button>
+          <button type="button" class="btn-secondary goal-edit-cancel-btn" data-goal-id="${g.id}" style="padding:7px 12px;">Cancelar</button>
+        </div>
+      </div>`;
+  return `
+    <div class="goal-card" data-goal-id="${g.id}">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+        <div>
+          <strong>${eventoLabel}</strong>
+          <div style="font-size:12px; color:var(--text-muted);">Fecha límite: ${fmtDate(g.fecha_limite)}</div>
+        </div>
+        ${goalStatusBadgeHTML_(g)}
+      </div>
+      ${indicadoresHtml}${actions}
+    </div>`;
+}
+function ensureGoalStyles_() {
+  if (typeof document === "undefined" || document.getElementById("bp-goal-styles")) return;
+  const style = document.createElement("style");
+  style.id = "bp-goal-styles";
+  style.textContent = `
+    .goal-ind-row { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+    .goal-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; background: var(--bg-card); }
+    .goal-progress-track { background: var(--bg-page); border-radius: 6px; height: 8px; overflow: hidden; }
+    .goal-progress-fill { height: 100%; background: var(--accent); transition: width .2s; }
+    .goal-progress-fill.is-lograda { background: #4F7A6F; }
+    .goal-badge { font-size: 11px; padding: 2px 9px; border-radius: 10px; white-space: nowrap; }
+    .goal-badge-active { background: var(--accent-soft); color: var(--accent); }
+    .goal-badge-vencida { background: #F3E3E1; color: #B0554B; }
+  `;
+  document.head.appendChild(style);
+}
+function renderGoalsListHTML(goals, opts) {
+  if (!goals || !goals.length) {
+    return `<p style="font-size:13px; color:var(--text-muted);">${(opts && opts.readOnly) ? "El paciente todavía no tiene metas registradas." : "Todavía no tienes metas. Crea la primera arriba."}</p>`;
+  }
+  return goals.map(g => goalCardHTML_(g, opts)).join("");
+}
+// Solo index.html la usa (doctor.html/familia.html montan las tarjetas en
+// modo readOnly, sin botones que wirear). apiPut/apiDelete/alert/confirm
+// deben existir en el alcance global de quien la llame.
+function wireGoalsListInteractions_(containerId, onChange) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap.addEventListener("click", async e => {
+    const editBtn = e.target.closest(".goal-edit-btn");
+    if (editBtn) {
+      document.querySelector(`.goal-edit-form[data-goal-id="${editBtn.dataset.goalId}"]`).style.display = "";
+      return;
+    }
+    const cancelBtn = e.target.closest(".goal-edit-cancel-btn");
+    if (cancelBtn) {
+      document.querySelector(`.goal-edit-form[data-goal-id="${cancelBtn.dataset.goalId}"]`).style.display = "none";
+      return;
+    }
+    const saveBtn = e.target.closest(".goal-edit-save-btn");
+    if (saveBtn) {
+      const id = saveBtn.dataset.goalId;
+      const form = document.querySelector(`.goal-edit-form[data-goal-id="${id}"]`);
+      const evento = form.querySelector(".goal-edit-evento").value.trim();
+      const fecha_limite = form.querySelector(".goal-edit-fecha").value;
+      if (!fecha_limite) return;
+      try {
+        await apiPut(`/api/goals/${id}`, { evento, fecha_limite });
+        if (onChange) await onChange();
+      } catch (err) { alert("No se pudo guardar: " + err.message); }
+      return;
+    }
+    const delBtn = e.target.closest(".goal-delete-btn");
+    if (delBtn) {
+      if (!confirm("¿Eliminar esta meta?")) return;
+      try {
+        await apiDelete(`/api/goals/${delBtn.dataset.goalId}`);
+        if (onChange) await onChange();
+      } catch (err) { alert("No se pudo eliminar: " + err.message); }
+    }
+  });
 }
 
 // ---- v32.1: Interpretación con IA — bloque reusable, montado dos veces en
