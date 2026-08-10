@@ -706,7 +706,13 @@ app.delete("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res)
 app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "add_ai_interpretation", patient_id: req.session.patientId,
-    period: req.body.period, origin: requestOrigin_(req),
+    // v32.2: profundidad ("rapida"/"profunda") viene del diálogo que se
+    // muestra al presionar "Generar interpretación". audience se deja fijo
+    // en "paciente" aquí porque este botón solo lo ve el paciente; el
+    // backend ya soporta "familia"/"medico" para cuando se conecten sus
+    // propios botones en doctor.html/familia.html.
+    period: req.body.period, profundidad: req.body.profundidad, audience: "paciente",
+    origin: requestOrigin_(req),
   }));
 }));
 // v32.1: modo "mi propia IA" — arma la liga temporal + el prompt de
@@ -714,7 +720,8 @@ app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req
 app.post("/api/ai-export-link", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "create_ai_export_link", patient_id: req.session.patientId,
-    period: req.body.period, origin: requestOrigin_(req),
+    period: req.body.period, profundidad: req.body.profundidad, audience: "paciente",
+    origin: requestOrigin_(req),
   }));
 }));
 if (DB_BACKEND === "postgres") {

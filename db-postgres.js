@@ -912,6 +912,37 @@ const AI_PERIOD_LABELS_ = { "7d": "últimos 7 días", "30d": "últimos 30 días"
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const AI_MODEL = process.env.AI_MODEL || "claude-sonnet-5";
 const aiEnabled = !!ANTHROPIC_API_KEY;
+// v32.2: "rápida" vs "profunda" — solo cambia qué tanto detalle se le pide a
+// la IA (y cuántos tokens se le dan en la llamada automática), el periodo de
+// datos lo sigue eligiendo el usuario aparte igual que antes. "Rápida" existe
+// sobre todo para cuidar el gasto de la cuenta de Anthropic del servidor
+// (menos tokens de salida = menos costo) cuando el usuario solo quiere un
+// vistazo rápido.
+const AI_DEPTHS_ = { rapida: 1, profunda: 1 };
+const AI_DEPTH_MAX_TOKENS_ = { rapida: 700, profunda: 4096 };
+const AI_DEPTH_PROMPT_HINT_ = {
+  rapida: "El usuario pidió una interpretación RÁPIDA: dale nada más 2 o 3 párrafos cortos, directo a lo más importante (qué va bien y qué es lo más urgente a atender). No cubras cada sección de datos una por una.",
+  profunda: "El usuario pidió una interpretación PROFUNDA: cubre con detalle las secciones de datos que sean relevantes (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas), señalando patrones y relaciones entre ellas.",
+};
+// v32.2: misma información, tres tonos distintos según quién la va a leer.
+// Por ahora solo "paciente" está conectado a un botón en la app (Presión
+// Arterial y Estadísticas); "familia" y "medico" quedan listos en el backend
+// para conectarse a su propia interfaz más adelante.
+const AI_AUDIENCES_ = { paciente: 1, familia: 1, medico: 1 };
+// v32.2: instrucción de formato compartida por las tres audiencias — se pide
+// explícitamente evitar markdown porque el texto se muestra tal cual (no se
+// renderiza), así que "##" o "**" aparecían como símbolos sueltos en vez de
+// dar formato.
+const AI_NO_MARKDOWN_INSTRUCTIONS_ = "Muy importante sobre el formato: escribe como si estuvieras platicando de viva voz con la persona, en párrafos naturales. No uses markdown de ningún tipo: nada de \"#\" o \"##\" para títulos, nada de \"**\" para negritas, nada de viñetas con guion o asterisco. Si quieres dar énfasis a algo, hazlo con las palabras mismas, no con símbolos.";
+const AI_SYSTEM_INSTRUCTIONS_PACIENTE_ = "Eres el coach de salud personal de un paciente con hipertensión: alguien de su entera confianza con quien revisa sus datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Le hablas de tú, en español, con calidez y cercanía. Celebra y felicita con entusiasmo cuando los datos muestren esfuerzo o mejora. Pero cuando veas descuido o inconsistencia (por ejemplo baja adherencia a medicamentos o presión fuera de control), sé firme y directo al señalarlo, con un tono más disciplinario si hace falta, siempre buscando motivar a corregirlo, nunca para regañar sin propósito. Señala patrones relevantes entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial). Deja siempre claro que esto NO es un diagnóstico y nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
+const AI_SYSTEM_INSTRUCTIONS_FAMILIA_ = "Eres un asistente que ayuda a la familia o amigos cercanos de un paciente con hipertensión a entender, de forma objetiva y en tono conciliador, cómo va su ser querido con sus datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Habla en español, con un tono cálido y realista: ni alarmista ni minimices lo que haga falta atender. Cuando el paciente lo esté haciendo bien, invita a la familia a seguir reconociéndoselo; cuando haya áreas de oportunidad (por ejemplo baja adherencia o presión elevada), preséntalo como una oportunidad para que la familia lo apoye y lo motive, sin culpar a nadie ni generar conflicto. Deja siempre claro que esto NO es un diagnóstico y nunca sugieras cambios de dosis de medicamentos. Termina siempre recordando que esto no sustituye la valoración de un médico.";
+const AI_SYSTEM_INSTRUCTIONS_MEDICO_ = "Eres un asistente clínico que apoya a un médico tratante resumiendo el automonitoreo en casa de su paciente con hipertensión (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, historial de laboratorio y consultas previas). Escribe en español, con lenguaje médico profesional y directo, como lo haría un colega o un enfermero(a) auxiliar entregando un reporte de apoyo. Prioriza lo clínicamente relevante: tendencias de presión arterial, variabilidad, adherencia al tratamiento, correlaciones con hábitos, sueño o ejercicio, síntomas relevantes y valores de laboratorio fuera de rango. Cuida el tiempo de lectura del médico: ve directo a los hallazgos, sin relleno ni explicaciones básicas que un médico no necesita. No sugieras cambios de tratamiento ni de dosis, esa decisión es exclusiva del médico. Si hace falta profundizar en algún punto, indícalo brevemente al final en vez de extenderte.";
+function buildSystemInstructions_(audience) {
+  const persona = audience === "familia" ? AI_SYSTEM_INSTRUCTIONS_FAMILIA_
+    : audience === "medico" ? AI_SYSTEM_INSTRUCTIONS_MEDICO_
+    : AI_SYSTEM_INSTRUCTIONS_PACIENTE_;
+  return `${persona}\n\n${AI_NO_MARKDOWN_INSTRUCTIONS_}`;
+}
 if (!aiEnabled) {
   console.warn("[ai] falta ANTHROPIC_API_KEY en el entorno: la interpretación con IA queda desactivada");
 }
@@ -993,26 +1024,31 @@ const AI_DISCLAIMER = "Esta interpretación fue generada por un modelo de inteli
 // reusarlas tanto en la llamada automática a Anthropic (como "system") como
 // en el prompt de copiar/pegar para que el paciente use la IA de su
 // preferencia (ahí no hay un rol "system" aparte, así que todo va junto).
-const AI_SYSTEM_INSTRUCTIONS_ = "Eres un asistente de apoyo que ayuda a un paciente con hipertensión a entender sus propios datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Responde siempre en español, en tono cercano y claro, evitando tecnicismos innecesarios. Señala patrones relevantes y posibles relaciones entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial), pero deja siempre claro que esto NO es un diagnóstico. Nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
-function buildAiUserMessage_(payload, exportUrl, period) {
+// v32.2: ahora la persona depende de la audiencia (buildSystemInstructions_)
+// y el mensaje de datos incluye también la pista de profundidad elegida.
+function buildAiUserMessage_(payload, exportUrl, period, depth) {
   const periodLabel = AI_PERIOD_LABELS_[period] || period;
-  return `Aquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
+  const depthHint = AI_DEPTH_PROMPT_HINT_[depth] || AI_DEPTH_PROMPT_HINT_.profunda;
+  return `${depthHint}\n\nAquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
 }
 // v32.1: texto completo (instrucciones + datos + liga) listo para que el
 // paciente lo copie y pegue en la IA de su preferencia (ChatGPT, Gemini,
 // etc.) — modo "mi propia IA", alternativa a la llamada automática.
-function buildAiExternalPromptText_(payload, exportUrl, period) {
-  return `${AI_SYSTEM_INSTRUCTIONS_}\n\n${buildAiUserMessage_(payload, exportUrl, period)}`;
+function buildAiExternalPromptText_(payload, exportUrl, period, audience, depth) {
+  return `${buildSystemInstructions_(audience)}\n\n${buildAiUserMessage_(payload, exportUrl, period, depth)}`;
 }
-async function callAnthropicInterpretation_(payload, exportUrl, period) {
-  const userText = buildAiUserMessage_(payload, exportUrl, period);
+async function callAnthropicInterpretation_(payload, exportUrl, period, audience, depth) {
+  const userText = buildAiUserMessage_(payload, exportUrl, period, depth);
+  const maxTokens = AI_DEPTH_MAX_TOKENS_[depth] || AI_DEPTH_MAX_TOKENS_.profunda;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    // v32.1: max_tokens subido de 1500 a 4096 — con 1500 la respuesta se
-    // cortaba a media frase en periodos con muchos datos (90 días/todo el
-    // historial genera un análisis largo).
-    body: JSON.stringify({ model: AI_MODEL, max_tokens: 4096, system: AI_SYSTEM_INSTRUCTIONS_, messages: [{ role: "user", content: userText }] }),
+    // v32.1: max_tokens subido de 1500 a 4096 para "profunda" — con 1500 la
+    // respuesta se cortaba a media frase en periodos con muchos datos (90
+    // días/todo el historial genera un análisis largo). v32.2: "rápida" usa
+    // un tope mucho menor, tanto porque pide menos texto como para cuidar el
+    // gasto de la cuenta cuando el usuario solo quiere un vistazo rápido.
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: maxTokens, system: buildSystemInstructions_(audience), messages: [{ role: "user", content: userText }] }),
   });
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
@@ -1918,6 +1954,10 @@ async function handlePost(body) {
   if (body.action === "add_ai_interpretation") {
     if (!aiEnabled) return { ok: false, error: "la interpretación con IA no está configurada en el servidor (falta ANTHROPIC_API_KEY)" };
     const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
+    // v32.2: audiencia y profundidad, con default "paciente"/"profunda" para
+    // no romper el flujo actual si algún cliente viejo no manda estos campos.
+    const audience = AI_AUDIENCES_.hasOwnProperty(body.audience) ? body.audience : "paciente";
+    const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
     const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
@@ -1925,7 +1965,7 @@ async function handlePost(body) {
     const payload = await buildAiExportPayload_(body.patient_id, period);
     let responseText;
     try {
-      responseText = await callAnthropicInterpretation_(payload, exportUrl, period);
+      responseText = await callAnthropicInterpretation_(payload, exportUrl, period, audience, depth);
     } catch (err) {
       console.error("[ai] error llamando a Anthropic:", err);
       return { ok: false, error: "no se pudo generar la interpretación en este momento, intenta de nuevo en unos minutos" };
@@ -1937,7 +1977,7 @@ async function handlePost(body) {
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [id, body.patient_id, period, token, fullText, AI_MODEL, nowIso()]
     );
-    return { ok: true, id, period, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
+    return { ok: true, id, period, audience, profundidad: depth, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- v32.1: modo "mi propia IA" — el paciente prefiere usar ChatGPT,
@@ -1948,13 +1988,15 @@ async function handlePost(body) {
   // IA desde aquí), así que funciona aunque esa variable no esté configurada.
   if (body.action === "create_ai_export_link") {
     const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
+    const audience = AI_AUDIENCES_.hasOwnProperty(body.audience) ? body.audience : "paciente";
+    const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
     const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
     const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
     const payload = await buildAiExportPayload_(body.patient_id, period);
-    const prompt = buildAiExternalPromptText_(payload, exportUrl, period);
-    return { ok: true, period, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
+    const prompt = buildAiExternalPromptText_(payload, exportUrl, period, audience, depth);
+    return { ok: true, period, audience, profundidad: depth, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- Consultas médicas (v30.12) ----

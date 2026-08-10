@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=32.1"></script>
+<script src="/shared/common.js?v=32.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -147,6 +147,11 @@
   .section-chart.is-dragging { opacity: 0.4; }
   .section-chart.drag-over-top { box-shadow: inset 0 3px 0 var(--accent); }
   .section-chart.drag-over-bottom { box-shadow: inset 0 -3px 0 var(--accent); }
+  /* v32.2: calidad de sueño con estrellas en vez de barra deslizable */
+  .star-rating { display: flex; flex-wrap: wrap; gap: 2px; }
+  .star-btn { background: none; border: none; padding: 0; margin: 0; font-size: 24px; line-height: 1; cursor: pointer; color: var(--border); transition: color .1s; }
+  .star-btn.is-filled { color: #E8A93A; }
+  .star-btn:hover { color: #d18c1a; }
   .chart-day-picker { padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; font-family: inherit; color: var(--text); }
   .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text-muted); }
   .pagination-controls { display: flex; align-items: center; gap: 10px; }
@@ -1090,7 +1095,19 @@
         <label class="checkbox-label"><input type="checkbox" id="sl_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
       </div>
       <div class="full symptom-intensity-wrap" id="sl_calidad_wrap" style="display:none;">
-        <input type="range" id="sl_calidad" min="1" max="10" step="1" value="5">
+        <input type="hidden" id="sl_calidad" value="5">
+        <div class="star-rating" id="sl_calidad_stars" role="group" aria-label="Calidad de sueño, de 1 a 10 estrellas">
+          <button type="button" class="star-btn" data-star="1" aria-label="1 estrella">★</button>
+          <button type="button" class="star-btn" data-star="2" aria-label="2 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="3" aria-label="3 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="4" aria-label="4 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="5" aria-label="5 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="6" aria-label="6 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="7" aria-label="7 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="8" aria-label="8 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="9" aria-label="9 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="10" aria-label="10 estrellas">★</button>
+        </div>
         <span class="symptom-intensity-value" id="sl_calidad_label">5/10 – Regular-buena</span>
       </div>
       <div class="full"><label>Notas (opcional)</label><input type="text" id="sl_notas" placeholder="Ej. desperté varias veces"></div>
@@ -1107,7 +1124,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v32.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v32.2</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1583,7 +1600,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("32.1");
+  showAboutOverlay_("32.2");
 });
 
 function openModal(id) {
@@ -2826,11 +2843,58 @@ document.getElementById("readingsBody").addEventListener("click", async e => {
   }
 });
 
+// v32.2: comparación contra la lectura anterior — flecha arriba/abajo/línea
+// horizontal según subió, bajó o se mantuvo igual respecto al registro
+// inmediato previo. Solo aplica al agregar una lectura nueva (no al editar
+// una existente), y solo si ya había una lectura antes con qué comparar.
+function readingCompareArrow_(curr, prev) {
+  if (curr == null || prev == null) return { symbol: "–", color: "var(--text-muted)" };
+  if (curr > prev) return { symbol: "↑", color: "#B0554B" };
+  if (curr < prev) return { symbol: "↓", color: "#4F7A6F" };
+  return { symbol: "→", color: "var(--text-muted)" };
+}
+function showReadingCompareModal_(prevReading, newValues) {
+  if (!prevReading) return; // primera lectura registrada, no hay con qué comparar
+  const prevPam = pamValue_(prevReading.sys, prevReading.dia);
+  const newPam = pamValue_(newValues.sys, newValues.dia);
+  const rows = [
+    { label: "Sistólica", unit: "mmHg", curr: newValues.sys, prev: prevReading.sys },
+    { label: "Diastólica", unit: "mmHg", curr: newValues.dia, prev: prevReading.dia },
+    { label: "Frecuencia cardiaca", unit: "lpm", curr: newValues.hr, prev: prevReading.hr },
+    { label: "PAM", unit: "mmHg", curr: newPam, prev: prevPam },
+  ];
+  const rowsHtml = rows.filter(r => r.curr != null).map(r => {
+    const arrow = readingCompareArrow_(r.curr, r.prev);
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border);">
+        <span style="font-size:13px; color:var(--text);">${r.label}</span>
+        <span style="display:flex; align-items:center; gap:8px; font-size:14px; font-weight:600;">
+          ${r.prev != null ? `<span style="font-weight:400; color:var(--text-muted); font-size:12.5px;">${r.prev}</span>` : ""}
+          <span style="color:${arrow.color}; font-size:17px;">${arrow.symbol}</span>
+          <span>${r.curr} ${r.unit}</span>
+        </span>
+      </div>`;
+  }).join("");
+  ensureAboutStyles_(); // reusa .bp-about-overlay/.bp-about-card
+  const overlay = document.createElement("div");
+  overlay.className = "bp-about-overlay";
+  overlay.innerHTML = `
+    <div class="bp-about-card" style="max-width:360px;">
+      <h2 style="margin-top:0;">Comparación con tu lectura anterior</h2>
+      <div>${rowsHtml}</div>
+      <button type="button" class="btn-secondary" id="bp-reading-compare-close" style="width:100%; margin-top:14px;">Cerrar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+  overlay.querySelector("#bp-reading-compare-close").addEventListener("click", close);
+}
 document.getElementById("addForm").addEventListener("submit", async e => {
   e.preventDefault();
   const weightRaw = document.getElementById("f_weight").value;
   const enteredWeight = weightRaw !== "" ? Number(weightRaw) : null;
   const wasEditing = !!editingId;
+  const previousReadingForCompare_ = !wasEditing && currentData.length ? currentData[currentData.length - 1] : null;
   const values = {
     date: document.getElementById("f_date").value,
     time: document.getElementById("f_time").value,
@@ -2868,6 +2932,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
       applyDefaultWeight();
     }
     await loadAndRender();
+    if (!wasEditing) showReadingCompareModal_(previousReadingForCompare_, values);
   } catch (err) {
     setStatus("error", err.message);
   } finally {
@@ -3784,9 +3849,20 @@ document.getElementById("sl_duracion_min").addEventListener("input", () => { slD
 document.getElementById("sl_calidad_toggle").addEventListener("change", e => {
   document.getElementById("sl_calidad_wrap").style.display = e.target.checked ? "" : "none";
 });
-document.getElementById("sl_calidad").addEventListener("input", e => {
-  const n = Number(e.target.value);
+// v32.2: calidad de sueño con estrellas (1-10) en vez de barra deslizable —
+// setSleepQualityStars_ actualiza el input oculto, el texto y qué estrellas
+// se ven llenas, todo en un solo lugar para no repetirlo en cada callsite.
+function setSleepQualityStars_(n) {
+  document.getElementById("sl_calidad").value = n;
   document.getElementById("sl_calidad_label").textContent = `${n}/10 – ${SLEEP_QUALITY_LABELS_[n] || ""}`;
+  document.querySelectorAll("#sl_calidad_stars .star-btn").forEach(btn => {
+    btn.classList.toggle("is-filled", Number(btn.dataset.star) <= n);
+  });
+}
+document.getElementById("sl_calidad_stars").addEventListener("click", e => {
+  const btn = e.target.closest(".star-btn");
+  if (!btn) return;
+  setSleepQualityStars_(Number(btn.dataset.star));
 });
 async function loadSleep() {
   ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
@@ -3802,8 +3878,7 @@ function resetSleepForm_() {
   document.getElementById("sl_fecha").value = todayDateStr_();
   document.getElementById("sl_calidad_toggle").checked = false;
   document.getElementById("sl_calidad_wrap").style.display = "none";
-  document.getElementById("sl_calidad").value = 5;
-  document.getElementById("sl_calidad_label").textContent = `5/10 – ${SLEEP_QUALITY_LABELS_[5]}`;
+  setSleepQualityStars_(5);
   document.getElementById("slFormTitle").textContent = "Registrar sueño";
   document.getElementById("slFormSubmitBtn").textContent = "Registrar";
   document.getElementById("slFormCancelBtn").style.display = "none";
@@ -3845,8 +3920,7 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
     if (s.calidad != null) {
       document.getElementById("sl_calidad_toggle").checked = true;
       document.getElementById("sl_calidad_wrap").style.display = "";
-      document.getElementById("sl_calidad").value = s.calidad;
-      document.getElementById("sl_calidad_label").textContent = `${s.calidad}/10 – ${SLEEP_QUALITY_LABELS_[s.calidad] || ""}`;
+      setSleepQualityStars_(s.calidad);
     } else {
       document.getElementById("sl_calidad_toggle").checked = false;
       document.getElementById("sl_calidad_wrap").style.display = "none";

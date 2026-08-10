@@ -742,6 +742,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "32.2", changes: [
+    "La Interpretación con IA ya no muestra símbolos de markdown (## o **): ahora se lee como una conversación natural.",
+    "Al presionar \"Generar interpretación\" ahora se pregunta si la quieres rápida o profunda, con un recordatorio de usar la IA con responsabilidad.",
+    "La calidad de sueño ahora se captura con estrellas (1 a 10) en vez de una barra deslizable.",
+    "Al registrar una nueva lectura de presión, aparece una comparación contra tu lectura anterior (sistólica, diastólica, frecuencia cardiaca y PAM), con flechas de subida, bajada o sin cambio.",
+  ] },
   { version: "32.1", changes: [
     "Se corrigió que la Interpretación con IA a veces se cortaba a media frase.",
     "Nuevo modo \"Mi propia IA\": además de la IA interna automática, ahora puedes elegir generar el prompt con la liga a tus datos y copiarlo/pegarlo en ChatGPT, Gemini u otra IA de tu preferencia.",
@@ -1645,6 +1651,48 @@ function aiInterpretationSectionHTML_(prefix) {
     <div id="${prefix}_aiInterpretationError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
   `;
 }
+// v32.2: respaldo por si el modelo de IA igual devuelve símbolos de markdown
+// a pesar de la instrucción de no usarlos — el texto se muestra tal cual
+// (textContent, no se renderiza HTML), así que "##" o "**" se verían como
+// símbolos sueltos en vez de dar formato.
+function aiSanitizeAiText_(text) {
+  if (!text) return text;
+  return text
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\*\*\*(.+?)\*\*\*/g, "$1")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/(^|\s)\*([^\s*][^*]*?)\*(?=[\s.,;:!?)]|$)/g, "$1$2")
+    .replace(/^[*\-]\s+/gm, "• ");
+}
+// v32.2: diálogo previo a generar — pregunta rápida vs profunda y muestra un
+// recordatorio de uso responsable (cada llamada a la IA tiene un costo
+// económico para la cuenta del servidor y un impacto ambiental por el
+// consumo de energía/agua de los centros de datos). Devuelve una Promise que
+// resuelve a "rapida"/"profunda", o null si el usuario cancela.
+function showAiDepthDialog_() {
+  ensureAboutStyles_(); // reusa .bp-about-overlay/.bp-about-card como base visual
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "bp-about-overlay";
+    overlay.innerHTML = `
+      <div class="bp-about-card" style="max-width:360px;">
+        <h2 style="margin-top:0;">¿Qué tan a fondo quieres la interpretación?</h2>
+        <div style="display:flex; flex-direction:column; gap:8px; margin:14px 0;">
+          <button type="button" class="btn-primary" data-depth="rapida">⚡ Rápida — un resumen breve y directo</button>
+          <button type="button" class="btn-primary" data-depth="profunda">🔍 Profunda — un análisis completo</button>
+        </div>
+        <p style="font-size:11.5px; color:var(--text-muted); line-height:1.5; margin:10px 0 0;">Cada interpretación usa un modelo de inteligencia artificial: tiene un costo económico y también un impacto ambiental por el consumo de energía y agua de los centros de datos que la procesan. Pídela solo cuando de verdad la necesites.</p>
+        <button type="button" class="btn-secondary" style="width:100%; margin-top:12px;" id="bp-ai-depth-cancel">Cancelar</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const finish = value => { overlay.remove(); resolve(value); };
+    overlay.addEventListener("click", e => { if (e.target === overlay) finish(null); });
+    overlay.querySelector("#bp-ai-depth-cancel").addEventListener("click", () => finish(null));
+    overlay.querySelectorAll("[data-depth]").forEach(btn => {
+      btn.addEventListener("click", () => finish(btn.dataset.depth));
+    });
+  });
+}
 // La página que llama a esto ya debe tener definidas apiPost (fetch POST con
 // manejo de {ok,error}) en su alcance global — no se referencia hasta que se
 // dispara un click, así que no importa el orden de carga entre common.js y
@@ -1672,6 +1720,11 @@ function wireAiInterpretationSection_(prefix) {
   updateButtonLabel();
 
   actionBtn.addEventListener("click", async () => {
+    // v32.2: primero se pregunta rápida vs profunda (con el recordatorio de
+    // uso responsable de la IA); si el usuario cancela el diálogo, no se
+    // llama a nada.
+    const depth = await showAiDepthDialog_();
+    if (!depth) return;
     resultBox.style.display = "none";
     promptWrap.style.display = "none";
     errorBox.style.display = "none";
@@ -1680,11 +1733,11 @@ function wireAiInterpretationSection_(prefix) {
     actionBtn.textContent = mode === "interna" ? "Generando… puede tardar unos segundos" : "Generando prompt…";
     try {
       if (mode === "interna") {
-        const result = await apiPost(`/api/ai-interpretation`, { period: periodSelect.value });
-        resultBox.textContent = result.response_text;
+        const result = await apiPost(`/api/ai-interpretation`, { period: periodSelect.value, profundidad: depth });
+        resultBox.textContent = aiSanitizeAiText_(result.response_text);
         resultBox.style.display = "";
       } else {
-        const result = await apiPost(`/api/ai-export-link`, { period: periodSelect.value });
+        const result = await apiPost(`/api/ai-export-link`, { period: periodSelect.value, profundidad: depth });
         promptText.value = result.prompt;
         promptWrap.style.display = "";
         copyStatus.style.display = "none";
