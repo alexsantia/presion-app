@@ -992,13 +992,17 @@ async function buildAiExportPayload_(patientId, period) {
     consultas_medicas: filterByPeriodDays_(consultations, days, "fecha"),
   };
 }
-async function createAiExportToken_(patientId, period) {
+// v32.3: audience/depth se guardan junto con el token para que la liga misma
+// pueda devolver las instrucciones ya en el tono correcto (ver
+// getAiExportPayload) — así el prompt de copiar/pegar ya no necesita traer
+// las instrucciones ni los datos incrustados, solo la liga.
+async function createAiExportToken_(patientId, period, audience, depth) {
   const token = uuid();
   const id = uuid();
   const expiresAt = new Date(Date.now() + AI_EXPORT_TOKEN_TTL_MS);
   await pool.query(
-    `INSERT INTO ai_export_tokens (id, token, patient_id, period, expires_at, created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-    [id, token, patientId, period, expiresAt.toISOString(), nowIso()]
+    `INSERT INTO ai_export_tokens (id, token, patient_id, period, expires_at, created_at, audience, profundidad) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [id, token, patientId, period, expiresAt.toISOString(), nowIso(), audience || "paciente", depth || "profunda"]
   );
   return { token, expiresAt };
 }
@@ -1008,13 +1012,19 @@ async function createAiExportToken_(patientId, period) {
 // detalle clínico completo del periodo elegido. El JSON se arma al vuelo en
 // cada consulta (no se guarda un snapshot), así que siempre refleja los
 // datos más recientes mientras el token siga vigente.
+// v32.3: además de los datos, ahora devuelve las instrucciones (tono +
+// profundidad ya resueltos) — así una IA externa que visite la liga tiene
+// todo lo que necesita en un solo lugar, sin que el prompt de copiar/pegar
+// tenga que traer nada de esto incrustado.
 async function getAiExportPayload(token) {
-  const { rows } = await pool.query(`SELECT patient_id, period, expires_at FROM ai_export_tokens WHERE token = $1`, [token]);
+  const { rows } = await pool.query(`SELECT patient_id, period, expires_at, audience, profundidad FROM ai_export_tokens WHERE token = $1`, [token]);
   const row = rows[0];
   if (!row) return { error: "not_found" };
   if (new Date(row.expires_at).getTime() < Date.now()) return { error: "expired" };
-  const payload = await buildAiExportPayload_(row.patient_id, row.period);
-  return { payload };
+  const datos = await buildAiExportPayload_(row.patient_id, row.period);
+  const depthHint = AI_DEPTH_PROMPT_HINT_[row.profundidad] || AI_DEPTH_PROMPT_HINT_.profunda;
+  const instrucciones = `${buildSystemInstructions_(row.audience)}\n\n${depthHint}`;
+  return { instrucciones, periodo: AI_PERIOD_LABELS_[row.period] || row.period, datos };
 }
 // Disclaimer clínico fijo: va tanto en el prompt que recibe el modelo como
 // pegado al inicio de la respuesta que ve el paciente, por si el modelo no
@@ -1031,11 +1041,18 @@ function buildAiUserMessage_(payload, exportUrl, period, depth) {
   const depthHint = AI_DEPTH_PROMPT_HINT_[depth] || AI_DEPTH_PROMPT_HINT_.profunda;
   return `${depthHint}\n\nAquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
 }
-// v32.1: texto completo (instrucciones + datos + liga) listo para que el
-// paciente lo copie y pegue en la IA de su preferencia (ChatGPT, Gemini,
-// etc.) — modo "mi propia IA", alternativa a la llamada automática.
-function buildAiExternalPromptText_(payload, exportUrl, period, audience, depth) {
-  return `${buildSystemInstructions_(audience)}\n\n${buildAiUserMessage_(payload, exportUrl, period, depth)}`;
+// v32.1: texto listo para que el paciente lo copie y pegue en la IA de su
+// preferencia (ChatGPT, Gemini, etc.) — modo "mi propia IA", alternativa a
+// la llamada automática.
+// v32.3: antes este texto traía las instrucciones Y el JSON completo de
+// datos incrustados, lo cual hacía el prompt tan largo que al abrirlo en
+// ChatGPT (que va como parámetro ?q= en la URL) tronaba con error 414 "URI
+// Too Long". Ahora el prompt es corto: solo le pide a la IA que visite la
+// liga, porque la liga (/api/ai-export/:token, ver getAiExportPayload) ya
+// devuelve tanto las instrucciones en el tono correcto como los datos.
+function buildAiExternalPromptText_(exportUrl, period) {
+  const periodLabel = AI_PERIOD_LABELS_[period] || period;
+  return `Por favor entra a esta liga (temporal, válida ~1 hora) y encontrarás ahí mismo las instrucciones de cómo interpretar la información, junto con los datos de monitoreo en casa de un paciente con hipertensión, periodo: ${periodLabel}: ${exportUrl}\n\nSigue las instrucciones que vienen en esa liga y dame tu interpretación en español.`;
 }
 async function callAnthropicInterpretation_(payload, exportUrl, period, audience, depth) {
   const userText = buildAiUserMessage_(payload, exportUrl, period, depth);
@@ -1960,7 +1977,7 @@ async function handlePost(body) {
     const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
-    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth);
     const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
     const payload = await buildAiExportPayload_(body.patient_id, period);
     let responseText;
@@ -1982,20 +1999,24 @@ async function handlePost(body) {
 
   // ---- v32.1: modo "mi propia IA" — el paciente prefiere usar ChatGPT,
   // Gemini u otra IA en vez de la llamada automática. Genera la misma liga
-  // temporal y el mismo texto de instrucciones + datos, listo para copiar y
-  // pegar, pero sin llamar a Anthropic ni gastar créditos de la cuenta del
-  // servidor. No requiere ANTHROPIC_API_KEY (no llama a ningún proveedor de
-  // IA desde aquí), así que funciona aunque esa variable no esté configurada.
+  // temporal, lista para que la IA elegida la visite y ahí encuentre tanto
+  // las instrucciones (en el tono correcto) como los datos, sin llamar a
+  // Anthropic ni gastar créditos de la cuenta del servidor. No requiere
+  // ANTHROPIC_API_KEY (no llama a ningún proveedor de IA desde aquí), así
+  // que funciona aunque esa variable no esté configurada.
+  // v32.3: ya no se arma el payload aquí ni se incrusta en el prompt — eso
+  // causaba URLs kilométricas (error 414 al abrir en ChatGPT). El payload se
+  // arma al vuelo cuando alguien (la IA externa, o el propio usuario)
+  // visita la liga, ver getAiExportPayload.
   if (body.action === "create_ai_export_link") {
     const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
     const audience = AI_AUDIENCES_.hasOwnProperty(body.audience) ? body.audience : "paciente";
     const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
-    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period);
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth);
     const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
-    const payload = await buildAiExportPayload_(body.patient_id, period);
-    const prompt = buildAiExternalPromptText_(payload, exportUrl, period, audience, depth);
+    const prompt = buildAiExternalPromptText_(exportUrl, period);
     return { ok: true, period, audience, profundidad: depth, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 

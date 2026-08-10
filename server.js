@@ -730,7 +730,10 @@ if (DB_BACKEND === "postgres") {
     const result = await getAiExportPayload(req.params.token);
     if (result.error === "not_found") return res.status(404).json({ ok: false, error: "liga no válida" });
     if (result.error === "expired") return res.status(410).json({ ok: false, error: "esta liga ya expiró" });
-    res.json({ ok: true, data: result.payload });
+    // v32.3: ahora también trae "instrucciones" (tono + profundidad ya
+    // resueltos), no solo los datos, para que una IA externa que visite esta
+    // liga directamente tenga todo lo que necesita en una sola consulta.
+    res.json({ ok: true, instrucciones: result.instrucciones, periodo: result.periodo, datos: result.datos });
   }));
 }
 

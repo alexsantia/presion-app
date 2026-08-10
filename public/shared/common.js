@@ -742,6 +742,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "32.3", changes: [
+    "Se corrigió el error al abrir \"Mi propia IA\" en ChatGPT (URL demasiado larga): ahora el texto a copiar es corto y solo lleva la liga; la liga misma ya trae las instrucciones y los datos completos para que la IA los consulte ahí.",
+  ] },
   { version: "32.2", changes: [
     "La Interpretación con IA ya no muestra símbolos de markdown (## o **): ahora se lee como una conversación natural.",
     "Al presionar \"Generar interpretación\" ahora se pregunta si la quieres rápida o profunda, con un recordatorio de usar la IA con responsabilidad.",

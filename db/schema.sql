@@ -512,6 +512,14 @@ CREATE TABLE IF NOT EXISTS ai_export_tokens (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ai_export_tokens_patient ON ai_export_tokens(patient_id, created_at DESC);
+-- v32.3: se guardan audiencia/profundidad junto con el token para que la
+-- liga (/api/ai-export/:token) pueda devolver, junto con los datos, también
+-- las instrucciones ya adaptadas al tono correcto — así el prompt de
+-- copiar/pegar puede ser corto (solo la liga) en vez de traer todo el JSON
+-- incrustado, lo cual causaba error 414 (URL demasiado larga) al abrir en
+-- ChatGPT.
+ALTER TABLE ai_export_tokens ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT 'paciente';
+ALTER TABLE ai_export_tokens ADD COLUMN IF NOT EXISTS profundidad text NOT NULL DEFAULT 'profunda';
 
 -- v32: historial de interpretaciones generadas por IA (texto de respuesta,
 -- para no tener que volver a llamar a la IA solo para reabrir la pantalla).
