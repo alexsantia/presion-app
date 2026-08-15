@@ -191,7 +191,7 @@ const TIME_OF_DAY_BUCKETS_ = [
   { key: "noche", label: "Noche (19–1h)" },
 ];
 function timeOfDayComparisonData(data, granularity) {
-  const periodFiltered = filterByPeriod(data, granularity || "month");
+  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date");
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return TIME_OF_DAY_BUCKETS_.map(bucket => {
     const bucketData = filterByTimeView(periodFiltered, bucket.key);
@@ -225,7 +225,7 @@ function dateStrToWeekday_(dateStr) {
   return (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
 }
 function weekdayComparisonData(data, granularity, timeView) {
-  const periodFiltered = filterByPeriod(data, granularity || "month");
+  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date");
   const timeFiltered = filterByTimeView(periodFiltered, timeView);
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return WEEKDAY_BUCKETS_.map(bucket => {
@@ -237,21 +237,141 @@ function weekdayComparisonData(data, granularity, timeView) {
   });
 }
 
-// v30.7: mismo criterio que filterByPeriod, pero recibe el nombre del campo
-// de fecha a usar — las lecturas normales usan "date" y el historial de
-// laboratorio (lab_history) usa "fecha", y ahora las gráficas de
-// Estadísticas necesitan filtrar ambos por el mismo selector de periodo.
-function filterByPeriodField_(data, granularity, dateField) {
+// v33.1: antes "semana/mes/año" en Estadísticas siempre significaba "los
+// últimos 7/30/365 días desde hoy" — una ventana móvil que no dejaba ver
+// "la semana pasada" ni "marzo de este año" como periodos propios. Ahora se
+// puede fijar un ancla (statsAnchors_) para elegir cualquier semana, mes o
+// año del calendario real; sin ancla elegida, se sigue comportando como
+// "el periodo actual" (esta semana/este mes/este año), calculado sobre el
+// calendario en vez de una ventana móvil de N días — es lo mismo casi
+// siempre, y es lo que hace posible comparar un periodo elegido contra
+// otro. statsAnchors_ vive aquí (no en cada página) para que las ~10
+// llamadas ya existentes a filterByPeriodField_ no tengan que cambiar de
+// firma; compareAnchors_ es un segundo juego de anclas, solo para el modo
+// "Comparar periodos" de la pestaña Estadísticas.
+let statsAnchors_ = { day: null, week: null, month: null, year: null };
+let compareAnchors_ = { day: null, week: null, month: null, year: null };
+function mondayOfWeek_(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const dow = (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
+  d.setDate(d.getDate() - dow);
+  return localDateStr_(d);
+}
+function currentMonthAnchor_() {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`;
+}
+// granularity: "day" | "week" | "month" | "year". anchor: valor elegido
+// (fecha YYYY-MM-DD para day/week, "YYYY-MM" para month, "YYYY" para year),
+// o null para "el periodo actual". Regresa { start, end } en YYYY-MM-DD.
+function calendarRangeForGranularity_(granularity, anchor) {
+  const today = new Date();
+  if (granularity === "day") {
+    const day = anchor || todayStr();
+    return { start: day, end: day };
+  }
+  if (granularity === "week") {
+    const monday = mondayOfWeek_(anchor || todayStr());
+    const sunday = new Date(monday + "T00:00:00");
+    sunday.setDate(sunday.getDate() + 6);
+    return { start: monday, end: localDateStr_(sunday) };
+  }
+  if (granularity === "month") {
+    const ym = anchor || currentMonthAnchor_();
+    const [y, m] = ym.split("-").map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    return { start: `${ym}-01`, end: `${ym}-${String(lastDay).padStart(2, "0")}` };
+  }
+  if (granularity === "year") {
+    const y = anchor || String(today.getFullYear());
+    return { start: `${y}-01-01`, end: `${y}-12-31` };
+  }
+  return null; // "all" u otro valor no soportado
+}
+const MESES_ES_ = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+// Etiqueta legible del periodo, para mostrar junto al selector y en la
+// tarjeta de comparación (ej. "Semana del 10 al 16 de agosto, 2026").
+function periodRangeLabel_(granularity, range) {
+  if (!range) return "";
+  const fmt = s => s.split("-").reverse().join("/");
+  if (granularity === "day") return fmt(range.start);
+  if (granularity === "week") return `Semana del ${fmt(range.start)} al ${fmt(range.end)}`;
+  if (granularity === "month") {
+    const [y, m] = range.start.split("-");
+    return `${MESES_ES_[Number(m) - 1]} ${y}`;
+  }
+  if (granularity === "year") return range.start.split("-")[0];
+  return "";
+}
+// v30.7 (reescrita en v33.1): mismo criterio de siempre, recibe el nombre
+// del campo de fecha a usar — las lecturas normales usan "date" y el
+// historial de laboratorio (lab_history) usa "fecha" — pero ahora filtra
+// por el rango de calendario real (ver calendarRangeForGranularity_) en vez
+// de una ventana móvil de días. anchors (opcional) permite pasar
+// statsAnchors_ o compareAnchors_; por default usa statsAnchors_.
+function filterByPeriodField_(data, granularity, dateField, anchors) {
   const list = data || [];
   if (granularity === "all" || !granularity) return list.slice();
-  const daysMap = { day: 1, week: 7, month: 30, quarter: 90, year: 365 };
-  const days = daysMap[granularity];
-  if (!days) return list.slice();
-  const today = new Date();
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - (days - 1));
-  const cutoffStr = localDateStr_(cutoff);
-  return list.filter(r => r[dateField] >= cutoffStr);
+  const anchorSet = anchors || statsAnchors_;
+  const range = calendarRangeForGranularity_(granularity, anchorSet[granularity]);
+  if (!range) return list.slice();
+  return list.filter(r => r[dateField] >= range.start && r[dateField] <= range.end);
+}
+
+// ---- v33.1: Comparar un periodo contra otro (día vs día, semana vs
+// semana, mes vs mes, año vs año) ----
+// A diferencia de las gráficas de tendencia (que muestran cada lectura
+// individual en el tiempo), comparar dos periodos punto por punto en la
+// misma gráfica de línea no tendría mucho sentido visual — en cambio se
+// resume cada periodo a sus promedios (sistólica, diastólica, FC, PAM) y
+// número de lecturas, y se muestran lado a lado con una flecha/diferencia,
+// mismo lenguaje visual que el popup de comparación de una sola lectura
+// (ver readingCompareArrow_ en index.html).
+function filterByRange_(data, range, dateField) {
+  if (!range) return (data || []).slice();
+  return (data || []).filter(r => r[dateField] >= range.start && r[dateField] <= range.end);
+}
+function readingsAverages_(readings) {
+  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+  const sysVals = readings.map(r => r.sys).filter(v => v != null);
+  const diaVals = readings.map(r => r.dia).filter(v => v != null);
+  const hrVals = readings.map(r => r.hr).filter(v => v != null);
+  const pamVals = readings.filter(r => r.sys != null && r.dia != null).map(r => pamValue_(r.sys, r.dia));
+  return { sys: avg(sysVals), dia: avg(diaVals), hr: avg(hrVals), pam: avg(pamVals), count: readings.length };
+}
+function statsCompareArrow_(diff) {
+  if (diff == null || diff === 0) return { symbol: "→", color: "var(--text-muted)" };
+  return diff > 0 ? { symbol: "↑", color: "#B0554B" } : { symbol: "↓", color: "#4F7A6F" };
+}
+function statsCompareCardHTML_(labelA, avgA, labelB, avgB) {
+  const rows = [
+    { label: "Sistólica", unit: "mmHg", a: avgA.sys, b: avgB.sys },
+    { label: "Diastólica", unit: "mmHg", a: avgA.dia, b: avgB.dia },
+    { label: "Frecuencia cardiaca", unit: "lpm", a: avgA.hr, b: avgB.hr },
+    { label: "PAM", unit: "mmHg", a: avgA.pam, b: avgB.pam },
+  ];
+  const rowsHtml = rows.map(r => {
+    if (r.a == null && r.b == null) return "";
+    const diff = (r.a != null && r.b != null) ? Math.round((r.b - r.a) * 10) / 10 : null;
+    const arrow = statsCompareArrow_(diff);
+    const diffLabel = diff == null ? "" : diff === 0 ? "sin cambio" : (diff > 0 ? `+${diff}` : `${diff}`);
+    return `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border);">
+        <span style="font-size:13px; color:var(--text);">${r.label}</span>
+        <span style="display:flex; align-items:center; gap:8px; font-size:13px;">
+          <span style="color:var(--text-muted);">${r.a != null ? r.a : "sin dato"} ${r.a != null ? r.unit : ""}</span>
+          <span style="color:${arrow.color}; font-size:16px;">${arrow.symbol}</span>
+          <span style="font-weight:600;">${r.b != null ? r.b : "sin dato"} ${r.b != null ? r.unit : ""}</span>
+          ${diffLabel ? `<span style="font-size:11.5px; color:${arrow.color};">(${diffLabel})</span>` : ""}
+        </span>
+      </div>`;
+  }).join("");
+  return `
+    <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-bottom:6px;">
+      <span>A: ${labelA} (${avgA.count} lectura${avgA.count === 1 ? "" : "s"})</span>
+      <span>B: ${labelB} (${avgB.count} lectura${avgB.count === 1 ? "" : "s"})</span>
+    </div>
+    ${rowsHtml}`;
 }
 // v30.19: cuando el periodo "Día" trae su propio selector de fecha (en vez
 // de fijarse siempre a "hoy"), esto filtra a ESE día exacto — a diferencia
@@ -742,6 +862,13 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.1", changes: [
+    "La duración de sueño ahora se captura en horas (ej. 7.5), no en minutos.",
+    "Se corrigió que en pantallas de celular las pestañas se salieran del borde derecho; ahora la barra de pestañas se desliza horizontalmente.",
+    "El popup de comparación al registrar una lectura ahora indica la fecha de tu lectura anterior y la diferencia numérica en cada indicador, no solo la flecha.",
+    "En Interpretación con IA, \"Mi propia IA\" ahora queda elegida por default.",
+    "En Estadísticas: ahora puedes elegir cualquier día, semana, mes o año concreto (no solo el actual), y comparar un periodo contra otro (día vs día, semana vs semana, mes vs mes, año vs año) con una tarjeta de promedios y diferencias.",
+  ] },
   { version: "33.0", changes: [
     "Nueva sección Metas: ponte objetivos con fecha límite (reducir, aumentar o llegar a un valor específico) para peso, cintura, presión, frecuencia cardiaca, colesterol, triglicéridos, sueño o apego a medicamentos, y da seguimiento a tu progreso. Puedes ligar la meta a un evento opcional (una boda, tu cumpleaños, vacaciones, etc.). También visible, solo lectura, para tu médico y familia.",
   ] },
@@ -1753,8 +1880,8 @@ function aiInterpretationSectionHTML_(prefix) {
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Analiza tus capturas del periodo elegido (presión, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos y laboratorios) y te da una lectura en lenguaje sencillo. No es un diagnóstico ni sustituye a tu médico.</p>
     <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:13px; margin-bottom:6px;">
-      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="interna" checked> IA interna (automática)</label>
-      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="propia"> Mi propia IA (copiar y pegar)</label>
+      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="interna"> IA interna (automática)</label>
+      <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="${prefix}_ai_mode" value="propia" checked> Mi propia IA (copiar y pegar)</label>
     </div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px;">
       <label for="${prefix}_ai_period" style="font-size:13px; font-weight:600;">Periodo</label>

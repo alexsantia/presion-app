@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=33.0"></script>
+<script src="/shared/common.js?v=33.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -22,7 +22,7 @@
     --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC; --weight: #9B8AC4;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; overflow-x: hidden; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
   .topbar-links { display: flex; gap: 14px; align-items: center; }
   h1 { font-size: 32px; margin: 0; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; }
@@ -805,7 +805,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.0</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.1</button></footer>
 
 <script>
 let chartInstance = null;
@@ -1764,7 +1764,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.0");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.1");
 
 loadPatient();
 loadAndRender();

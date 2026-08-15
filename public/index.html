@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.0"></script>
+<script src="/shared/common.js?v=33.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -23,7 +23,11 @@
     --accent: #4F7A6F; --accent-hover: #436A60; --accent-soft: #E8F0EC; --weight: #9B8AC4;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; }
+  body { margin: 0; padding: 24px; background: var(--bg-page); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.5; overflow-x: hidden; }
+  /* v33.1: red de seguridad para que ningún elemento hijo (ej. la barra de
+     pestañas con muchas secciones) empuje todo el body hacia la derecha en
+     pantallas angostas; cada elemento ancho debe resolver su propio scroll
+     horizontal (ver .page-tabs más abajo), nunca el body entero. */
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; gap: 12px; flex-wrap: wrap; }
   .topbar-links { display: flex; gap: 14px; align-items: center; }
   h1 { font-size: 32px; margin: 0; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; }
@@ -257,9 +261,15 @@
   .view-as-banner { font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; background: var(--accent-soft); color: var(--accent-hover); }
 
   /* v29: navegación por secciones de la página (Presión Arterial / Estadísticas) */
-  .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border); }
+  /* v33.1: con 11 pestañas ya no caben en una pantalla de celular; antes se
+     salían del viewport y empujaban todo el body hacia la derecha (el
+     usuario veía la página entera recortada). Ahora la barra misma
+     scrollea horizontalmente (deslizar con el dedo) y el resto de la
+     página se queda fija en su lugar. */
+  .page-tabs { display: flex; gap: 6px; margin: 4px 0 18px; border-bottom: 1px solid var(--border);
+    overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; scrollbar-width: thin; }
   .page-tab-btn { position: relative; overflow: visible; background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 4px; margin-bottom: -1px;
-    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+    font-size: 14px; font-weight: 600; color: var(--text-muted); cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -532,6 +542,7 @@
     <div class="toolbar">
       <h2 style="flex:1">Filtro general</h2>
       <div class="chart-filter" id="statsGeneralFilter" role="group" aria-label="Periodo general">
+        <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
         <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
         <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
@@ -539,6 +550,35 @@
       <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
+    <!-- v33.1: elegir cualquier día/semana/mes/año concreto, no solo "el
+         actual". El control que se muestra cambia según la granularidad
+         elegida arriba (ver syncStatsAnchorPicker_). -->
+    <div id="statsAnchorPickerWrap" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      <label for="statsAnchorDay" style="font-size:12.5px; font-weight:600;">Ver:</label>
+      <input type="date" id="statsAnchorDay" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="date" id="statsAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras ver">
+      <input type="month" id="statsAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <select id="statsAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      <span id="statsAnchorLabel" style="font-size:12.5px; color:var(--text-muted);"></span>
+      <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
+    </div>
+    <!-- v33.1: comparar el periodo elegido arriba contra otro periodo del
+         mismo tipo (día vs día, semana vs semana, mes vs mes, año vs año). -->
+    <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
+      <label class="checkbox-label" style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;">
+        <input type="checkbox" id="statsCompareToggle"> Comparar con otro periodo
+      </label>
+      <div id="statsComparePickerWrap" style="display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <label for="statsCompareAnchorDay" style="font-size:12.5px; font-weight:600;">Comparar con:</label>
+        <input type="date" id="statsCompareAnchorDay" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <input type="date" id="statsCompareAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras comparar">
+        <input type="month" id="statsCompareAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <select id="statsCompareAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      </div>
+      <div id="statsCompareCardWrap" style="display:none; margin-top:10px;">
+        <div id="statsCompareCard"></div>
+      </div>
+    </div>
   </div>
 
   <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
@@ -1091,7 +1131,7 @@
       <div><label>Fecha</label><input type="date" id="sl_fecha" required></div>
       <div><label>Hora de inicio</label><input type="time" id="sl_hora_inicio"></div>
       <div><label>Hora de fin</label><input type="time" id="sl_hora_fin"></div>
-      <div><label>Duración (minutos)</label><input type="number" id="sl_duracion_min" min="1" max="1440" step="1" required></div>
+      <div><label>Duración (horas)</label><input type="number" id="sl_duracion_horas" min="0.1" max="24" step="0.1" required></div>
       <div class="full checkbox-field">
         <label class="checkbox-label"><input type="checkbox" id="sl_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
       </div>
@@ -1166,7 +1206,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.0</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.1</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1642,7 +1682,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.0");
+  showAboutOverlay_("33.1");
 });
 
 function openModal(id) {
@@ -2400,6 +2440,17 @@ function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || st
 // "hoy" a secas; ahora aparece un selector de fecha (igual que en la
 // gráfica de Tendencia) para poder ver cualquier día concreto.
 let statsChartDay = { pam: todayStr(), hr: todayStr() };
+// v33.1: cuando el periodo efectivo de una gráfica es "day", si esa gráfica
+// tiene su PROPIO filtro "Día" activado (mini-toolbar) usa su propia fecha
+// (statsChartDay); si el "Día" viene heredado del filtro general, usa la
+// fecha elegida ahí (statsAnchors_.day, ver common.js). Antes solo PAM y FC
+// podían usar "Día"; ahora cualquier gráfica puede heredarlo del general.
+function filterForChartPeriod_(data, chartKey, dateField) {
+  const period = effectivePeriod_(chartKey);
+  if (period !== "day") return filterByPeriodField_(data, period, dateField);
+  const day = statsChartOverrides[chartKey] ? (statsChartDay[chartKey] || todayStr()) : (statsAnchors_.day || todayStr());
+  return filterByExactDate_(data, day, dateField);
+}
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
   document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
@@ -2413,6 +2464,82 @@ function syncStatsFilterButtons_() {
     input.style.display = effectivePeriod_(key) === "day" ? "inline-block" : "none";
     if (statsChartDay[key] && input.value !== statsChartDay[key]) input.value = statsChartDay[key];
   });
+}
+
+// ---- v33.1: selector de periodo específico (cualquier día/semana/mes/año,
+// no solo "el actual") para el filtro general, y comparación entre dos
+// periodos del mismo tipo. Reutiliza calendarRangeForGranularity_,
+// periodRangeLabel_, statsAnchors_ y compareAnchors_ de common.js. ----
+function populateYearSelect_(selectEl) {
+  if (selectEl.options.length) return; // ya poblado
+  const thisYear = new Date().getFullYear();
+  let earliest = thisYear;
+  (currentData || []).forEach(r => { if (r.date) earliest = Math.min(earliest, Number(r.date.slice(0, 4))); });
+  for (let y = thisYear + 1; y >= earliest - 1; y--) {
+    const opt = document.createElement("option");
+    opt.value = String(y); opt.textContent = String(y);
+    selectEl.appendChild(opt);
+  }
+}
+function syncStatsAnchorPicker_() {
+  const gran = statsChartPeriod;
+  document.getElementById("statsAnchorDay").style.display = gran === "day" ? "" : "none";
+  document.getElementById("statsAnchorWeek").style.display = gran === "week" ? "" : "none";
+  document.getElementById("statsAnchorMonth").style.display = gran === "month" ? "" : "none";
+  document.getElementById("statsAnchorYear").style.display = gran === "year" ? "" : "none";
+  populateYearSelect_(document.getElementById("statsAnchorYear"));
+  populateYearSelect_(document.getElementById("statsCompareAnchorYear"));
+  const today = todayStr();
+  document.getElementById("statsAnchorDay").max = today;
+  if (gran === "day") document.getElementById("statsAnchorDay").value = statsAnchors_.day || today;
+  if (gran === "week") document.getElementById("statsAnchorWeek").value = statsAnchors_.week || today;
+  if (gran === "month") document.getElementById("statsAnchorMonth").value = statsAnchors_.month || currentMonthAnchor_();
+  if (gran === "year") document.getElementById("statsAnchorYear").value = statsAnchors_.year || String(new Date().getFullYear());
+  const range = calendarRangeForGranularity_(gran, statsAnchors_[gran]);
+  document.getElementById("statsAnchorLabel").textContent = range ? periodRangeLabel_(gran, range) : "";
+
+  const compareOn = document.getElementById("statsCompareToggle").checked;
+  document.getElementById("statsComparePickerWrap").style.display = compareOn ? "flex" : "none";
+  document.getElementById("statsCompareCardWrap").style.display = compareOn ? "" : "none";
+  ["statsCompareAnchorDay", "statsCompareAnchorWeek", "statsCompareAnchorMonth", "statsCompareAnchorYear"].forEach(id => {
+    document.getElementById(id).style.display = "none";
+  });
+  if (compareOn) {
+    const compareInputId = { day: "statsCompareAnchorDay", week: "statsCompareAnchorWeek", month: "statsCompareAnchorMonth", year: "statsCompareAnchorYear" }[gran];
+    document.getElementById(compareInputId).style.display = "";
+    if (gran === "day" || gran === "week") document.getElementById(compareInputId).max = today;
+    if (!compareAnchors_[gran]) {
+      // Default razonable: el periodo INMEDIATO ANTERIOR al elegido arriba,
+      // así "Comparar" ya muestra algo útil sin que el paciente tenga que
+      // elegir una segunda fecha a mano.
+      compareAnchors_[gran] = defaultPreviousAnchor_(gran, statsAnchors_[gran]);
+    }
+    if (gran === "day") document.getElementById("statsCompareAnchorDay").value = compareAnchors_.day;
+    if (gran === "week") document.getElementById("statsCompareAnchorWeek").value = compareAnchors_.week;
+    if (gran === "month") document.getElementById("statsCompareAnchorMonth").value = compareAnchors_.month;
+    if (gran === "year") document.getElementById("statsCompareAnchorYear").value = compareAnchors_.year;
+    renderStatsCompareCard_();
+  }
+}
+function defaultPreviousAnchor_(gran, anchor) {
+  const range = calendarRangeForGranularity_(gran, anchor);
+  if (gran === "day") { const d = new Date(range.start + "T00:00:00"); d.setDate(d.getDate() - 1); return localDateStr_(d); }
+  if (gran === "week") { const d = new Date(range.start + "T00:00:00"); d.setDate(d.getDate() - 7); return localDateStr_(d); }
+  if (gran === "month") { const [y, m] = range.start.split("-").map(Number); const d = new Date(y, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+  if (gran === "year") return String(Number(range.start.split("-")[0]) - 1);
+  return anchor;
+}
+function renderStatsCompareCard_() {
+  const gran = statsChartPeriod;
+  const rangeA = calendarRangeForGranularity_(gran, statsAnchors_[gran]);
+  const rangeB = calendarRangeForGranularity_(gran, compareAnchors_[gran]);
+  const dataA = filterByRange_(currentData, rangeA, "date");
+  const dataB = filterByRange_(currentData, rangeB, "date");
+  const avgA = readingsAverages_(dataA);
+  const avgB = readingsAverages_(dataB);
+  document.getElementById("statsCompareCard").innerHTML = statsCompareCardHTML_(
+    periodRangeLabel_(gran, rangeA), avgA, periodRangeLabel_(gran, rangeB), avgB
+  );
 }
 
 // ---- Estadísticas: comparación por franja horaria (v30) ----
@@ -2512,6 +2639,12 @@ document.getElementById("statsWeekdayTimeView").addEventListener("change", e => 
   renderWeekdayChart();
 });
 
+function rerenderAllStatsCharts_() {
+  renderStatsChart();
+  renderWeekdayChart();
+  renderLabHistoryCharts();
+  syncStatsAnchorPicker_();
+}
 document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
@@ -2520,9 +2653,7 @@ document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   // con él, incluso las que se habían desligado con su filtro propio.
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
-  renderStatsChart();
-  renderWeekdayChart();
-  renderLabHistoryCharts();
+  rerenderAllStatsCharts_();
 });
 // Un solo listener delegado para las mini-toolbars de cada gráfica: al
 // tocar Sem/Mes/Año ahí, esa gráfica en particular se desliga del filtro
@@ -2542,9 +2673,29 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
 document.getElementById("statsClearFiltersBtn").addEventListener("click", () => {
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
   syncStatsFilterButtons_();
-  renderStatsChart();
-  renderWeekdayChart();
-  renderLabHistoryCharts();
+  rerenderAllStatsCharts_();
+});
+// v33.1: elegir una fecha/semana/mes/año específico en el filtro general
+// redibuja todas las gráficas que sigan al general (las que tienen su
+// propio filtro no se ven afectadas).
+["statsAnchorDay", "statsAnchorWeek", "statsAnchorMonth", "statsAnchorYear"].forEach(id => {
+  document.getElementById(id).addEventListener("change", e => {
+    statsAnchors_[statsChartPeriod] = e.target.value || null;
+    rerenderAllStatsCharts_();
+  });
+});
+document.getElementById("statsAnchorTodayBtn").addEventListener("click", () => {
+  statsAnchors_[statsChartPeriod] = null; // null = "el periodo actual"
+  rerenderAllStatsCharts_();
+});
+document.getElementById("statsCompareToggle").addEventListener("change", () => {
+  syncStatsAnchorPicker_();
+});
+["statsCompareAnchorDay", "statsCompareAnchorWeek", "statsCompareAnchorMonth", "statsCompareAnchorYear"].forEach(id => {
+  document.getElementById(id).addEventListener("change", e => {
+    compareAnchors_[statsChartPeriod] = e.target.value || null;
+    renderStatsCompareCard_();
+  });
 });
 // v30.19: elegir una fecha en el selector de "Día" solo redibuja esa
 // gráfica en particular (igual que al tocar Sem/Mes/Año en su mini-filtro).
@@ -2560,6 +2711,7 @@ document.querySelectorAll(".chart-filter-mini-daypicker").forEach(input => {
   input.value = statsChartDay[input.dataset.chartKey] || todayStr();
 });
 syncStatsFilterButtons_();
+syncStatsAnchorPicker_();
 
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
 // filtro de semana/mes/año agregado en v30.7 reutilizando el mismo selector
@@ -2608,15 +2760,6 @@ async function loadLabHistory() {
 // la falsa impresión de que sus valores también habían cambiado. Sin
 // onlyKeys (carga inicial, filtro general, "Eliminar filtros") sí se
 // redibujan todas, porque en esos casos de verdad les toca a todas.
-// v30.19: cuando el periodo efectivo de la gráfica es "day", usa el día
-// exacto elegido en su selector de fecha (statsChartDay) en vez del "hoy" a
-// secas de filterByPeriodField_.
-function filterForChartPeriod_(data, chartKey, dateField) {
-  const period = effectivePeriod_(chartKey);
-  return period === "day"
-    ? filterByExactDate_(data, statsChartDay[chartKey], dateField)
-    : filterByPeriodField_(data, period, dateField);
-}
 function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
@@ -2636,42 +2779,42 @@ function renderLabHistoryCharts(onlyKeys) {
     );
   }
   if (shouldRender("weight")) {
-    const weightData = filterByPeriodField_(currentData, effectivePeriod_("weight"), "date");
+    const weightData = filterForChartPeriod_(currentData, "weight", "date");
     statsWeightChartInstance = renderMetricTrendChart(
       statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
       readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
     );
   }
   if (shouldRender("waist")) {
-    const waistHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("waist"), "fecha");
+    const waistHistory = filterForChartPeriod_(currentLabHistory, "waist", "fecha");
     statsWaistChartInstance = renderMetricTrendChart(
       statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
       labHistorySeriesConverted_("waist", waistHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
     );
   }
   if (shouldRender("triglycerides")) {
-    const triHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("triglycerides"), "fecha");
+    const triHistory = filterForChartPeriod_(currentLabHistory, "triglycerides", "fecha");
     statsTriglyceridesChartInstance = renderMetricTrendChart(
       statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
       labHistorySeriesConverted_("triglycerides", triHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
     );
   }
   if (shouldRender("cholesterol")) {
-    const cholHistory = filterByPeriodField_(currentLabHistory, effectivePeriod_("cholesterol"), "fecha");
+    const cholHistory = filterForChartPeriod_(currentLabHistory, "cholesterol", "fecha");
     statsCholesterolChartInstance = renderMetricTrendChart(
       statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
       labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
     );
   }
   if (shouldRender("exercise")) {
-    const exerciseHistory = filterByPeriodField_(exerciseDailyTotalsForChart_(), effectivePeriod_("exercise"), "fecha");
+    const exerciseHistory = filterForChartPeriod_(exerciseDailyTotalsForChart_(), "exercise", "fecha");
     statsExerciseChartInstance = renderMetricTrendChart(
       statsExerciseChartInstance, document.getElementById("statsExerciseChart"), document.getElementById("statsExerciseEmpty"),
       labHistorySeriesForKey_(exerciseHistory, "calorias"), { label: "Calorías", color: "#2E9E96", unit: "kcal" }
     );
   }
   if (shouldRender("medAdherence")) {
-    const adherenceHistory = filterByPeriodField_(currentMedAdherence, effectivePeriod_("medAdherence"), "fecha");
+    const adherenceHistory = filterForChartPeriod_(currentMedAdherence, "medAdherence", "fecha");
     statsMedAdherenceChartInstance = renderMetricTrendChart(
       statsMedAdherenceChartInstance, document.getElementById("statsMedAdherenceChart"), document.getElementById("statsMedAdherenceEmpty"),
       labHistorySeriesForKey_(adherenceHistory, "pct"), { label: "% de apego", color: "#D9A15F", unit: "%" }
@@ -2679,14 +2822,14 @@ function renderLabHistoryCharts(onlyKeys) {
   }
   // v32: gráficas de Sueño
   if (shouldRender("sleepDuration")) {
-    const sleepHistory = filterByPeriodField_(currentSleep, effectivePeriod_("sleepDuration"), "fecha");
+    const sleepHistory = filterForChartPeriod_(currentSleep, "sleepDuration", "fecha");
     statsSleepDurationChartInstance = renderMetricTrendChart(
       statsSleepDurationChartInstance, document.getElementById("statsSleepDurationChart"), document.getElementById("statsSleepDurationEmpty"),
       sleepDurationSeriesForChart_(sleepHistory), { label: "Duración", color: "#6E8FB0", unit: "h" }
     );
   }
   if (shouldRender("sleepQuality")) {
-    const sleepHistory = filterByPeriodField_(currentSleep, effectivePeriod_("sleepQuality"), "fecha");
+    const sleepHistory = filterForChartPeriod_(currentSleep, "sleepQuality", "fecha");
     statsSleepQualityChartInstance = renderMetricTrendChart(
       statsSleepQualityChartInstance, document.getElementById("statsSleepQualityChart"), document.getElementById("statsSleepQualityEmpty"),
       sleepQualitySeriesForChart_(sleepHistory), { label: "Calidad", color: "#9B8AC4", unit: "/10" }
@@ -2901,6 +3044,12 @@ function readingCompareArrow_(curr, prev) {
   if (curr < prev) return { symbol: "↓", color: "#4F7A6F" };
   return { symbol: "→", color: "var(--text-muted)" };
 }
+function readingCompareDiffLabel_(curr, prev) {
+  if (curr == null || prev == null) return "";
+  const diff = Math.round((curr - prev) * 10) / 10;
+  if (diff === 0) return "sin cambio";
+  return diff > 0 ? `+${diff}` : `${diff}`;
+}
 function showReadingCompareModal_(prevReading, newValues) {
   if (!prevReading) return; // primera lectura registrada, no hay con qué comparar
   const prevPam = pamValue_(prevReading.sys, prevReading.dia);
@@ -2913,6 +3062,7 @@ function showReadingCompareModal_(prevReading, newValues) {
   ];
   const rowsHtml = rows.filter(r => r.curr != null).map(r => {
     const arrow = readingCompareArrow_(r.curr, r.prev);
+    const diffLabel = readingCompareDiffLabel_(r.curr, r.prev);
     return `
       <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border);">
         <span style="font-size:13px; color:var(--text);">${r.label}</span>
@@ -2920,15 +3070,21 @@ function showReadingCompareModal_(prevReading, newValues) {
           ${r.prev != null ? `<span style="font-weight:400; color:var(--text-muted); font-size:12.5px;">${r.prev}</span>` : ""}
           <span style="color:${arrow.color}; font-size:17px;">${arrow.symbol}</span>
           <span>${r.curr} ${r.unit}</span>
+          ${diffLabel ? `<span style="font-weight:400; color:${arrow.color}; font-size:12px;">(${diffLabel})</span>` : ""}
         </span>
       </div>`;
   }).join("");
+  const prevDateLabel = prevReading.date ? prevReading.date.split("-").reverse().join("/") : "";
+  const prevWhenLabel = prevDateLabel
+    ? `Comparando con tu lectura del ${prevDateLabel}${prevReading.time ? ` a las ${prevReading.time}` : ""}`
+    : "Comparando con tu lectura anterior";
   ensureAboutStyles_(); // reusa .bp-about-overlay/.bp-about-card
   const overlay = document.createElement("div");
   overlay.className = "bp-about-overlay";
   overlay.innerHTML = `
     <div class="bp-about-card" style="max-width:360px;">
       <h2 style="margin-top:0;">Comparación con tu lectura anterior</h2>
+      <p style="font-size:12.5px; color:var(--text-muted); margin-top:-8px;">${prevWhenLabel}</p>
       <div>${rowsHtml}</div>
       <button type="button" class="btn-secondary" id="bp-reading-compare-close" style="width:100%; margin-top:14px;">Cerrar</button>
     </div>`;
@@ -3889,11 +4045,11 @@ function recomputeSleepDuration_() {
   const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
   let diff = toMin(end) - toMin(start);
   if (diff <= 0) diff += 24 * 60; // cruzó la medianoche (lo normal en sueño)
-  document.getElementById("sl_duracion_min").value = diff;
+  document.getElementById("sl_duracion_horas").value = Math.round((diff / 60) * 10) / 10;
 }
 document.getElementById("sl_hora_inicio").addEventListener("change", () => { slDurationManuallyEdited_ = false; recomputeSleepDuration_(); });
 document.getElementById("sl_hora_fin").addEventListener("change", () => { slDurationManuallyEdited_ = false; recomputeSleepDuration_(); });
-document.getElementById("sl_duracion_min").addEventListener("input", () => { slDurationManuallyEdited_ = true; });
+document.getElementById("sl_duracion_horas").addEventListener("input", () => { slDurationManuallyEdited_ = true; });
 document.getElementById("sl_calidad_toggle").addEventListener("change", e => {
   document.getElementById("sl_calidad_wrap").style.display = e.target.checked ? "" : "none";
 });
@@ -3934,10 +4090,10 @@ function resetSleepForm_() {
 document.getElementById("sleepForm").addEventListener("submit", async e => {
   e.preventDefault();
   const fecha = document.getElementById("sl_fecha").value;
-  const duracion = document.getElementById("sl_duracion_min").value;
-  if (!fecha || !duracion) return;
+  const duracionHoras = document.getElementById("sl_duracion_horas").value;
+  if (!fecha || !duracionHoras) return;
   const payload = {
-    fecha, duracion_min: Number(duracion),
+    fecha, duracion_min: Math.round(Number(duracionHoras) * 60),
     hora_inicio: document.getElementById("sl_hora_inicio").value || "",
     hora_fin: document.getElementById("sl_hora_fin").value || "",
     calidad: document.getElementById("sl_calidad_toggle").checked ? Number(document.getElementById("sl_calidad").value) : null,
@@ -3964,7 +4120,7 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
     document.getElementById("sl_fecha").value = s.fecha || "";
     document.getElementById("sl_hora_inicio").value = s.hora_inicio || "";
     document.getElementById("sl_hora_fin").value = s.hora_fin || "";
-    document.getElementById("sl_duracion_min").value = s.duracion_min != null ? s.duracion_min : "";
+    document.getElementById("sl_duracion_horas").value = s.duracion_min != null ? Math.round((s.duracion_min / 60) * 10) / 10 : "";
     if (s.calidad != null) {
       document.getElementById("sl_calidad_toggle").checked = true;
       document.getElementById("sl_calidad_wrap").style.display = "";
