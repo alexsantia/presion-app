@@ -1179,6 +1179,25 @@ async function getOrGenerateDailyNote(patientId) {
     return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining, manual_limit };
   }
   if (!text) return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining, manual_limit };
+  // v33.6: la llamada a la IA de arriba puede tardar unos segundos; en ese
+  // tiempo, otra pestaña abierta (u otra llamada perezosa) puede haber
+  // guardado YA una nota de hoy — o el paciente pudo haber usado "Actualizar
+  // con IA" mientras tanto. Antes de escribir, se vuelve a revisar: si ya
+  // hay una nota de hoy guardada, esta generación automática (más lenta,
+  // "vieja" en términos de qué se pidió más recientemente) NO la pisa; se
+  // regresa la que ya está, para que siempre prevalezca la más reciente de
+  // verdad (la del día, o la última forzada) y no la que tardó más en volver.
+  const { rows: freshRows } = await pool.query(
+    `SELECT daily_ai_note, to_char(daily_ai_note_date, 'YYYY-MM-DD') AS daily_ai_note_date,
+            daily_ai_note_manual_count, daily_ai_note_manual_window_start
+     FROM pacientes WHERE id = $1`,
+    [patientId]
+  );
+  const freshRow = freshRows[0];
+  if (freshRow && freshRow.daily_ai_note && freshRow.daily_ai_note_date === today) {
+    const freshRemaining = manualNoteRemaining_(freshRow.daily_ai_note_manual_count, freshRow.daily_ai_note_manual_window_start);
+    return { ok: true, note: freshRow.daily_ai_note, ai_enabled: true, cached: true, manual_remaining: freshRemaining, manual_limit };
+  }
   await pool.query(`UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2 WHERE id = $3`, [text, today, patientId]);
   return { ok: true, note: text, ai_enabled: true, cached: false, manual_remaining, manual_limit };
 }

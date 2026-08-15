@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.5"></script>
+<script src="/shared/common.js?v=33.6"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1194,7 +1194,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.5</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.6</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1670,7 +1670,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.5");
+  showAboutOverlay_("33.6");
 });
 
 function openModal(id) {
@@ -2998,9 +2998,19 @@ function fallbackAlertsHtml_(data) {
 // barato: solo la primera vez del día realmente llama a la IA). Si hay
 // nota, reemplaza el respaldo por reglas; si no (IA desactivada, sin
 // lecturas recientes, o error), se queda el respaldo que ya se mostró.
+// v33.6: la generación automática puede tardar unos segundos; si mientras
+// tanto el paciente usa "Actualizar con IA" (más rápido), la respuesta VIEJA
+// de la automática podía llegar después y pisar en el DOM la nota más nueva
+// ya forzada — aunque el backend ya no permite que la automática sobrescriba
+// el dato guardado (ver getOrGenerateDailyNote), en el navegador también se
+// guarda con qué llamada fue la más reciente, para no pintar una respuesta
+// vieja encima de una más nueva por puro orden de llegada de red.
+let dailyNoteRequestSeq_ = 0;
 async function loadDailyNote_() {
+  const seq = ++dailyNoteRequestSeq_;
   try {
     const result = await apiGet("/api/daily-note");
+    if (seq !== dailyNoteRequestSeq_) return; // ya hay una llamada más nueva en curso o resuelta: no pisarla
     if (result && result.note) {
       document.getElementById("alertsContent").innerHTML = `<div class="alert-box note"><strong>Nota del día:</strong> ${escapeHtml_(result.note)}</div>`;
     }
@@ -3028,6 +3038,7 @@ document.getElementById("dailyNoteForceBtn").addEventListener("click", async () 
   const prevLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = "Generando…";
+  dailyNoteRequestSeq_++; // invalida cualquier loadDailyNote_() más vieja que siga esperando su respuesta
   try {
     const result = await apiPost("/api/daily-note/force", {});
     if (result && result.error === "rate_limited") {

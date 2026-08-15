@@ -885,6 +885,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.6", changes: [
+    "Se corrigió que, en algunos casos, la nota diaria de IA se quedara mostrando una versión vieja: si abrías la app (generación automática) y usabas \"Actualizar con IA\" casi al mismo tiempo, a veces la respuesta más lenta terminaba pisando a la más reciente. Ahora siempre prevalece la última generada de verdad, sea la automática del día o la última forzada.",
+  ] },
   { version: "33.5", changes: [
     "La nota diaria de IA en Presión Arterial ahora puede tener hasta 5 frases y cierra con una frase célebre (con autor) relacionada con tus resultados.",
     "En las tarjetas de resumen: \"Última lectura\" ahora muestra fecha y hora; \"Promedio del período\" y \"Peso\" indican a qué rango de fechas corresponde el promedio; \"Distribución de categorías\" ahora es del mes actual (no de todo tu historial) y lo indica.",
