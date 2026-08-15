@@ -885,6 +885,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.7", changes: [
+    "La nota diaria de IA ahora es más precisa con los datos: siempre menciona el rango de fechas exacto del período que está resumiendo (en vez de decir \"los últimos días\" sin más) y siempre incluye la PAM (presión arterial media), no solo la sistólica/diastólica.",
+  ] },
   { version: "33.6", changes: [
     "Se corrigió que, en algunos casos, la nota diaria de IA se quedara mostrando una versión vieja: si abrías la app (generación automática) y usabas \"Actualizar con IA\" casi al mismo tiempo, a veces la respuesta más lenta terminaba pisando a la más reciente. Ahora siempre prevalece la última generada de verdad, sea la automática del día o la última forzada.",
   ] },

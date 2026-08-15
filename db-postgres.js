@@ -1101,15 +1101,26 @@ const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5
 // frase; sigue siendo un modelo económico, pensado para hasta 3 llamadas al
 // día por paciente (1 automática + hasta 2 forzadas).
 const AI_DAILY_NOTE_MAX_TOKENS = 220;
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí), escribe UNA sola nota corta para el paciente: máximo 5 frases, sin saludo ni despedida. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar, a menos que la gravedad de la situación sí lo amerite. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+// v33.7: el prompt ahora exige que la nota sea "data-driven" — que cite el
+// rango de fechas exacto del período (no "los últimos días" sin más) y que
+// mencione la PAM (presión arterial media), no solo sistólica/diastólica —
+// para eso, buildDailyNoteSummary_ ahora manda esos datos explícitos en el
+// resumen, en vez de dejar que el modelo tenga que inferirlos.
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí, ni fechas ni cifras), escribe UNA sola nota corta para el paciente: máximo 5 frases, sin saludo ni despedida. Sé muy específico y basado en datos (data-driven): SIEMPRE cita el rango de fechas exacto del período analizado tal como viene en el resumen (nunca digas 'los últimos días' o 'este período' sin dar las fechas concretas), y SIEMPRE incluye la PAM (presión arterial media) además de la sistólica/diastólica, ya que es un indicador clave para el paciente. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente con su fecha exacta; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar, a menos que la gravedad de la situación sí lo amerite. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+function dailyNotePam_(sys, dia) {
+  if (sys == null || dia == null) return null;
+  return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
+}
 async function buildDailyNoteSummary_(patientId, today) {
   const readings = await listReadings(patientId); // orden ascendente
   const cutoff = addDaysToDateStr_(today, -6);
   const recent = readings.filter(r => r.date >= cutoff);
   if (!recent.length) return null; // sin lecturas recientes: no hay nada que resumir
+  const fmtFecha = d => d.split("-").reverse().join("/");
   const avg = arr => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null);
   const sysVals = recent.map(r => r.sys).filter(v => v != null);
   const diaVals = recent.map(r => r.dia).filter(v => v != null);
+  const pamVals = recent.map(r => dailyNotePam_(r.sys, r.dia)).filter(v => v != null);
   const last = readings[readings.length - 1];
   const highest = recent.slice().sort((a, b) => (b.sys - a.sys) || (b.dia - a.dia))[0];
   const adherence = await listMedicationAdherence(patientId); // orden ascendente
@@ -1118,11 +1129,11 @@ async function buildDailyNoteSummary_(patientId, today) {
     ? Math.round(recentAdherence.reduce((s, d) => s + d.pct, 0) / recentAdherence.length)
     : null;
   const lines = [
-    `Lecturas de presión arterial últimos 7 días: ${recent.length}.`,
-    sysVals.length ? `Promedio: ${avg(sysVals)}/${avg(diaVals)} mmHg.` : "",
-    last ? `Última: ${last.sys}/${last.dia} mmHg (${classifyReading(last.sys, last.dia).label}) el ${last.date}.` : "",
-    highest ? `Más alta del periodo: ${highest.sys}/${highest.dia} mmHg (${classifyReading(highest.sys, highest.dia).label}) el ${highest.date}.` : "",
-    avgAdherence != null ? `Apego a medicamento (promedio 7 días): ${avgAdherence}%.` : "",
+    `Período analizado: del ${fmtFecha(cutoff)} al ${fmtFecha(today)} (${recent.length} lectura(s) de presión arterial en ese rango).`,
+    sysVals.length ? `Promedio del período: ${avg(sysVals)}/${avg(diaVals)} mmHg, PAM promedio ${avg(pamVals)} mmHg.` : "",
+    last ? `Última lectura: ${fmtFecha(last.date)} — ${last.sys}/${last.dia} mmHg, PAM ${dailyNotePam_(last.sys, last.dia)} mmHg (${classifyReading(last.sys, last.dia).label}).` : "",
+    highest ? `Lectura más alta del período: ${fmtFecha(highest.date)} — ${highest.sys}/${highest.dia} mmHg, PAM ${dailyNotePam_(highest.sys, highest.dia)} mmHg (${classifyReading(highest.sys, highest.dia).label}).` : "",
+    (recentAdherence.length && avgAdherence != null) ? `Apego a medicamento del ${fmtFecha(recentAdherence[0].fecha)} al ${fmtFecha(recentAdherence[recentAdherence.length - 1].fecha)}: ${avgAdherence}% en promedio.` : "",
   ].filter(Boolean);
   return lines.join(" ");
 }
