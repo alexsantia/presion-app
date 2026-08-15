@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=34.0"></script>
+<script src="/shared/common.js?v=34.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -95,6 +95,9 @@
   .report-empty { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
   .report-top-list { margin: 8px 0 0; padding-left: 20px; font-size: 14px; }
   .report-top-list li { margin-bottom: 4px; }
+  .report-context { font-size: 13px; margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #F7F5FB; line-height: 1.45; }
+  .report-context.tone-watch { background: #FBF3E6; }
+  .report-context.tone-alert { background: #FBEAE8; }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--accent-hover); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; margin-top: 10px; }
   .legend-hint-emoji { display: inline-block; animation: legendPulse 1.6s ease-in-out infinite; }
@@ -1268,7 +1271,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.0</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.1</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1757,7 +1760,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("34.0");
+  showAboutOverlay_("34.1");
 });
 
 function openModal(id) {
@@ -4738,9 +4741,88 @@ function reportPointsForMetric_(metricKey, range) {
   const meta = REPORT_METRICS_[metricKey];
   const filtered = filterByRange_(meta.data(), range, meta.dateField);
   return filtered
-    .map(r => ({ date: r[meta.dateField], time: meta.timeField ? r[meta.timeField] : null, value: meta.valueFn(r) }))
+    .map(r => ({ date: r[meta.dateField], time: meta.timeField ? r[meta.timeField] : null, value: meta.valueFn(r), raw: r }))
     .filter(p => p.value != null && p.date)
     .sort((a, b) => (a.date + (a.time || "00:00")).localeCompare(b.date + (b.time || "00:00")));
+}
+// ---- Contexto clínico: clasifica un valor contra su rango de referencia
+// saludable (cuando aplica), para que la respuesta no sea solo un número
+// sino una observación concreta. tone: "normal" | "watch" | "alert".
+function reportBmiCategory_(bmi) {
+  if (bmi < 18.5) return "bajo peso";
+  if (bmi < 25) return "peso saludable";
+  if (bmi < 30) return "sobrepeso";
+  return "obesidad";
+}
+function reportClassifyValue_(metricKey, value, raw) {
+  if ((metricKey === "sistolica" || metricKey === "diastolica") && raw && raw.sys != null && raw.dia != null) {
+    const cat = classify(raw.sys, raw.dia);
+    const tone = cat.key === "normal" ? "normal" : (cat.key === "elevada" || cat.key === "etapa1" ? "watch" : "alert");
+    return { label: `${cat.label} (con la lectura completa ${raw.sys}/${raw.dia} mmHg)`, tone };
+  }
+  if (metricKey === "pam") {
+    if (value < 70) return { label: "por debajo del rango normal (70–105 mmHg), lo que podría indicar mala perfusión — coméntalo con tu médico si se repite", tone: "alert" };
+    if (value > 105) return { label: "por arriba del rango normal (70–105 mmHg)", tone: "watch" };
+    return { label: "dentro del rango normal (70–105 mmHg)", tone: "normal" };
+  }
+  if (metricKey === "hr") {
+    if (value < 60) return { label: "por debajo de lo normal en reposo (60–100 lpm)", tone: "watch" };
+    if (value > 100) return { label: "por arriba de lo normal en reposo (60–100 lpm)", tone: "watch" };
+    return { label: "dentro del rango normal en reposo (60–100 lpm)", tone: "normal" };
+  }
+  if (metricKey === "sleepDuration") {
+    if (value < 7) return { label: "por debajo de lo recomendado (7–9h)", tone: "watch" };
+    if (value > 9) return { label: "por arriba de lo recomendado (7–9h)", tone: "watch" };
+    return { label: "dentro de lo recomendado (7–9h)", tone: "normal" };
+  }
+  if (metricKey === "medAdherence") {
+    if (value >= 100) return { label: "apego perfecto a tu medicamento", tone: "normal" };
+    if (value >= 80) return { label: "buen apego, aunque por debajo del 100% ideal", tone: "watch" };
+    return { label: "por debajo de la meta recomendada de apego (80%)", tone: "alert" };
+  }
+  if (metricKey === "weight" && currentAccount && currentAccount.height) {
+    const heightM = currentAccount.height / 100;
+    const bmi = Math.round((value / (heightM * heightM)) * 10) / 10;
+    const cat = reportBmiCategory_(bmi);
+    return { label: `IMC ${bmi} (${cat}), calculado con tu estatura de ${currentAccount.height} cm`, tone: cat === "peso saludable" ? "normal" : "watch" };
+  }
+  return null;
+}
+// Línea de contexto para un valor puntual (max/min/récord): clasificación
+// clínica cuando aplica + comparación contra el promedio del periodo.
+function reportContextLine_(metricKey, aggKey, point, points, unit) {
+  const parts = [];
+  const cls = reportClassifyValue_(metricKey, point.value, point.raw);
+  if (cls) parts.push(cls.label.charAt(0).toUpperCase() + cls.label.slice(1) + ".");
+  if (points.length > 1) {
+    const avg = Math.round((points.reduce((s, p) => s + p.value, 0) / points.length) * 10) / 10;
+    const diff = Math.round((point.value - avg) * 10) / 10;
+    if (diff !== 0) {
+      const cmp = diff > 0 ? `${Math.abs(diff)} ${unit} por arriba` : `${Math.abs(diff)} ${unit} por debajo`;
+      parts.push(`Está ${cmp} de tu promedio del periodo (${avg} ${unit}, con ${points.length} registros).`);
+    } else {
+      parts.push(`Coincide con tu promedio del periodo (${avg} ${unit}, con ${points.length} registros).`);
+    }
+  }
+  return { text: parts.join(" "), tone: cls ? cls.tone : "normal" };
+}
+// Línea de contexto para el promedio del periodo: clasificación del promedio
+// (cuando aplica sin necesitar una lectura pareada) + rango mín-máx visto.
+function reportAvgContextLine_(metricKey, avgVal, points, unit) {
+  const parts = [];
+  const cls = reportClassifyValue_(metricKey, avgVal, null);
+  if (cls) parts.push(cls.label.charAt(0).toUpperCase() + cls.label.slice(1) + ".");
+  if (points.length > 1) {
+    const minVal = points.reduce((m, p) => Math.min(m, p.value), points[0].value);
+    const maxVal = points.reduce((m, p) => Math.max(m, p.value), points[0].value);
+    parts.push(`Tus registros del periodo van de ${minVal} a ${maxVal} ${unit}.`);
+  }
+  return { text: parts.join(" "), tone: cls ? cls.tone : "normal" };
+}
+function reportContextHTML_(ctx) {
+  if (!ctx || !ctx.text) return "";
+  const toneClass = ctx.tone === "alert" ? " tone-alert" : (ctx.tone === "watch" ? " tone-watch" : "");
+  return `<div class="report-context${toneClass}">${ctx.text}</div>`;
 }
 function buildGenericReport_(metricKey, aggKey, periodKey) {
   const meta = REPORT_METRICS_[metricKey];
@@ -4761,18 +4843,25 @@ function buildGenericReport_(metricKey, aggKey, periodKey) {
   if (aggKey === "avg") {
     const avg = Math.round((points.reduce((s, p) => s + p.value, 0) / points.length) * 10) / 10;
     answerHTML = `<div class="report-answer-value">${fmtVal(avg)}</div><div class="report-answer-sub">promedio de ${points.length} registro${points.length === 1 ? "" : "s"}</div>`;
+    answerHTML += reportContextHTML_(reportAvgContextLine_(metricKey, avg, points, unit));
   } else if (aggKey === "max" || aggKey === "recordMax") {
     const top = points.reduce((best, p) => (!best || p.value > best.value) ? p : best, null);
     highlightSet.add(points.indexOf(top));
     answerHTML = `<div class="report-answer-value">${fmtVal(top.value)}</div><div class="report-answer-sub">el ${reportFmtFecha_(top.date)}${top.time ? " " + top.time : ""}</div>`;
+    answerHTML += reportContextHTML_(reportContextLine_(metricKey, aggKey, top, points, unit));
   } else if (aggKey === "min" || aggKey === "recordMin") {
     const top = points.reduce((best, p) => (!best || p.value < best.value) ? p : best, null);
     highlightSet.add(points.indexOf(top));
     answerHTML = `<div class="report-answer-value">${fmtVal(top.value)}</div><div class="report-answer-sub">el ${reportFmtFecha_(top.date)}${top.time ? " " + top.time : ""}</div>`;
+    answerHTML += reportContextHTML_(reportContextLine_(metricKey, aggKey, top, points, unit));
   } else if (aggKey === "top3max" || aggKey === "top3min") {
     const sorted = points.slice().sort((a, b) => aggKey === "top3max" ? b.value - a.value : a.value - b.value).slice(0, 3);
     sorted.forEach(p => highlightSet.add(points.indexOf(p)));
     answerHTML = `<ol class="report-top-list">${sorted.map(p => `<li>${fmtVal(p.value)} — ${reportFmtFecha_(p.date)}${p.time ? " " + p.time : ""}</li>`).join("")}</ol>`;
+    const spread = Math.round((sorted[0].value - sorted[sorted.length - 1].value) * 10) / 10;
+    if (sorted.length > 1 && spread !== 0) {
+      answerHTML += reportContextHTML_({ text: `Diferencia de ${Math.abs(spread)} ${unit} entre el primero y el último de este top ${sorted.length}.`, tone: "normal" });
+    }
   }
   return { question, empty: false, answerHTML, chartLabels, chartValues, highlightSet, color: meta.color, unit, label: meta.label };
 }
