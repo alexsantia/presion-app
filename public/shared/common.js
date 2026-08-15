@@ -885,6 +885,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.10", changes: [
+    "Se corrigió un error que hacía que la nota diaria de IA nunca se mostrara al abrir o refrescar la app (se quedaba siempre en el aviso de reglas fijas), y que el contador de \"Actualizar con IA\" tampoco apareciera hasta forzarla a mano. También se subió el límite de la nota para que no se corte a media frase cuando hay varios datos que comentar.",
+  ] },
   { version: "33.9", changes: [
     "La nota diaria de IA ahora evalúa tus mediciones contra rangos saludables de referencia, no solo si se mantuvieron estables: para el peso ahora calcula tu IMC con tu estatura (Perfil) y da un insight de si conviene bajar, subir o mantener, y aplica el mismo criterio a presión arterial, sueño y demás mediciones.",
   ] },

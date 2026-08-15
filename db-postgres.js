@@ -1100,7 +1100,12 @@ const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5
 // así que el tope de tokens sube (90 -> 220) para que no se corte a media
 // frase; sigue siendo un modelo económico, pensado para hasta 3 llamadas al
 // día por paciente (1 automática + hasta 2 forzadas).
-const AI_DAILY_NOTE_MAX_TOKENS = 220;
+// v33.10: 220 se quedó corto — desde v33.8/v33.9 el resumen de entrada trae
+// bastantes más señales (desglose diario, peso/IMC, sueño, malestares,
+// metas), y cuando de verdad hay varios insights que vale la pena mencionar
+// más la frase célebre del cierre, la respuesta se cortaba a media frase.
+// Sube a 320 para dar margen sin perder el objetivo de mantenerla barata.
+const AI_DAILY_NOTE_MAX_TOKENS = 320;
 // v33.9: la nota ahora debe EVALUAR cada medición contra su rango saludable
 // de referencia, no solo describir si "se mantiene estable" — estabilidad no
 // es lo mismo que estar en un rango sano. Para peso, eso significa mandarle

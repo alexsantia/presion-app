@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.9"></script>
+<script src="/shared/common.js?v=33.10"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1194,7 +1194,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.9</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.10</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1507,6 +1507,19 @@ async function apiGet(url) {
   if (!json.ok) throw new Error(json.error || "error al leer");
   return json.data;
 }
+// v33.10: algunas rutas (como /api/daily-note) no envuelven la respuesta en
+// { data: ... } — regresan el objeto plano tal cual. apiGet() asumía SIEMPRE
+// esa envoltura y hacía "return json.data", que para estas rutas es
+// undefined; por eso la nota diaria nunca se pintaba en una carga normal
+// (solo "Actualizar con IA" funcionaba, porque usa apiPost, que sí regresa
+// el json completo). apiGetRaw() es igual a apiGet() pero regresa el json
+// completo, para las rutas que no usan esa envoltura.
+async function apiGetRaw(url) {
+  const res = await fetch(url);
+  const json = await res.json();
+  if (!json.ok) throw new Error(json.error || "error al leer");
+  return json;
+}
 async function apiPost(url, body) {
   const res = await fetch(url, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(body) });
   const json = await res.json();
@@ -1670,7 +1683,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.9");
+  showAboutOverlay_("33.10");
 });
 
 function openModal(id) {
@@ -3009,7 +3022,7 @@ let dailyNoteRequestSeq_ = 0;
 async function loadDailyNote_() {
   const seq = ++dailyNoteRequestSeq_;
   try {
-    const result = await apiGet("/api/daily-note");
+    const result = await apiGetRaw("/api/daily-note");
     if (seq !== dailyNoteRequestSeq_) return; // ya hay una llamada más nueva en curso o resuelta: no pisarla
     if (result && result.note) {
       document.getElementById("alertsContent").innerHTML = `<div class="alert-box note"><strong>Nota del día:</strong> ${escapeHtml_(result.note)}</div>`;
