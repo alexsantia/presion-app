@@ -301,6 +301,16 @@ function periodRangeLabel_(granularity, range) {
   if (granularity === "year") return range.start.split("-")[0];
   return "";
 }
+// v33.5: etiqueta del rango de fechas cubierto por un arreglo de lecturas ya
+// ordenado ascendente por fecha (data[0] = más antigua) — usada en las
+// tarjetas de resumen para aclarar A QUÉ período corresponde cada promedio,
+// ya que ese arreglo es todo el historial cargado, no un rango fijo.
+function readingsPeriodLabel_(data) {
+  if (!data || !data.length) return "";
+  const fmt = s => s.split("-").reverse().join("/");
+  const first = data[0].date, last = data[data.length - 1].date;
+  return first === last ? fmt(first) : `${fmt(first)} – ${fmt(last)}`;
+}
 // v30.7 (reescrita en v33.1): mismo criterio de siempre, recibe el nombre
 // del campo de fecha a usar — las lecturas normales usan "date" y el
 // historial de laboratorio (lab_history) usa "fecha" — pero ahora filtra
@@ -875,6 +885,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.5", changes: [
+    "La nota diaria de IA en Presión Arterial ahora puede tener hasta 5 frases y cierra con una frase célebre (con autor) relacionada con tus resultados.",
+    "En las tarjetas de resumen: \"Última lectura\" ahora muestra fecha y hora; \"Promedio del período\" y \"Peso\" indican a qué rango de fechas corresponde el promedio; \"Distribución de categorías\" ahora es del mes actual (no de todo tu historial) y lo indica.",
+  ] },
   { version: "33.4", changes: [
     "En las gráficas con \"Comparar\" de Estadísticas ahora puedes elegir a mano los DOS periodos a comparar (\"Ver\" y \"Con\"), no solo el que se compara contra el actual; por default \"Ver\" sigue siendo el periodo actual.",
     "En Presión Arterial, junto a Alertas y notas ahora hay un botón \"Actualizar con IA\" para forzar una nota nueva cuando quieras, con un tope de 2 veces cada 24 horas (se muestra cuántas te quedan); la nota automática al abrir la app la primera vez del día sigue igual, sin límite.",

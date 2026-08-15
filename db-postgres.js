@@ -1096,8 +1096,12 @@ async function callAnthropicInterpretation_(payload, exportUrl, period, audience
 // de los últimos 7 días, nunca el JSON de cada lectura) más un modelo más
 // económico, para cuidar el gasto en cada llamada que sí se hace.
 const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5-20251001";
-const AI_DAILY_NOTE_MAX_TOKENS = 90;
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí), escribe UNA sola nota muy corta para el paciente: máximo 2 frases, sin saludo ni despedida. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico. No uses markdown ni emojis. Responde en español.";
+// v33.5: la nota ahora puede llegar a 5 frases y cierra con una frase célebre,
+// así que el tope de tokens sube (90 -> 220) para que no se corte a media
+// frase; sigue siendo un modelo económico, pensado para hasta 3 llamadas al
+// día por paciente (1 automática + hasta 2 forzadas).
+const AI_DAILY_NOTE_MAX_TOKENS = 220;
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí), escribe UNA sola nota corta para el paciente: máximo 5 frases, sin saludo ni despedida. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar, a menos que la gravedad de la situación sí lo amerite. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 async function buildDailyNoteSummary_(patientId, today) {
   const readings = await listReadings(patientId); // orden ascendente
   const cutoff = addDaysToDateStr_(today, -6);
