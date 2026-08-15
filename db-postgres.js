@@ -1101,12 +1101,14 @@ const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5
 // frase; sigue siendo un modelo económico, pensado para hasta 3 llamadas al
 // día por paciente (1 automática + hasta 2 forzadas).
 const AI_DAILY_NOTE_MAX_TOKENS = 220;
-// v33.7: el prompt ahora exige que la nota sea "data-driven" — que cite el
-// rango de fechas exacto del período (no "los últimos días" sin más) y que
-// mencione la PAM (presión arterial media), no solo sistólica/diastólica —
-// para eso, buildDailyNoteSummary_ ahora manda esos datos explícitos en el
-// resumen, en vez de dejar que el modelo tenga que inferirlos.
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí, ni fechas ni cifras), escribe UNA sola nota corta para el paciente: máximo 5 frases, sin saludo ni despedida. Sé muy específico y basado en datos (data-driven): SIEMPRE cita el rango de fechas exacto del período analizado tal como viene en el resumen (nunca digas 'los últimos días' o 'este período' sin dar las fechas concretas), y SIEMPRE incluye la PAM (presión arterial media) además de la sistólica/diastólica, ya que es un indicador clave para el paciente. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente con su fecha exacta; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar, a menos que la gravedad de la situación sí lo amerite. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+// v33.8: la nota ahora debe ser CONCISA e INTELIGENTE sobre qué periodo vale
+// la pena comentar (¿basta con hoy vs ayer? ¿los últimos 2-3 días? ¿hace
+// falta hablar de la semana completa?) y debe cruzar TODAS las secciones
+// (sueño, peso, apego, malestares, metas), no solo presión arterial — para
+// eso, buildDailyNoteSummary_ le manda un desglose día por día (no solo
+// promedios) más el resto de las secciones, y el prompt le pide elegir el o
+// los insights que de verdad valgan la pena, no rellenar por rellenar.
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. Revisa TODAS las secciones que te den (presión arterial, sueño, peso, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles o interesantes para el paciente hoy — una mejora, un cambio a vigilar, una racha positiva, un malestar reciente, una meta cerca de lograrse — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si todo está dentro de lo normal y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo sí amerita atención por su gravedad, sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 function dailyNotePam_(sys, dia) {
   if (sys == null || dia == null) return null;
   return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
@@ -1114,25 +1116,94 @@ function dailyNotePam_(sys, dia) {
 async function buildDailyNoteSummary_(patientId, today) {
   const readings = await listReadings(patientId); // orden ascendente
   const cutoff = addDaysToDateStr_(today, -6);
+  const yesterday = addDaysToDateStr_(today, -1);
   const recent = readings.filter(r => r.date >= cutoff);
   if (!recent.length) return null; // sin lecturas recientes: no hay nada que resumir
   const fmtFecha = d => d.split("-").reverse().join("/");
   const avg = arr => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null);
+
+  // ---- Presión arterial: desglose día por día (no solo el promedio de la
+  // semana), para que la IA pueda decidir ella misma si lo que importa es
+  // hoy vs ayer, los últimos días, o un patrón de toda la semana. ----
+  const byDate = {};
+  recent.forEach(r => { (byDate[r.date] = byDate[r.date] || []).push(r); });
+  const dailyBpLines = Object.keys(byDate).sort().map(d => {
+    const rows = byDate[d];
+    const s = Math.round(rows.reduce((a, b) => a + b.sys, 0) / rows.length);
+    const di = Math.round(rows.reduce((a, b) => a + b.dia, 0) / rows.length);
+    return `${fmtFecha(d)}: ${s}/${di} (PAM ${dailyNotePam_(s, di)})`;
+  });
   const sysVals = recent.map(r => r.sys).filter(v => v != null);
   const diaVals = recent.map(r => r.dia).filter(v => v != null);
   const pamVals = recent.map(r => dailyNotePam_(r.sys, r.dia)).filter(v => v != null);
   const last = readings[readings.length - 1];
   const highest = recent.slice().sort((a, b) => (b.sys - a.sys) || (b.dia - a.dia))[0];
+  let dayOverDayLine = "";
+  if (last.date === today && byDate[yesterday] && byDate[yesterday].length) {
+    const y = byDate[yesterday];
+    const yS = Math.round(y.reduce((a, b) => a + b.sys, 0) / y.length);
+    const yD = Math.round(y.reduce((a, b) => a + b.dia, 0) / y.length);
+    const dS = last.sys - yS, dD = last.dia - yD;
+    dayOverDayLine = `Cambio de hoy (${fmtFecha(today)}) contra ayer: sistólica ${dS >= 0 ? "+" : ""}${dS}, diastólica ${dD >= 0 ? "+" : ""}${dD} mmHg.`;
+  }
+
+  // ---- Peso: última vs. hace ~7 días, si hay suficientes datos ----
+  const weightReadings = readings.filter(r => r.weight != null);
+  let weightLine = "";
+  if (weightReadings.length) {
+    const lastW = weightReadings[weightReadings.length - 1];
+    const priorW = weightReadings.filter(r => r.date <= cutoff).slice(-1)[0];
+    weightLine = priorW && priorW.date !== lastW.date
+      ? `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (${lastW.weight - priorW.weight >= 0 ? "+" : ""}${Math.round((lastW.weight - priorW.weight) * 10) / 10} kg desde el ${fmtFecha(priorW.date)}, ${priorW.weight} kg).`
+      : `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (sin dato de referencia de hace una semana).`;
+  }
+
+  // ---- Sueño: última noche vs. promedio de los últimos 7 días ----
+  const sleep = await listSleep(patientId); // orden descendente, más reciente primero
+  let sleepLine = "";
+  if (sleep.length) {
+    const lastSleep = sleep[0];
+    const recentSleep = sleep.filter(s => s.fecha >= cutoff && s.duracion_min != null);
+    const avgDurH = recentSleep.length ? Math.round((recentSleep.reduce((a, b) => a + b.duracion_min, 0) / recentSleep.length / 60) * 10) / 10 : null;
+    const lastDurH = lastSleep.duracion_min != null ? Math.round((lastSleep.duracion_min / 60) * 10) / 10 : null;
+    sleepLine = `Sueño: noche del ${fmtFecha(lastSleep.fecha)}` +
+      (lastDurH != null ? ` — ${lastDurH}h` : "") +
+      (lastSleep.calidad != null ? `, calidad ${lastSleep.calidad}/10` : "") +
+      (avgDurH != null ? `; promedio de los últimos 7 días: ${avgDurH}h.` : ".");
+  }
+
+  // ---- Malestares registrados en los últimos 3 días ----
+  const symptoms = await listSymptoms(patientId); // orden descendente por fecha
+  const cutoff3 = addDaysToDateStr_(today, -2);
+  const recentSymptoms = symptoms.filter(s => s.fecha >= cutoff3);
+  const symptomsLine = recentSymptoms.length
+    ? `Malestares de los últimos 3 días: ${recentSymptoms.slice(0, 5).map(s => `${s.sintoma}${s.severidad != null ? ` (severidad ${s.severidad}/10)` : ""} el ${fmtFecha(s.fecha)}`).join("; ")}.`
+    : "";
+
+  // ---- Metas activas: avance ----
+  const goals = await listGoals(patientId);
+  const activeGoalIndicadores = goals.filter(g => !g.vencida).flatMap(g => g.indicadores);
+  const goalsLine = activeGoalIndicadores.length
+    ? `Metas activas: ${activeGoalIndicadores.slice(0, 4).map(i => `${i.label} ${i.progreso_pct != null ? i.progreso_pct + "% de avance" : "sin datos suficientes para calcular avance"}${i.lograda ? " (¡lograda!)" : ""}`).join("; ")}.`
+    : "";
+
+  // ---- Apego a medicamento ----
   const adherence = await listMedicationAdherence(patientId); // orden ascendente
   const recentAdherence = adherence.slice(-7);
   const avgAdherence = recentAdherence.length
     ? Math.round(recentAdherence.reduce((s, d) => s + d.pct, 0) / recentAdherence.length)
     : null;
+
   const lines = [
-    `Período analizado: del ${fmtFecha(cutoff)} al ${fmtFecha(today)} (${recent.length} lectura(s) de presión arterial en ese rango).`,
-    sysVals.length ? `Promedio del período: ${avg(sysVals)}/${avg(diaVals)} mmHg, PAM promedio ${avg(pamVals)} mmHg.` : "",
-    last ? `Última lectura: ${fmtFecha(last.date)} — ${last.sys}/${last.dia} mmHg, PAM ${dailyNotePam_(last.sys, last.dia)} mmHg (${classifyReading(last.sys, last.dia).label}).` : "",
-    highest ? `Lectura más alta del período: ${fmtFecha(highest.date)} — ${highest.sys}/${highest.dia} mmHg, PAM ${dailyNotePam_(highest.sys, highest.dia)} mmHg (${classifyReading(highest.sys, highest.dia).label}).` : "",
+    `Rango de datos disponible: del ${fmtFecha(cutoff)} al ${fmtFecha(today)}.`,
+    `Presión arterial por día: ${dailyBpLines.join("; ")}.`,
+    dayOverDayLine,
+    sysVals.length ? `Promedio del rango: ${avg(sysVals)}/${avg(diaVals)} mmHg, PAM promedio ${avg(pamVals)} mmHg.` : "",
+    highest ? `Lectura más alta del rango: ${fmtFecha(highest.date)} — ${highest.sys}/${highest.dia} mmHg, PAM ${dailyNotePam_(highest.sys, highest.dia)} mmHg (${classifyReading(highest.sys, highest.dia).label}).` : "",
+    weightLine,
+    sleepLine,
+    symptomsLine,
+    goalsLine,
     (recentAdherence.length && avgAdherence != null) ? `Apego a medicamento del ${fmtFecha(recentAdherence[0].fecha)} al ${fmtFecha(recentAdherence[recentAdherence.length - 1].fecha)}: ${avgAdherence}% en promedio.` : "",
   ].filter(Boolean);
   return lines.join(" ");
