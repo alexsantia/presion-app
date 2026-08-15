@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.10"></script>
+<script src="/shared/common.js?v=34.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -85,6 +85,16 @@
   .ai-controls label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   textarea#aiOutput { width: 100%; height: 220px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; }
   .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  /* v34.0: Generador de reportes (Estadísticas) */
+  .report-builder-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .report-builder-row select { padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .report-quick-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .report-question { font-size: 14px; font-weight: 600; background: #F3EFFA; border-radius: 10px; padding: 10px 14px; }
+  .report-answer-value { font-size: 22px; font-weight: 700; margin-top: 8px; }
+  .report-answer-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+  .report-empty { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+  .report-top-list { margin: 8px 0 0; padding-left: 20px; font-size: 14px; }
+  .report-top-list li { margin-bottom: 4px; }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
   .legend-hint { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 650; color: var(--accent-hover); background: var(--accent-soft); padding: 6px 12px; border-radius: 999px; margin-top: 10px; }
   .legend-hint-emoji { display: inline-block; animation: legendPulse 1.6s ease-in-out infinite; }
@@ -567,6 +577,70 @@
       <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin:8px 0 0;">Para comparar un periodo contra otro (día vs día, semana vs semana, mes vs mes, año vs año), activa "Comparar" directamente en la gráfica que te interese, junto a su propio filtro.</p>
+  </div>
+
+  <!-- v34.0: Generador de reportes — arma una "pregunta" combinando
+       indicador + tipo de análisis + periodo (o elige un insight especial ya
+       armado) y genera un mini-reporte con su gráfica, cuando los datos lo
+       permiten. Todo se calcula en el navegador con los datos que ya están
+       cargados (currentData, currentLabHistory, currentSleep, etc.) — no
+       llama a ninguna IA, así que es instantáneo y no tiene costo. -->
+  <div class="section" id="reportBuilderSection">
+    <div class="toolbar">
+      <h2 style="flex:1">🔎 Generador de reportes</h2>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Arma tu pregunta eligiendo qué quieres saber, y genera un mini-reporte con su gráfica (cuando haya datos suficientes). Por ejemplo: "¿Cuál fue mi presión diastólica más alta en los últimos 30 días?" o "¿Cuál fue mi frecuencia cardiaca promedio de esta semana?".</p>
+    <div class="report-builder-row">
+      <select id="reportMetric" aria-label="Indicador">
+        <optgroup label="Presión arterial">
+          <option value="sistolica">Presión sistólica</option>
+          <option value="diastolica">Presión diastólica</option>
+          <option value="pam">PAM</option>
+          <option value="hr">Frecuencia cardiaca</option>
+        </optgroup>
+        <optgroup label="Cuerpo">
+          <option value="weight">Peso</option>
+          <option value="waist">Cintura</option>
+          <option value="cholesterol">Colesterol</option>
+          <option value="triglycerides">Triglicéridos</option>
+        </optgroup>
+        <optgroup label="Sueño">
+          <option value="sleepDuration">Duración de sueño</option>
+          <option value="sleepQuality">Calidad de sueño</option>
+        </optgroup>
+        <optgroup label="Otros">
+          <option value="medAdherence">Apego a medicamento</option>
+          <option value="exerciseCalories">Calorías quemadas en ejercicio</option>
+        </optgroup>
+      </select>
+      <select id="reportAgg" aria-label="Qué quieres saber">
+        <option value="avg">Promedio</option>
+        <option value="max">Valor más alto</option>
+        <option value="min">Valor más bajo</option>
+        <option value="top3max">Top 3 más altos</option>
+        <option value="top3min">Top 3 más bajos</option>
+        <option value="recordMax">Récord histórico (más alto)</option>
+        <option value="recordMin">Récord histórico (más bajo)</option>
+      </select>
+      <select id="reportPeriod" aria-label="Periodo">
+        <option value="last7">Últimos 7 días</option>
+        <option value="last30" selected>Últimos 30 días</option>
+        <option value="last90">Últimos 90 días</option>
+        <option value="thisWeek">Esta semana</option>
+        <option value="thisMonth">Este mes</option>
+        <option value="thisYear">Este año</option>
+        <option value="all">Todo el historial</option>
+      </select>
+      <button type="button" class="btn-primary" id="reportGenerateBtn">Generar reporte</button>
+    </div>
+    <div class="report-quick-row" style="margin-top:10px;">
+      <span style="font-size:12px; color:var(--text-muted); margin-right:2px;">Insights especiales:</span>
+      <button type="button" class="btn-mini report-quick-btn" data-report-quick="worstHabitWeek">📉 Semana con más malos hábitos</button>
+      <button type="button" class="btn-mini report-quick-btn" data-report-quick="favoriteWellness">🧘 Actividad de wellness favorita</button>
+      <button type="button" class="btn-mini report-quick-btn" data-report-quick="topSymptom">🤒 Malestar más frecuente</button>
+      <button type="button" class="btn-mini report-quick-btn" data-report-quick="bestAdherenceStreak">💊 Mejor racha de apego a medicamento</button>
+    </div>
+    <div id="reportOutput" style="margin-top:14px;"></div>
   </div>
 
   <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
@@ -1194,7 +1268,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.10</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.0</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1683,7 +1757,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.10");
+  showAboutOverlay_("34.0");
 });
 
 function openModal(id) {
@@ -4606,6 +4680,229 @@ document.getElementById("pushTestBtn").addEventListener("click", async () => {
   } catch (err) {
     out.textContent = "Error al pedir la prueba: " + err.message;
   }
+});
+
+// ============================================================
+// v34.0: Generador de reportes (Estadísticas) — motor genérico
+// (indicador + tipo de análisis + periodo) más un puñado de "insights
+// especiales" ya armados, para preguntas que no caben en el patrón genérico
+// (semana con más malos hábitos, actividad de wellness favorita, etc.).
+// Todo corre en el navegador sobre los datos ya cargados (currentData,
+// currentLabHistory, currentSleep, currentMedAdherence, currentHabits,
+// currentWellness, currentSymptoms) — no llama a ninguna IA, así que es
+// instantáneo, gratis, y funciona igual sin conexión a Anthropic.
+// ============================================================
+const REPORT_METRICS_ = {
+  sistolica: { label: "Presión sistólica", unit: "mmHg", color: "#2e6fd9", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.sys },
+  diastolica: { label: "Presión diastólica", unit: "mmHg", color: "#5ba7d9", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.dia },
+  pam: { label: "PAM", unit: "mmHg", color: "#6E8FB0", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => pamValue_(r.sys, r.dia) },
+  hr: { label: "Frecuencia cardiaca", unit: "lpm", color: "#8a8a8a", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.hr },
+  weight: { label: "Peso", unit: "kg", color: "#9B8AC4", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.weight },
+  waist: { label: "Cintura", unit: "cm", color: "#D9A15F", dateField: "fecha", data: () => currentLabHistory, valueFn: r => r.waist },
+  cholesterol: { label: "Colesterol", unit: () => (getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL"), color: "#D98E5F", dateField: "fecha", data: () => currentLabHistory, valueFn: r => convertLabValue_(r.cholesterol, "cholesterol") },
+  triglycerides: { label: "Triglicéridos", unit: () => (getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL"), color: "#B0559B", dateField: "fecha", data: () => currentLabHistory, valueFn: r => convertLabValue_(r.triglycerides, "triglycerides") },
+  sleepDuration: { label: "Duración de sueño", unit: "h", color: "#6E8FB0", dateField: "fecha", data: () => currentSleep, valueFn: r => (r.duracion_min != null ? Math.round((r.duracion_min / 60) * 100) / 100 : null) },
+  sleepQuality: { label: "Calidad de sueño", unit: "/10", color: "#9B8AC4", dateField: "fecha", data: () => currentSleep, valueFn: r => r.calidad },
+  medAdherence: { label: "Apego a medicamento", unit: "%", color: "#D9A15F", dateField: "fecha", data: () => currentMedAdherence, valueFn: r => r.pct },
+  exerciseCalories: { label: "Calorías quemadas en ejercicio", unit: "kcal", color: "#2E9E96", dateField: "fecha", data: () => exerciseDailyTotalsForChart_(), valueFn: r => r.calorias },
+};
+const REPORT_AGG_LABELS_ = {
+  avg: "el promedio de", max: "el valor más alto de", min: "el valor más bajo de",
+  top3max: "el top 3 más alto de", top3min: "el top 3 más bajo de",
+  recordMax: "el récord histórico más alto de", recordMin: "el récord histórico más bajo de",
+};
+const REPORT_PERIOD_LABELS_ = {
+  last7: "en los últimos 7 días", last30: "en los últimos 30 días", last90: "en los últimos 90 días",
+  thisWeek: "esta semana", thisMonth: "este mes", thisYear: "este año", all: "en todo tu historial",
+};
+function reportAddDays_(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return localDateStr_(d);
+}
+function reportFmtFecha_(d) { return d.split("-").reverse().join("/"); }
+function reportPeriodRange_(periodKey) {
+  const today = todayStr();
+  if (periodKey === "last7") return { start: reportAddDays_(today, -6), end: today };
+  if (periodKey === "last30") return { start: reportAddDays_(today, -29), end: today };
+  if (periodKey === "last90") return { start: reportAddDays_(today, -89), end: today };
+  if (periodKey === "thisWeek") return calendarRangeForGranularity_("week", null);
+  if (periodKey === "thisMonth") return calendarRangeForGranularity_("month", null);
+  if (periodKey === "thisYear") return calendarRangeForGranularity_("year", null);
+  return null; // "all" -> filterByRange_ con null regresa todo sin filtrar
+}
+// Lista de { date, time, value } ya filtrada por rango, sin valores nulos,
+// ordenada ascendente por fecha(+hora) — la unidad común que consumen tanto
+// el motor genérico como la gráfica.
+function reportPointsForMetric_(metricKey, range) {
+  const meta = REPORT_METRICS_[metricKey];
+  const filtered = filterByRange_(meta.data(), range, meta.dateField);
+  return filtered
+    .map(r => ({ date: r[meta.dateField], time: meta.timeField ? r[meta.timeField] : null, value: meta.valueFn(r) }))
+    .filter(p => p.value != null && p.date)
+    .sort((a, b) => (a.date + (a.time || "00:00")).localeCompare(b.date + (b.time || "00:00")));
+}
+function buildGenericReport_(metricKey, aggKey, periodKey) {
+  const meta = REPORT_METRICS_[metricKey];
+  const isRecord = aggKey === "recordMax" || aggKey === "recordMin";
+  const effectivePeriodKey = isRecord ? "all" : periodKey; // "récord histórico" siempre mira todo el historial
+  const range = reportPeriodRange_(effectivePeriodKey);
+  const points = reportPointsForMetric_(metricKey, range);
+  const unit = typeof meta.unit === "function" ? meta.unit() : meta.unit;
+  const question = `¿Cuál fue ${REPORT_AGG_LABELS_[aggKey]} tu ${meta.label.toLowerCase()} ${REPORT_PERIOD_LABELS_[effectivePeriodKey]}?`;
+  if (!points.length) {
+    return { question, empty: true, emptyMessage: `Todavía no hay datos de ${meta.label.toLowerCase()} ${REPORT_PERIOD_LABELS_[effectivePeriodKey]}.` };
+  }
+  const chartLabels = points.map(p => `${reportFmtFecha_(p.date)}${p.time ? " " + p.time : ""}`);
+  const chartValues = points.map(p => p.value);
+  const highlightSet = new Set();
+  let answerHTML = "";
+  const fmtVal = v => `${v}${unit ? " " + unit : ""}`;
+  if (aggKey === "avg") {
+    const avg = Math.round((points.reduce((s, p) => s + p.value, 0) / points.length) * 10) / 10;
+    answerHTML = `<div class="report-answer-value">${fmtVal(avg)}</div><div class="report-answer-sub">promedio de ${points.length} registro${points.length === 1 ? "" : "s"}</div>`;
+  } else if (aggKey === "max" || aggKey === "recordMax") {
+    const top = points.reduce((best, p) => (!best || p.value > best.value) ? p : best, null);
+    highlightSet.add(points.indexOf(top));
+    answerHTML = `<div class="report-answer-value">${fmtVal(top.value)}</div><div class="report-answer-sub">el ${reportFmtFecha_(top.date)}${top.time ? " " + top.time : ""}</div>`;
+  } else if (aggKey === "min" || aggKey === "recordMin") {
+    const top = points.reduce((best, p) => (!best || p.value < best.value) ? p : best, null);
+    highlightSet.add(points.indexOf(top));
+    answerHTML = `<div class="report-answer-value">${fmtVal(top.value)}</div><div class="report-answer-sub">el ${reportFmtFecha_(top.date)}${top.time ? " " + top.time : ""}</div>`;
+  } else if (aggKey === "top3max" || aggKey === "top3min") {
+    const sorted = points.slice().sort((a, b) => aggKey === "top3max" ? b.value - a.value : a.value - b.value).slice(0, 3);
+    sorted.forEach(p => highlightSet.add(points.indexOf(p)));
+    answerHTML = `<ol class="report-top-list">${sorted.map(p => `<li>${fmtVal(p.value)} — ${reportFmtFecha_(p.date)}${p.time ? " " + p.time : ""}</li>`).join("")}</ol>`;
+  }
+  return { question, empty: false, answerHTML, chartLabels, chartValues, highlightSet, color: meta.color, unit, label: meta.label };
+}
+// ---- Insights especiales: preguntas que no caben en el patrón genérico
+// (indicador + análisis + periodo) porque cruzan/agrupan datos distinto. ----
+function buildWorstHabitWeekReport_() {
+  const data = currentHabits || [];
+  const question = "¿Cuál ha sido la semana con más malos hábitos registrados?";
+  if (!data.length) return { question, empty: true, emptyMessage: "Todavía no has registrado malos hábitos para analizar." };
+  const byWeek = {};
+  data.forEach(h => { (byWeek[mondayOfWeek_(h.fecha)] = byWeek[mondayOfWeek_(h.fecha)] || []).push(h); });
+  const weeks = Object.keys(byWeek).sort();
+  const worstWeek = weeks.reduce((best, w) => (!best || byWeek[w].length > byWeek[best].length) ? w : best, null);
+  const entries = byWeek[worstWeek];
+  const counts = {};
+  entries.forEach(h => { counts[h.tipo] = (counts[h.tipo] || 0) + 1; });
+  const breakdown = Object.entries(counts).map(([tipo, n]) => `${n} × ${habitTypeByKey_(tipo).label}`).join(", ");
+  const sunday = reportAddDays_(worstWeek, 6);
+  const answerHTML = `<div class="report-answer-value">Semana del ${reportFmtFecha_(worstWeek)} al ${reportFmtFecha_(sunday)}</div><div class="report-answer-sub">${entries.length} registro${entries.length === 1 ? "" : "s"}: ${breakdown}</div>`;
+  return {
+    question, empty: false, answerHTML,
+    chartLabels: weeks.map(w => reportFmtFecha_(w)), chartValues: weeks.map(w => byWeek[w].length),
+    highlightSet: new Set([weeks.indexOf(worstWeek)]), color: "#C97064", unit: "registros", label: "Malos hábitos por semana", chartType: "bar",
+  };
+}
+function buildFavoriteWellnessReport_() {
+  const data = currentWellness || [];
+  const question = "¿Cuál es tu actividad de wellness favorita?";
+  if (!data.length) return { question, empty: true, emptyMessage: "Todavía no has registrado actividades de wellness." };
+  const counts = {};
+  data.forEach(w => { counts[w.tipo] = (counts[w.tipo] || 0) + 1; });
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const [topTipo, topCount] = entries[0];
+  const topLabel = (wellnessCatalogEntry_(topTipo) || {}).label || topTipo;
+  const totalMin = data.filter(w => w.tipo === topTipo).reduce((s, w) => s + (w.duracion_min || 0), 0);
+  const answerHTML = `<div class="report-answer-value">${escapeHtml_(topLabel)}</div><div class="report-answer-sub">${topCount} vez${topCount === 1 ? "" : "es"} registrada${totalMin ? `, ${Math.round((totalMin / 60) * 10) / 10}h en total` : ""}</div>`;
+  return {
+    question, empty: false, answerHTML,
+    chartLabels: entries.map(([tipo]) => (wellnessCatalogEntry_(tipo) || {}).label || tipo), chartValues: entries.map(([, n]) => n),
+    highlightSet: new Set([0]), color: "#4F7A6F", unit: "veces", label: "Actividades de wellness", chartType: "bar",
+  };
+}
+function buildTopSymptomReport_() {
+  const data = currentSymptoms || [];
+  const question = "¿Cuál es tu malestar más frecuente?";
+  if (!data.length) return { question, empty: true, emptyMessage: "Todavía no has registrado malestares." };
+  const counts = {};
+  data.forEach(s => { counts[s.sintoma] = (counts[s.sintoma] || 0) + 1; });
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const [topSintoma, topCount] = entries[0];
+  const topLabel = (symptomCatalogEntry_(topSintoma) || {}).label || topSintoma;
+  const answerHTML = `<div class="report-answer-value">${escapeHtml_(topLabel)}</div><div class="report-answer-sub">${topCount} vez${topCount === 1 ? "" : "es"} registrado</div>`;
+  return {
+    question, empty: false, answerHTML,
+    chartLabels: entries.map(([s]) => (symptomCatalogEntry_(s) || {}).label || s), chartValues: entries.map(([, n]) => n),
+    highlightSet: new Set([0]), color: "#B0554B", unit: "veces", label: "Malestares registrados", chartType: "bar",
+  };
+}
+function buildBestAdherenceStreakReport_() {
+  const data = (currentMedAdherence || []).slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const question = "¿Cuál ha sido tu mejor racha de apego perfecto (100%) a tu medicamento?";
+  if (!data.length) return { question, empty: true, emptyMessage: "Todavía no hay suficiente información de tus medicamentos para calcular una racha." };
+  let best = { start: null, end: null, len: 0 };
+  let curStart = null, curLen = 0, prevDate = null;
+  data.forEach(d => {
+    const isFull = d.pct >= 100;
+    const isConsecutive = prevDate != null && reportAddDays_(prevDate, 1) === d.fecha;
+    if (isFull) {
+      if (curLen > 0 && isConsecutive) curLen++; else { curStart = d.fecha; curLen = 1; }
+      if (curLen > best.len) best = { start: curStart, end: d.fecha, len: curLen };
+    } else { curLen = 0; curStart = null; }
+    prevDate = d.fecha;
+  });
+  const highlightSet = new Set();
+  if (best.len > 0) data.forEach((d, i) => { if (d.fecha >= best.start && d.fecha <= best.end) highlightSet.add(i); });
+  const answerHTML = best.len > 0
+    ? `<div class="report-answer-value">${best.len} día${best.len === 1 ? "" : "s"} seguidos</div><div class="report-answer-sub">del ${reportFmtFecha_(best.start)} al ${reportFmtFecha_(best.end)}, con 100% de apego</div>`
+    : `<div class="report-answer-value">Aún sin una racha perfecta</div><div class="report-answer-sub">todavía no tienes días consecutivos con 100% de apego — ¡vas por la primera!</div>`;
+  return {
+    question, empty: false, answerHTML,
+    chartLabels: data.map(d => reportFmtFecha_(d.fecha)), chartValues: data.map(d => d.pct),
+    highlightSet, color: "#D9A15F", unit: "%", label: "Apego a medicamento", chartType: "line",
+  };
+}
+let reportChartInstance_ = null;
+function renderReportChart_(report) {
+  const canvas = document.getElementById("reportChart");
+  if (reportChartInstance_) { reportChartInstance_.destroy(); reportChartInstance_ = null; }
+  if (!canvas) return;
+  if (!report.chartLabels || report.chartLabels.length < 2) { canvas.style.display = "none"; return; } // "cuando los datos lo permitan"
+  canvas.style.display = "";
+  const colors = report.chartLabels.map((_, i) => (report.highlightSet && report.highlightSet.has(i)) ? "#C97064" : report.color);
+  const ctx = canvas.getContext("2d");
+  reportChartInstance_ = new Chart(ctx, {
+    type: report.chartType || (report.chartLabels.length <= 20 ? "bar" : "line"),
+    data: { labels: report.chartLabels, datasets: [{ label: report.label, data: report.chartValues, backgroundColor: colors, borderColor: colors, pointBackgroundColor: colors, tension: 0.25 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { title: { display: true, text: report.unit || "" }, beginAtZero: false } } },
+  });
+}
+function renderReportOutput_(report) {
+  const wrap = document.getElementById("reportOutput");
+  let html = `<div class="report-question">🗨️ ${escapeHtml_(report.question)}</div>`;
+  if (report.empty) {
+    html += `<div class="report-empty">${escapeHtml_(report.emptyMessage)}</div>`;
+    wrap.innerHTML = html;
+    if (reportChartInstance_) { reportChartInstance_.destroy(); reportChartInstance_ = null; }
+    return;
+  }
+  html += `<div class="report-answer">${report.answerHTML}</div>`;
+  html += `<div class="chart-wrap" style="height:200px; margin-top:10px;"><canvas id="reportChart"></canvas></div>`;
+  wrap.innerHTML = html;
+  renderReportChart_(report);
+}
+document.getElementById("reportGenerateBtn").addEventListener("click", () => {
+  const metricKey = document.getElementById("reportMetric").value;
+  const aggKey = document.getElementById("reportAgg").value;
+  const periodKey = document.getElementById("reportPeriod").value;
+  renderReportOutput_(buildGenericReport_(metricKey, aggKey, periodKey));
+});
+document.querySelectorAll(".report-quick-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const kind = btn.dataset.reportQuick;
+    const builders = {
+      worstHabitWeek: buildWorstHabitWeekReport_,
+      favoriteWellness: buildFavoriteWellnessReport_,
+      topSymptom: buildTopSymptomReport_,
+      bestAdherenceStreak: buildBestAdherenceStreakReport_,
+    };
+    if (builders[kind]) renderReportOutput_(builders[kind]());
+  });
 });
 </script>
 </body>

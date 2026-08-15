@@ -885,6 +885,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "34.0", changes: [
+    "Nueva sección \"Generador de reportes\" en Estadísticas: arma tu propia pregunta (indicador + tipo de análisis + periodo, por ejemplo \"presión diastólica más alta en los últimos 30 días\") o usa uno de los insights especiales ya armados (semana con más malos hábitos, actividad de wellness favorita, malestar más frecuente, mejor racha de apego a medicamento) y genera al instante una respuesta con su gráfica, cuando los datos lo permiten. Todo se calcula en el navegador, sin usar IA, así que es inmediato.",
+  ] },
   { version: "33.10", changes: [
     "Se corrigió un error que hacía que la nota diaria de IA nunca se mostrara al abrir o refrescar la app (se quedaba siempre en el aviso de reglas fijas), y que el contador de \"Actualizar con IA\" tampoco apareciera hasta forzarla a mano. También se subió el límite de la nota para que no se corte a media frase cuando hay varios datos que comentar.",
   ] },
