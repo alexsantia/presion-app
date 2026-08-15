@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.2"></script>
+<script src="/shared/common.js?v=33.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1190,7 +1190,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.2</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.3</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1666,7 +1666,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.2");
+  showAboutOverlay_("33.3");
 });
 
 function openModal(id) {
@@ -2819,10 +2819,15 @@ function buildCompareForChart_(key) {
   const dataB = filterByRange_(meta.data(), rangeB, meta.dateField);
   const seriesA = alignedSeriesForMetric_(dataA, gran, meta.dateField, meta.timeField, meta.valueFn);
   const seriesB = alignedSeriesForMetric_(dataB, gran, meta.dateField, meta.timeField, meta.valueFn);
-  return {
-    labels: seriesA.labels, valuesA: seriesA.values, valuesB: seriesB.values,
-    labelA: periodRangeLabel_(gran, rangeA), labelB: periodRangeLabel_(gran, rangeB),
-  };
+  const labelA = periodRangeLabel_(gran, rangeA), labelB = periodRangeLabel_(gran, rangeB);
+  // v33.3: el periodo más reciente siempre queda a la derecha (segundo en
+  // el arreglo / la leyenda), sin importar cuál se eligió como "el que se
+  // está viendo" o "con el que se compara" — así se lee siempre de lo más
+  // viejo a lo más nuevo, izquierda a derecha.
+  const primaryIsNewer = rangeA.start > rangeB.start;
+  return primaryIsNewer
+    ? { labels: seriesA.labels, valuesA: seriesB.values, valuesB: seriesA.values, labelA: labelB, labelB: labelA }
+    : { labels: seriesA.labels, valuesA: seriesA.values, valuesB: seriesB.values, labelA, labelB };
 }
 function renderTrendOrCompare_(key, instanceGetter, instanceSetter, canvasId, emptyId, opts, trendSeries) {
   const canvasEl = document.getElementById(canvasId);
@@ -2933,6 +2938,37 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
   });
 });
 
+// v33.3: alertas por reglas fijas (etapa 2+, datos a confirmar) — antes era
+// el contenido único de la caja "Alertas y notas"; ahora es solo el
+// respaldo mientras llega (o si falla) la nota diaria de IA.
+function fallbackAlertsHtml_(data) {
+  const highReadings = data.filter(r => ["etapa2", "crisis"].includes(classify(r.sys, r.dia).key));
+  let html = "";
+  if (highReadings.length) {
+    html += `<div class="alert-box"><strong>${highReadings.length} lectura(s) en etapa 2 o superior.</strong> La más alta: ${highReadings[0].date.split("-").reverse().join("/")} ${highReadings[0].time} — ${highReadings[0].sys}/${highReadings[0].dia}. Vale la pena comentarlo con tu médico.</div>`;
+  }
+  const flaggedRows = data.filter(r => r.flag);
+  if (flaggedRows.length) {
+    html += `<div class="alert-box note"><strong>${flaggedRows.length} lectura(s) con datos a confirmar.</strong> Revisadas en la tabla con ⚠.</div>`;
+  }
+  if (!html) html = `<div style="color:var(--text-muted); font-size:13px;">Sin alertas por ahora.</div>`;
+  return html;
+}
+// v33.3: nota diaria generada por la IA interna — se pide una vez por día
+// (el backend cachea por fecha, así que llamarla en cada render() es
+// barato: solo la primera vez del día realmente llama a la IA). Si hay
+// nota, reemplaza el respaldo por reglas; si no (IA desactivada, sin
+// lecturas recientes, o error), se queda el respaldo que ya se mostró.
+async function loadDailyNote_() {
+  try {
+    const result = await apiGet("/api/daily-note");
+    if (result && result.note) {
+      document.getElementById("alertsContent").innerHTML = `<div class="alert-box note"><strong>Nota del día:</strong> ${escapeHtml_(result.note)}</div>`;
+    }
+  } catch (err) {
+    // sin conexión o error del servidor: se queda el respaldo por reglas.
+  }
+}
 function render() {
   const data = currentData;
   const emptyState = document.getElementById("emptyState");
@@ -2971,17 +3007,12 @@ function render() {
     <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(counts).map(([k,v]) => `${v} ${k}`).join(" · ")}</div></div>
   `;
 
-  const highReadings = data.filter(r => ["etapa2","crisis"].includes(classify(r.sys, r.dia).key));
-  let alertsHtml = "";
-  if (highReadings.length) {
-    alertsHtml += `<div class="alert-box"><strong>${highReadings.length} lectura(s) en etapa 2 o superior.</strong> La más alta: ${highReadings[0].date.split("-").reverse().join("/")} ${highReadings[0].time} — ${highReadings[0].sys}/${highReadings[0].dia}. Vale la pena comentarlo con tu médico.</div>`;
-  }
-  const flaggedRows = data.filter(r => r.flag);
-  if (flaggedRows.length) {
-    alertsHtml += `<div class="alert-box note"><strong>${flaggedRows.length} lectura(s) con datos a confirmar.</strong> Revisadas en la tabla con ⚠.</div>`;
-  }
-  if (!alertsHtml) alertsHtml = `<div style="color:var(--text-muted); font-size:13px;">Sin alertas por ahora.</div>`;
-  document.getElementById("alertsContent").innerHTML = alertsHtml;
+  // v33.3: la nota diaria de IA (loadDailyNote_) reemplaza este contenido en
+  // cuanto llega; mientras tanto (o si la IA está desactivada, sin datos
+  // recientes, o falla) se ve este respaldo por reglas fijas, para que la
+  // caja nunca se quede vacía.
+  document.getElementById("alertsContent").innerHTML = fallbackAlertsHtml_(data);
+  loadDailyNote_();
 
   renderChart();
   renderStatsChart();
@@ -3663,12 +3694,29 @@ document.getElementById("eventualMedsListWrap").addEventListener("click", async 
 });
 loadEventualMedications();
 
-// ---- Bitácora de medicamentos (v30.13) ----
+// ---- Bitácora de medicamentos (v30.13; edición de Tomadas/No marcadas en v33.3) ----
 async function loadMedicationLog() {
   let log = [];
   try { log = await apiGet("/api/medication-log"); } catch (err) { log = []; }
-  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log);
+  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log, { readOnly: false });
 }
+document.getElementById("medicationLogWrap").addEventListener("change", async e => {
+  const cb = e.target.closest(".medlog-taken-checkbox");
+  if (!cb) return;
+  try {
+    await apiPost("/api/medication-doses/mark", {
+      medication_id: cb.dataset.medicationId,
+      dose_time: cb.dataset.doseTime,
+      dose_date: cb.dataset.doseDate,
+      taken: cb.checked,
+    });
+    await loadMedicationLog();
+    await loadTodayDoses(); // por si el día editado es hoy, mantiene sincronizado el panel de "tomas de hoy"
+  } catch (err) {
+    alert("No se pudo actualizar: " + err.message);
+    cb.checked = !cb.checked;
+  }
+});
 loadMedicationLog();
 
 // ---- Consultas médicas (v30.12) ----

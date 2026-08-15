@@ -568,3 +568,12 @@ CREATE TABLE IF NOT EXISTS meta_indicadores (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_meta_indicadores_meta ON meta_indicadores(meta_id);
+
+-- v33.3: nota diaria generada por la IA interna para la caja de "Alertas y
+-- notas" de Presión Arterial. Se genera perezosamente (no con un cron) la
+-- primera vez que el paciente abre la app cada día — así nunca se gastan
+-- tokens de la cuenta de Anthropic en un día que el paciente no entra. Solo
+-- se guarda la nota del día actual (no historial): basta con la fecha para
+-- saber si sigue vigente o hay que regenerarla.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note text;
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_date date;

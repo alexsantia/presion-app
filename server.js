@@ -632,6 +632,7 @@ app.post("/api/medication-doses/mark", requireRole("patient"), asyncRoute(async 
   res.json(await callSheetsApi(null, {
     action: "set_dose_taken", patient_id: req.session.patientId,
     medication_id: req.body.medication_id, dose_time: req.body.dose_time, taken: req.body.taken,
+    dose_date: req.body.dose_date, // v33.3: opcional — permite editar un día pasado desde la Bitácora
   }));
 }));
 
@@ -726,6 +727,14 @@ app.delete("/api/goals/:id", requireRole("patient"), asyncRoute(async (req, res)
 // liga use el dominio real que está usando el paciente. Solo existe con
 // backend Postgres (igual que fotos de avatar/receta): el backend Sheets
 // nunca tuvo un análogo de exportación temporal por token. ----
+// v33.3: nota diaria automática para "Alertas y notas" (Presión Arterial).
+// Se genera perezosamente (ver getOrGenerateDailyNote en db-postgres.js) —
+// este GET es seguro de llamar en cada carga de la página, porque si ya
+// existe una nota vigente de hoy solo la regresa, sin volver a llamar a la
+// IA.
+app.get("/api/daily-note", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "get_daily_note", patient_id: req.session.patientId }));
+}));
 app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "add_ai_interpretation", patient_id: req.session.patientId,

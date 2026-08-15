@@ -465,14 +465,18 @@ async function listTodayDoses(patientId) {
 // El paciente puede marcar o desmarcar una toma de hoy; se resuelve la fecha
 // del lado del servidor (nunca a partir de lo que mande el cliente) para que
 // siempre coincida con lo que el escaneo de recordatorios considera "hoy".
-async function setDoseTaken(patientId, medicationId, doseTime, taken) {
+// v33.3: doseDate (opcional) permite marcar/desmarcar la toma de un día
+// pasado directamente desde la Bitácora, no solo "hoy" (que sigue siendo el
+// default si no se manda, para no romper el panel de "tomas de hoy").
+async function setDoseTaken(patientId, medicationId, doseTime, taken, doseDate) {
   const { dateStr } = nowInAppTz_();
+  const targetDate = doseDate || dateStr;
   const id = uuid();
   await pool.query(
     `INSERT INTO medicamento_dosis (id, medication_id, patient_id, dose_date, dose_time, taken, taken_at, created_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      ON CONFLICT (medication_id, dose_date, dose_time) DO UPDATE SET taken = $6, taken_at = $7`,
-    [id, medicationId, patientId, dateStr, doseTime, !!taken, taken ? nowIso() : null, nowIso()]
+    [id, medicationId, patientId, targetDate, doseTime, !!taken, taken ? nowIso() : null, nowIso()]
   );
 }
 // Escaneo periódico (ver setInterval en server.js): por cada medicamento
@@ -1083,6 +1087,77 @@ async function callAnthropicInterpretation_(payload, exportUrl, period, audience
   return text;
 }
 
+// ---- v33.3: nota diaria de IA para "Alertas y notas" (Presión Arterial) ----
+// Reemplaza las alertas fijas por reglas con una nota muy corta generada
+// por la IA interna, actualizada una vez al día. Se genera de forma
+// PEREZOSA (la primera vez que el paciente abre la app ese día, no con un
+// cron para todos los pacientes) para no gastar tokens en días sin
+// actividad — y con un prompt de entrada mínimo (solo agregados numéricos
+// de los últimos 7 días, nunca el JSON de cada lectura) más un modelo más
+// económico, para cuidar el gasto en cada llamada que sí se hace.
+const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5-20251001";
+const AI_DAILY_NOTE_MAX_TOKENS = 90;
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con el resumen numérico que te dan (nunca inventes datos que no estén ahí), escribe UNA sola nota muy corta para el paciente: máximo 2 frases, sin saludo ni despedida. Si algo destaca (una lectura alta, buen apego a su medicamento, una mejora) menciónalo brevemente; si todo va dentro de lo normal, dilo en pocas palabras, sin alarmar. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico. No uses markdown ni emojis. Responde en español.";
+async function buildDailyNoteSummary_(patientId, today) {
+  const readings = await listReadings(patientId); // orden ascendente
+  const cutoff = addDaysToDateStr_(today, -6);
+  const recent = readings.filter(r => r.date >= cutoff);
+  if (!recent.length) return null; // sin lecturas recientes: no hay nada que resumir
+  const avg = arr => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null);
+  const sysVals = recent.map(r => r.sys).filter(v => v != null);
+  const diaVals = recent.map(r => r.dia).filter(v => v != null);
+  const last = readings[readings.length - 1];
+  const highest = recent.slice().sort((a, b) => (b.sys - a.sys) || (b.dia - a.dia))[0];
+  const adherence = await listMedicationAdherence(patientId); // orden ascendente
+  const recentAdherence = adherence.slice(-7);
+  const avgAdherence = recentAdherence.length
+    ? Math.round(recentAdherence.reduce((s, d) => s + d.pct, 0) / recentAdherence.length)
+    : null;
+  const lines = [
+    `Lecturas de presión arterial últimos 7 días: ${recent.length}.`,
+    sysVals.length ? `Promedio: ${avg(sysVals)}/${avg(diaVals)} mmHg.` : "",
+    last ? `Última: ${last.sys}/${last.dia} mmHg (${classifyReading(last.sys, last.dia).label}) el ${last.date}.` : "",
+    highest ? `Más alta del periodo: ${highest.sys}/${highest.dia} mmHg (${classifyReading(highest.sys, highest.dia).label}) el ${highest.date}.` : "",
+    avgAdherence != null ? `Apego a medicamento (promedio 7 días): ${avgAdherence}%.` : "",
+  ].filter(Boolean);
+  return lines.join(" ");
+}
+async function getOrGenerateDailyNote(patientId) {
+  const { dateStr: today } = nowInAppTz_();
+  const { rows } = await pool.query(
+    `SELECT daily_ai_note, to_char(daily_ai_note_date, 'YYYY-MM-DD') AS daily_ai_note_date FROM pacientes WHERE id = $1`,
+    [patientId]
+  );
+  const row = rows[0];
+  if (!row) return { ok: false, error: "no encontrado" };
+  if (row.daily_ai_note && row.daily_ai_note_date === today) {
+    return { ok: true, note: row.daily_ai_note, ai_enabled: true, cached: true };
+  }
+  if (!aiEnabled) return { ok: true, note: null, ai_enabled: false };
+  const summary = await buildDailyNoteSummary_(patientId, today);
+  if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true };
+  let text = "";
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: AI_DAILY_NOTE_MODEL, max_tokens: AI_DAILY_NOTE_MAX_TOKENS,
+        system: AI_DAILY_NOTE_SYSTEM_, messages: [{ role: "user", content: summary }],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
+    const data = await resp.json();
+    text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+  } catch (err) {
+    console.error("[daily-note] no se pudo generar:", err.message);
+    return { ok: true, note: null, ai_enabled: true, error: true };
+  }
+  if (!text) return { ok: true, note: null, ai_enabled: true, error: true };
+  await pool.query(`UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2 WHERE id = $3`, [text, today, patientId]);
+  return { ok: true, note: text, ai_enabled: true, cached: false };
+}
+
 // ---- Pacientes ----
 function patientRaw(row) {
   if (!row) return null;
@@ -1685,6 +1760,9 @@ async function handleGet(params) {
   if (action === "list_medication_log") {
     return { ok: true, data: await listMedicationLog(params.patient_id) };
   }
+  if (action === "get_daily_note") {
+    return await getOrGenerateDailyNote(params.patient_id);
+  }
   // v28: respaldo descargable (JSON) con todo lo que el propio paciente
   // controla — lecturas, comentarios, reacciones y sus parámetros físicos/de
   // laboratorio. Deliberadamente NO incluye médicos vinculados, invitaciones,
@@ -1900,7 +1978,9 @@ async function handlePost(body) {
   }
   if (body.action === "set_dose_taken") {
     if (!body.medication_id || !body.dose_time) return { ok: false, error: "faltan datos" };
-    await setDoseTaken(body.patient_id, body.medication_id, body.dose_time, !!body.taken);
+    const { dateStr: todayStr_ } = nowInAppTz_();
+    if (body.dose_date && body.dose_date > todayStr_) return { ok: false, error: "no se puede marcar una toma en el futuro" };
+    await setDoseTaken(body.patient_id, body.medication_id, body.dose_time, !!body.taken, body.dose_date);
     emitChange(body.patient_id, "medication");
     return { ok: true };
   }

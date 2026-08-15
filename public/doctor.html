@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=33.2"></script>
+<script src="/shared/common.js?v=33.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -805,7 +805,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.2</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v33.3</button></footer>
 
 <script>
 let chartInstance = null;
@@ -1479,7 +1479,7 @@ async function loadEventualMedications() {
 async function loadMedicationLog() {
   let log = [];
   try { log = await apiGet("/api/medication-log"); } catch (err) { log = []; }
-  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log);
+  document.getElementById("medicationLogWrap").innerHTML = renderMedicationLogHTML(log, { readOnly: true });
 }
 // ---- Consultas médicas (solo lectura, v30.12) ----
 let currentConsultations = [];
@@ -1764,7 +1764,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.2");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "33.3");
 
 loadPatient();
 loadAndRender();

@@ -875,6 +875,12 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.3", changes: [
+    "En las gráficas de comparación de Estadísticas, el periodo más reciente siempre queda a la derecha, sin importar cuál elegiste ver primero.",
+    "Las gráficas de Sueño (duración y calidad) ahora ordenan el eje de fechas de menor a mayor, izquierda a derecha.",
+    "En la Bitácora de medicamentos ya puedes editar directamente si una toma quedó Tomada o No marcada, sin tener que volver a esa fecha en otra pantalla.",
+    "En Presión Arterial, la caja de Alertas y notas ahora se actualiza cada día con una nota corta generada por la IA interna (se genera solo la primera vez que abres la app ese día, con un prompt breve para cuidar el gasto); si la IA no está disponible, se sigue viendo el resumen de siempre.",
+  ] },
   { version: "33.2", changes: [
     "El modo \"Comparar con otro periodo\" en Estadísticas ahora vive en cada gráfica (no en un filtro general aparte) y se ve directamente sobre esa gráfica: dos líneas superpuestas, alineadas por día de la semana/mes/mes del año según corresponda, para comparar de verdad día vs día, semana vs semana, mes vs mes o año vs año.",
   ] },
@@ -1412,6 +1418,7 @@ function ensureMedicationStyles_() {
     .medlog-time { font-weight: 650; color: var(--accent); min-width: 42px; }
     .medlog-name { color: var(--text); flex: 1; min-width: 120px; }
     .medlog-status { font-size: 11.5px; color: var(--text-muted); }
+    .medlog-status-editable { display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .medlog-item.is-taken .medlog-status { color: #4F9E8C; font-weight: 600; }
     .medlog-item.is-missed .medlog-status { color: #C97064; }
     .medlog-item-eventual .medlog-time { color: #B0559B; }
@@ -1446,13 +1453,27 @@ function renderEventualMedicationsListHTML(list, opts) {
 // ---- Bitácora de medicamentos (v30.13) ----
 // Resumen por día: tomas programadas (tomadas/no marcadas) + medicamentos
 // eventuales de ese mismo día. Ver listMedicationLog en db-postgres.js.
-function medicationLogDayHTML_(day) {
-  const scheduledHTML = (day.scheduled || []).map(s => `
+// v33.3: opts.readOnly (doctor.html/familia.html) mantiene el texto fijo de
+// siempre; el paciente (index.html, readOnly:false u omitido) ahora ve un
+// checkbox editable por cada toma programada, para poder corregir un día
+// pasado que se le pasó marcar (o que marcó por error) sin tener que volver
+// a esa fecha en otra pantalla — la Bitácora ya tiene todos los días juntos.
+function medicationLogDayHTML_(day, opts) {
+  opts = opts || {};
+  const scheduledHTML = (day.scheduled || []).map(s => {
+    const statusHTML = opts.readOnly
+      ? `<span class="medlog-status">${s.taken ? "✅ Tomada" : "— No marcada"}</span>`
+      : `<label class="medlog-status medlog-status-editable">
+           <input type="checkbox" class="medlog-taken-checkbox" data-medication-id="${s.medication_id}" data-dose-date="${day.fecha}" data-dose-time="${s.dose_time}" ${s.taken ? "checked" : ""}>
+           ${s.taken ? "Tomada" : "No marcada"}
+         </label>`;
+    return `
     <div class="medlog-item ${s.taken ? "is-taken" : "is-missed"}">
       <span class="medlog-time">${escapeHtml_(s.dose_time)}</span>
       <span class="medlog-name">💊 ${escapeHtml_(s.medication_name)}${s.dose_text ? " — " + escapeHtml_(s.dose_text) : ""}</span>
-      <span class="medlog-status">${s.taken ? "✅ Tomada" : "— No marcada"}</span>
-    </div>`).join("");
+      ${statusHTML}
+    </div>`;
+  }).join("");
   const eventualHTML = (day.eventual || []).map(e => `
     <div class="medlog-item medlog-item-eventual">
       <span class="medlog-time">${e.hora ? escapeHtml_(e.hora) : "—"}</span>
@@ -1465,11 +1486,11 @@ function medicationLogDayHTML_(day) {
       ${scheduledHTML}${eventualHTML}
     </div>`;
 }
-function renderMedicationLogHTML(log) {
+function renderMedicationLogHTML(log, opts) {
   if (!log || !log.length) {
     return `<div style="color:var(--text-muted); font-size:13px;">Aún no hay nada que mostrar en la bitácora.</div>`;
   }
-  return log.map(medicationLogDayHTML_).join("");
+  return log.map(day => medicationLogDayHTML_(day, opts)).join("");
 }
 // Panel de "tomas de hoy" (solo vista de paciente): una casilla por cada
 // hora programada de cada medicamento activo, para marcarla como tomada.
@@ -1742,8 +1763,17 @@ function sleepTotalsHTML_(entries) {
 // Serie para la gráfica de Estadísticas: duración en HORAS (más legible que
 // minutos en el eje de una gráfica), reutilizando el mismo formato
 // {labels, values, obs} que ya entiende renderMetricTrendChart.
+// v33.3: listSleep() (db-postgres.js) trae los registros más recientes
+// primero (para la lista/promedios de la sección Sueño); las gráficas de
+// tendencia necesitan lo contrario — más antiguo primero — para que el eje
+// X quede de menor a mayor, izquierda a derecha, como cualquier gráfica de
+// tiempo. Se ordena aquí en vez de en el backend para no afectar a nadie
+// más que ya depende del orden descendente (lista, promedio de 7 días).
+function sortByFechaAsc_(entries) {
+  return (entries || []).slice().sort((a, b) => (a.fecha || "").localeCompare(b.fecha || ""));
+}
 function sleepDurationSeriesForChart_(entries) {
-  const filtered = (entries || []).filter(e => e.duracion_min != null);
+  const filtered = sortByFechaAsc_(entries).filter(e => e.duracion_min != null);
   return {
     labels: filtered.map(e => fmtDate(e.fecha)),
     values: filtered.map(e => Math.round((Number(e.duracion_min) / 60) * 100) / 100),
@@ -1751,7 +1781,7 @@ function sleepDurationSeriesForChart_(entries) {
   };
 }
 function sleepQualitySeriesForChart_(entries) {
-  const filtered = (entries || []).filter(e => e.calidad != null);
+  const filtered = sortByFechaAsc_(entries).filter(e => e.calidad != null);
   return {
     labels: filtered.map(e => fmtDate(e.fecha)),
     values: filtered.map(e => Number(e.calidad)),
