@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.3"></script>
+<script src="/shared/common.js?v=33.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -382,6 +382,10 @@
 <div class="section section-alerts" id="alertsSection">
   <h2>Alertas y notas</h2>
   <div id="alertsContent"></div>
+  <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+    <button type="button" class="btn-secondary" id="dailyNoteForceBtn" style="font-size:12px; padding:5px 10px;">🔄 Actualizar con IA</button>
+    <span id="dailyNoteRemainingLabel" style="font-size:11px; color:var(--text-muted);"></span>
+  </div>
 </div>
 
 <div class="section section-add">
@@ -1190,7 +1194,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.3</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.4</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1666,7 +1670,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.3");
+  showAboutOverlay_("33.4");
 });
 
 function openModal(id) {
@@ -2661,18 +2665,29 @@ syncStatsAnchorPicker_();
 // (uno por gráfica de tendencia; timeOfDay/weekday quedan fuera porque ya
 // son comparativas por diseño). Se inyectan por JS en vez de escribirse a
 // mano 10 veces en el HTML, para no repetir el mismo bloque de marcado. ----
+function chartCompareAnchorRowHTML_(chartKey, slot, labelText, titleWeek) {
+  return `
+    <div class="chart-compare-anchor-row" data-slot="${slot}" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px;">
+      <span style="font-size:10.5px; color:var(--text-muted); min-width:28px;">${labelText}</span>
+      <input type="date" class="chart-compare-anchor" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="day" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+      <input type="date" class="chart-compare-anchor" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="week" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;" title="${titleWeek}">
+      <input type="month" class="chart-compare-anchor" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="month" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+      <select class="chart-compare-anchor chart-compare-anchor-year" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="year" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;"></select>
+    </div>`;
+}
+// v33.4: antes solo se podía elegir el periodo "Con" (B); ahora "Ver" (A)
+// también es elegible por gráfica, con default = periodo actual (como se
+// pidió explícitamente que quedara).
 function chartCompareControlsHTML_(chartKey) {
   return `
     <div class="chart-compare-wrap" data-chart-key="${chartKey}" style="margin-top:4px;">
       <label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-muted); cursor:pointer;">
-        <input type="checkbox" class="chart-compare-toggle" data-chart-key="${chartKey}"> 🔁 Comparar con otro periodo
+        <input type="checkbox" class="chart-compare-toggle" data-chart-key="${chartKey}"> 🔁 Comparar dos periodos
       </label>
-      <span class="chart-compare-anchor-wrap" data-chart-key="${chartKey}" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px;">
-        <input type="date" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="day" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
-        <input type="date" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="week" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;" title="Elige cualquier día de la semana a comparar">
-        <input type="month" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="month" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
-        <select class="chart-compare-anchor chart-compare-anchor-year" data-chart-key="${chartKey}" data-gran="year" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;"></select>
-      </span>
+      <div class="chart-compare-anchor-wrap" data-chart-key="${chartKey}" style="display:none;">
+        ${chartCompareAnchorRowHTML_(chartKey, "a", "Ver:", "Elige cualquier día de la semana a ver")}
+        ${chartCompareAnchorRowHTML_(chartKey, "b", "Con:", "Elige cualquier día de la semana a comparar")}
+      </div>
     </div>`;
 }
 function injectChartCompareControls_() {
@@ -2689,25 +2704,25 @@ function syncChartCompareUI_(key) {
   const toggle = document.querySelector(`.chart-compare-toggle[data-chart-key="${key}"]`);
   const on = !!chartCompareOn_[key];
   if (toggle) toggle.checked = on;
-  anchorWrap.style.display = on ? "flex" : "none";
+  anchorWrap.style.display = on ? "block" : "none";
   if (!on) return;
   const gran = effectivePeriod_(key);
   anchorWrap.querySelectorAll(".chart-compare-anchor").forEach(inp => {
     inp.style.display = inp.dataset.gran === gran ? "" : "none";
   });
-  if (gran === "year") populateYearSelect_(anchorWrap.querySelector(".chart-compare-anchor-year"));
-  const anchors = chartCompareAnchorFor_(key);
-  if (!anchors[gran]) {
-    // Default: el periodo INMEDIATO ANTERIOR al que ya está viendo esta
-    // gráfica, así "Comparar" ya muestra algo útil de entrada.
-    const rangeA = primaryRangeForChart_(key);
-    anchors[gran] = defaultPreviousAnchor_(gran, gran === "day" ? rangeA.start : (gran === "week" ? rangeA.start : (gran === "month" ? rangeA.start.slice(0, 7) : rangeA.start.slice(0, 4))));
-  }
-  const input = anchorWrap.querySelector(`.chart-compare-anchor[data-gran="${gran}"]`);
-  if (input) {
-    input.value = anchors[gran];
-    if (gran === "day" || gran === "week") input.max = todayStr();
-  }
+  if (gran === "year") anchorWrap.querySelectorAll(".chart-compare-anchor-year").forEach(populateYearSelect_);
+  // "Ver" (A): default = el periodo actual de la gráfica (lo que ya se
+  // pedía mantener como default), editable a mano por el paciente.
+  const anchorsA = chartCompareAnchorAFor_(key);
+  if (!anchorsA[gran]) anchorsA[gran] = rangeStartToAnchor_(gran, primaryRangeForChart_(key));
+  // "Con" (B): default = el periodo INMEDIATO ANTERIOR al de "Ver", así
+  // "Comparar" ya muestra algo útil apenas se activa.
+  const anchorsB = chartCompareAnchorFor_(key);
+  if (!anchorsB[gran]) anchorsB[gran] = defaultPreviousAnchor_(gran, anchorsA[gran]);
+  const inputA = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="a"] .chart-compare-anchor[data-gran="${gran}"]`);
+  const inputB = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="b"] .chart-compare-anchor[data-gran="${gran}"]`);
+  if (inputA) { inputA.value = anchorsA[gran]; if (gran === "day" || gran === "week") inputA.max = todayStr(); }
+  if (inputB) { inputB.value = anchorsB[gran]; if (gran === "day" || gran === "week") inputB.max = todayStr(); }
 }
 function syncAllChartCompareUI_() {
   Object.keys(CHART_COMPARE_META_).forEach(syncChartCompareUI_);
@@ -2775,10 +2790,28 @@ async function loadLabHistory() {
 // dentro del periodo (ver alignedSeriesForMetric_ en common.js), no por
 // fecha real, para que ambos queden uno junto al otro visualmente.
 let chartCompareOn_ = {};
-let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year }
+let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year } — periodo "Con" (B)
+// v33.4: antes el periodo "Ver" (A) siempre era el que ya mostraba la
+// gráfica (el filtro general/mini-filtro); ahora también se puede fijar a
+// mano por gráfica, igual que el "Con" (B) — el default sigue siendo "el
+// actual" (mismo comportamiento de antes) hasta que el paciente lo cambie.
+let chartCompareAnchorA_ = {}; // chartKey -> { day, week, month, year } — periodo "Ver" (A)
 function chartCompareAnchorFor_(key) {
   if (!chartCompareAnchor_[key]) chartCompareAnchor_[key] = { day: null, week: null, month: null, year: null };
   return chartCompareAnchor_[key];
+}
+function chartCompareAnchorAFor_(key) {
+  if (!chartCompareAnchorA_[key]) chartCompareAnchorA_[key] = { day: null, week: null, month: null, year: null };
+  return chartCompareAnchorA_[key];
+}
+// Convierte un { start, end } de calendarRangeForGranularity_ al formato de
+// anchor que espera cada input (fecha completa para día/semana, "YYYY-MM"
+// para mes, "YYYY" para año).
+function rangeStartToAnchor_(gran, range) {
+  if (!range) return null;
+  if (gran === "month") return range.start.slice(0, 7);
+  if (gran === "year") return range.start.slice(0, 4);
+  return range.start;
 }
 function convertLabValue_(v, key) {
   if (v == null) return null;
@@ -2813,7 +2846,11 @@ function primaryRangeForChart_(key) {
 function buildCompareForChart_(key) {
   const meta = CHART_COMPARE_META_[key];
   const gran = effectivePeriod_(key);
-  const rangeA = primaryRangeForChart_(key);
+  // v33.4: "Ver" (A) ahora también se puede fijar a mano por gráfica; si el
+  // paciente no lo ha tocado, sigue cayendo en el periodo actual (el mismo
+  // que ya muestra la gráfica), que es el default que se pidió mantener.
+  const anchorA = chartCompareAnchorAFor_(key)[gran];
+  const rangeA = anchorA ? calendarRangeForGranularity_(gran, anchorA) : primaryRangeForChart_(key);
   const rangeB = calendarRangeForGranularity_(gran, chartCompareAnchorFor_(key)[gran]);
   const dataA = filterByRange_(meta.data(), rangeA, meta.dateField);
   const dataB = filterByRange_(meta.data(), rangeB, meta.dateField);
@@ -2917,7 +2954,9 @@ document.getElementById("tabEstadisticas").addEventListener("change", e => {
   if (anchorInput) {
     const key = anchorInput.dataset.chartKey;
     const gran = anchorInput.dataset.gran;
-    chartCompareAnchorFor_(key)[gran] = anchorInput.value || null;
+    const slot = anchorInput.dataset.slot;
+    const anchors = slot === "a" ? chartCompareAnchorAFor_(key) : chartCompareAnchorFor_(key);
+    anchors[gran] = anchorInput.value || null;
     renderLabHistoryCharts([key]);
   }
 });
@@ -2965,10 +3004,47 @@ async function loadDailyNote_() {
     if (result && result.note) {
       document.getElementById("alertsContent").innerHTML = `<div class="alert-box note"><strong>Nota del día:</strong> ${escapeHtml_(result.note)}</div>`;
     }
+    if (result) updateDailyNoteRemainingUI_(result.manual_remaining, result.manual_limit);
   } catch (err) {
     // sin conexión o error del servidor: se queda el respaldo por reglas.
   }
 }
+// v33.4: refleja en la UI cuántas regeneraciones forzadas quedan hoy (el
+// límite real lo controla el backend; aquí solo se muestra y se deshabilita
+// el botón cuando ya no quedan).
+function updateDailyNoteRemainingUI_(remaining, limit) {
+  const label = document.getElementById("dailyNoteRemainingLabel");
+  const btn = document.getElementById("dailyNoteForceBtn");
+  if (remaining == null || limit == null) return;
+  if (label) label.textContent = `${remaining} restante${remaining === 1 ? "" : "s"} de ${limit}`;
+  if (btn) btn.disabled = remaining <= 0;
+}
+// v33.4: botón "Actualizar con IA" — fuerza la regeneración de la nota
+// diaria fuera del ciclo automático (que sigue corriendo sin límite al
+// abrir la app la primera vez del día). El tope de 2 usos/24h rolling vive
+// en el backend (forceDailyNote); aquí solo se refleja el resultado.
+document.getElementById("dailyNoteForceBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("dailyNoteForceBtn");
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+  try {
+    const result = await apiPost("/api/daily-note/force", {});
+    if (result && result.error === "rate_limited") {
+      alert("Ya usaste tus regeneraciones de hoy. Vuelve a intentarlo más tarde.");
+    } else if (result && result.note) {
+      document.getElementById("alertsContent").innerHTML = `<div class="alert-box note"><strong>Nota del día:</strong> ${escapeHtml_(result.note)}</div>`;
+    } else {
+      alert("No se pudo generar la nota en este momento.");
+    }
+    if (result) updateDailyNoteRemainingUI_(result.manual_remaining, result.manual_limit);
+  } catch (err) {
+    alert("No se pudo actualizar: " + err.message);
+  } finally {
+    btn.textContent = prevLabel;
+    await loadDailyNote_(); // resincroniza contador/botón por si algo quedó desfasado
+  }
+});
 function render() {
   const data = currentData;
   const emptyState = document.getElementById("emptyState");

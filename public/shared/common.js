@@ -875,6 +875,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.4", changes: [
+    "En las gráficas con \"Comparar\" de Estadísticas ahora puedes elegir a mano los DOS periodos a comparar (\"Ver\" y \"Con\"), no solo el que se compara contra el actual; por default \"Ver\" sigue siendo el periodo actual.",
+    "En Presión Arterial, junto a Alertas y notas ahora hay un botón \"Actualizar con IA\" para forzar una nota nueva cuando quieras, con un tope de 2 veces cada 24 horas (se muestra cuántas te quedan); la nota automática al abrir la app la primera vez del día sigue igual, sin límite.",
+  ] },
   { version: "33.3", changes: [
     "En las gráficas de comparación de Estadísticas, el periodo más reciente siempre queda a la derecha, sin importar cuál elegiste ver primero.",
     "Las gráficas de Sueño (duración y calidad) ahora ordenan el eje de fechas de menor a mayor, izquierda a derecha.",

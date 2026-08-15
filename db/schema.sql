@@ -577,3 +577,13 @@ CREATE INDEX IF NOT EXISTS idx_meta_indicadores_meta ON meta_indicadores(meta_id
 -- saber si sigue vigente o hay que regenerarla.
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note text;
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_date date;
+
+-- v33.4: permite forzar la regeneración de la nota diaria a mano, con un
+-- límite de 2 veces por ventana de 24 horas (rolling, no por día de
+-- calendario) para no disparar el gasto de tokens. daily_ai_note_manual_count
+-- cuenta cuántas veces se ha forzado DENTRO de la ventana actual; cuando pasan
+-- 24h desde daily_ai_note_manual_window_start, la ventana se reinicia sola.
+-- Esto es independiente del contador de la generación automática al abrir la
+-- app, que no tiene límite.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_count integer NOT NULL DEFAULT 0;
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_window_start timestamptz;

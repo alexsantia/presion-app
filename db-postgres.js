@@ -1122,40 +1122,104 @@ async function buildDailyNoteSummary_(patientId, today) {
   ].filter(Boolean);
   return lines.join(" ");
 }
+// Único punto que realmente llama a la API de Anthropic para la nota diaria
+// — reusado tanto por la generación perezosa (getOrGenerateDailyNote) como
+// por la regeneración forzada (forceDailyNote).
+async function callAnthropicDailyNote_(summary) {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: AI_DAILY_NOTE_MODEL, max_tokens: AI_DAILY_NOTE_MAX_TOKENS,
+      system: AI_DAILY_NOTE_SYSTEM_, messages: [{ role: "user", content: summary }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
+  const data = await resp.json();
+  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+}
+
+// v33.4: tope de regeneraciones FORZADAS (botón "Actualizar con IA"), aparte
+// de la generación automática al abrir la app (que no tiene límite). Ventana
+// ROLLING de 24h, no por día de calendario: si se usan las 2 a las 9am, se
+// recuperan una por una según van cumpliendo 24h desde daily_ai_note_manual_window_start.
+const MANUAL_NOTE_LIMIT = 2;
+const MANUAL_NOTE_WINDOW_MS = 24 * 60 * 60 * 1000;
+function manualNoteRemaining_(count, windowStart) {
+  const expired = !windowStart || (Date.now() - new Date(windowStart).getTime()) >= MANUAL_NOTE_WINDOW_MS;
+  return expired ? MANUAL_NOTE_LIMIT : Math.max(0, MANUAL_NOTE_LIMIT - count);
+}
 async function getOrGenerateDailyNote(patientId) {
   const { dateStr: today } = nowInAppTz_();
   const { rows } = await pool.query(
-    `SELECT daily_ai_note, to_char(daily_ai_note_date, 'YYYY-MM-DD') AS daily_ai_note_date FROM pacientes WHERE id = $1`,
+    `SELECT daily_ai_note, to_char(daily_ai_note_date, 'YYYY-MM-DD') AS daily_ai_note_date,
+            daily_ai_note_manual_count, daily_ai_note_manual_window_start
+     FROM pacientes WHERE id = $1`,
     [patientId]
   );
   const row = rows[0];
   if (!row) return { ok: false, error: "no encontrado" };
+  const manual_remaining = manualNoteRemaining_(row.daily_ai_note_manual_count, row.daily_ai_note_manual_window_start);
+  const manual_limit = MANUAL_NOTE_LIMIT;
   if (row.daily_ai_note && row.daily_ai_note_date === today) {
-    return { ok: true, note: row.daily_ai_note, ai_enabled: true, cached: true };
+    return { ok: true, note: row.daily_ai_note, ai_enabled: true, cached: true, manual_remaining, manual_limit };
   }
-  if (!aiEnabled) return { ok: true, note: null, ai_enabled: false };
+  if (!aiEnabled) return { ok: true, note: null, ai_enabled: false, manual_remaining, manual_limit };
   const summary = await buildDailyNoteSummary_(patientId, today);
-  if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true };
+  if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true, manual_remaining, manual_limit };
   let text = "";
   try {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({
-        model: AI_DAILY_NOTE_MODEL, max_tokens: AI_DAILY_NOTE_MAX_TOKENS,
-        system: AI_DAILY_NOTE_SYSTEM_, messages: [{ role: "user", content: summary }],
-      }),
-    });
-    if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
-    const data = await resp.json();
-    text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+    text = await callAnthropicDailyNote_(summary);
   } catch (err) {
     console.error("[daily-note] no se pudo generar:", err.message);
-    return { ok: true, note: null, ai_enabled: true, error: true };
+    return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining, manual_limit };
   }
-  if (!text) return { ok: true, note: null, ai_enabled: true, error: true };
+  if (!text) return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining, manual_limit };
   await pool.query(`UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2 WHERE id = $3`, [text, today, patientId]);
-  return { ok: true, note: text, ai_enabled: true, cached: false };
+  return { ok: true, note: text, ai_enabled: true, cached: false, manual_remaining, manual_limit };
+}
+// v33.4: regeneración forzada de la nota diaria (botón "Actualizar con IA"),
+// con tope de MANUAL_NOTE_LIMIT usos por ventana rolling de 24h. Solo cuenta
+// como "uso" cuando de verdad se llama a la IA (no cuando no hay datos
+// recientes o la IA está desactivada) — así el paciente no pierde intentos
+// por algo fuera de su control.
+async function forceDailyNote(patientId) {
+  const { dateStr: today } = nowInAppTz_();
+  const { rows } = await pool.query(
+    `SELECT daily_ai_note_manual_count, daily_ai_note_manual_window_start FROM pacientes WHERE id = $1`,
+    [patientId]
+  );
+  const row = rows[0];
+  if (!row) return { ok: false, error: "no encontrado" };
+  const manual_limit = MANUAL_NOTE_LIMIT;
+  if (!aiEnabled) return { ok: true, note: null, ai_enabled: false, manual_remaining: manual_limit, manual_limit };
+
+  const windowExpired = !row.daily_ai_note_manual_window_start ||
+    (Date.now() - new Date(row.daily_ai_note_manual_window_start).getTime()) >= MANUAL_NOTE_WINDOW_MS;
+  const effectiveCount = windowExpired ? 0 : row.daily_ai_note_manual_count;
+  if (effectiveCount >= MANUAL_NOTE_LIMIT) {
+    return { ok: true, ai_enabled: true, error: "rate_limited", manual_remaining: 0, manual_limit };
+  }
+
+  const summary = await buildDailyNoteSummary_(patientId, today);
+  if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true, manual_remaining: MANUAL_NOTE_LIMIT - effectiveCount, manual_limit };
+
+  let text = "";
+  try {
+    text = await callAnthropicDailyNote_(summary);
+  } catch (err) {
+    console.error("[daily-note] force: no se pudo generar:", err.message);
+    return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining: MANUAL_NOTE_LIMIT - effectiveCount, manual_limit };
+  }
+  if (!text) return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining: MANUAL_NOTE_LIMIT - effectiveCount, manual_limit };
+
+  const newCount = effectiveCount + 1;
+  const newWindowStart = windowExpired ? nowIso() : row.daily_ai_note_manual_window_start;
+  await pool.query(
+    `UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2, daily_ai_note_manual_count = $3, daily_ai_note_manual_window_start = $4 WHERE id = $5`,
+    [text, today, newCount, newWindowStart, patientId]
+  );
+  return { ok: true, note: text, ai_enabled: true, cached: false, manual_remaining: MANUAL_NOTE_LIMIT - newCount, manual_limit };
 }
 
 // ---- Pacientes ----
@@ -1983,6 +2047,9 @@ async function handlePost(body) {
     await setDoseTaken(body.patient_id, body.medication_id, body.dose_time, !!body.taken, body.dose_date);
     emitChange(body.patient_id, "medication");
     return { ok: true };
+  }
+  if (body.action === "force_daily_note") {
+    return await forceDailyNote(body.patient_id);
   }
 
   // ---- Ejercicio (v30.10; hora de fin + métricas especializadas en v31) ----

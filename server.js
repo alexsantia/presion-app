@@ -735,6 +735,11 @@ app.delete("/api/goals/:id", requireRole("patient"), asyncRoute(async (req, res)
 app.get("/api/daily-note", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "get_daily_note", patient_id: req.session.patientId }));
 }));
+// v33.4: regenerar la nota diaria a mano ("Actualizar con IA"), con tope de
+// 2 veces por ventana de 24h aplicado dentro de forceDailyNote.
+app.post("/api/daily-note/force", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "force_daily_note", patient_id: req.session.patientId }));
+}));
 app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "add_ai_interpretation", patient_id: req.session.patientId,
