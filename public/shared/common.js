@@ -885,6 +885,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.9", changes: [
+    "La nota diaria de IA ahora evalúa tus mediciones contra rangos saludables de referencia, no solo si se mantuvieron estables: para el peso ahora calcula tu IMC con tu estatura (Perfil) y da un insight de si conviene bajar, subir o mantener, y aplica el mismo criterio a presión arterial, sueño y demás mediciones.",
+  ] },
   { version: "33.8", changes: [
     "La nota diaria de IA ahora es más concisa (solo usa varias frases si de verdad hay algo que contar) y más inteligente: decide si vale la pena hablar de hoy contra ayer, de los últimos días o de la semana completa, y ahora también revisa sueño, peso, malestares recientes y avance en metas, no solo presión arterial.",
   ] },

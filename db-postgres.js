@@ -1101,17 +1101,27 @@ const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5
 // frase; sigue siendo un modelo económico, pensado para hasta 3 llamadas al
 // día por paciente (1 automática + hasta 2 forzadas).
 const AI_DAILY_NOTE_MAX_TOKENS = 220;
-// v33.8: la nota ahora debe ser CONCISA e INTELIGENTE sobre qué periodo vale
-// la pena comentar (¿basta con hoy vs ayer? ¿los últimos 2-3 días? ¿hace
-// falta hablar de la semana completa?) y debe cruzar TODAS las secciones
-// (sueño, peso, apego, malestares, metas), no solo presión arterial — para
-// eso, buildDailyNoteSummary_ le manda un desglose día por día (no solo
-// promedios) más el resto de las secciones, y el prompt le pide elegir el o
-// los insights que de verdad valgan la pena, no rellenar por rellenar.
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. Revisa TODAS las secciones que te den (presión arterial, sueño, peso, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles o interesantes para el paciente hoy — una mejora, un cambio a vigilar, una racha positiva, un malestar reciente, una meta cerca de lograrse — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si todo está dentro de lo normal y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo sí amerita atención por su gravedad, sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+// v33.9: la nota ahora debe EVALUAR cada medición contra su rango saludable
+// de referencia, no solo describir si "se mantiene estable" — estabilidad no
+// es lo mismo que estar en un rango sano. Para peso, eso significa mandarle
+// el IMC (con la estatura del paciente) y su categoría, para que la IA pueda
+// decir con criterio si conviene bajar, subir o mantener, no solo reportar
+// que no hay cambios. La misma idea aplica a presión (ya viene categorizada
+// por classifyReading), sueño (contra las 7-9h recomendadas), etc.
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 function dailyNotePam_(sys, dia) {
   if (sys == null || dia == null) return null;
   return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
+}
+// IMC estándar (OMS) — solo se puede calcular si el paciente tiene estatura
+// capturada en su perfil; el peso se toma de la lectura más reciente que sí
+// trajo peso (más al día que el campo "peso" del perfil, que el paciente
+// llena a mano y puede quedar desactualizado).
+function bmiCategory_(bmi) {
+  if (bmi < 18.5) return "bajo peso";
+  if (bmi < 25) return "peso saludable";
+  if (bmi < 30) return "sobrepeso";
+  return "obesidad";
 }
 async function buildDailyNoteSummary_(patientId, today) {
   const readings = await listReadings(patientId); // orden ascendente
@@ -1147,7 +1157,9 @@ async function buildDailyNoteSummary_(patientId, today) {
     dayOverDayLine = `Cambio de hoy (${fmtFecha(today)}) contra ayer: sistólica ${dS >= 0 ? "+" : ""}${dS}, diastólica ${dD >= 0 ? "+" : ""}${dD} mmHg.`;
   }
 
-  // ---- Peso: última vs. hace ~7 días, si hay suficientes datos ----
+  // ---- Peso: última vs. hace ~7 días, si hay suficientes datos, + IMC con
+  // la estatura del perfil (para que la IA evalúe si el peso está en un
+  // rango saludable, no solo si cambió o no) ----
   const weightReadings = readings.filter(r => r.weight != null);
   let weightLine = "";
   if (weightReadings.length) {
@@ -1156,6 +1168,13 @@ async function buildDailyNoteSummary_(patientId, today) {
     weightLine = priorW && priorW.date !== lastW.date
       ? `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (${lastW.weight - priorW.weight >= 0 ? "+" : ""}${Math.round((lastW.weight - priorW.weight) * 10) / 10} kg desde el ${fmtFecha(priorW.date)}, ${priorW.weight} kg).`
       : `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (sin dato de referencia de hace una semana).`;
+    const patient = await findPatientById(patientId);
+    const heightCm = patient ? num(patient.height) : null;
+    if (heightCm) {
+      const heightM = heightCm / 100;
+      const bmi = Math.round((lastW.weight / (heightM * heightM)) * 10) / 10;
+      weightLine += ` IMC: ${bmi} (${bmiCategory_(bmi)}), con estatura ${heightCm} cm.`;
+    }
   }
 
   // ---- Sueño: última noche vs. promedio de los últimos 7 días ----
