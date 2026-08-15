@@ -247,10 +247,8 @@ function weekdayComparisonData(data, granularity, timeView) {
 // siempre, y es lo que hace posible comparar un periodo elegido contra
 // otro. statsAnchors_ vive aquí (no en cada página) para que las ~10
 // llamadas ya existentes a filterByPeriodField_ no tengan que cambiar de
-// firma; compareAnchors_ es un segundo juego de anclas, solo para el modo
-// "Comparar periodos" de la pestaña Estadísticas.
+// firma.
 let statsAnchors_ = { day: null, week: null, month: null, year: null };
-let compareAnchors_ = { day: null, week: null, month: null, year: null };
 function mondayOfWeek_(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const dow = (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
@@ -307,8 +305,9 @@ function periodRangeLabel_(granularity, range) {
 // del campo de fecha a usar — las lecturas normales usan "date" y el
 // historial de laboratorio (lab_history) usa "fecha" — pero ahora filtra
 // por el rango de calendario real (ver calendarRangeForGranularity_) en vez
-// de una ventana móvil de días. anchors (opcional) permite pasar
-// statsAnchors_ o compareAnchors_; por default usa statsAnchors_.
+// de una ventana móvil de días. anchors (opcional) permite pasar un juego
+// de anclas propio (ver el modo "Comparar" por gráfica en index.html); por
+// default usa statsAnchors_.
 function filterByPeriodField_(data, granularity, dateField, anchors) {
   const list = data || [];
   if (granularity === "all" || !granularity) return list.slice();
@@ -318,60 +317,74 @@ function filterByPeriodField_(data, granularity, dateField, anchors) {
   return list.filter(r => r[dateField] >= range.start && r[dateField] <= range.end);
 }
 
-// ---- v33.1: Comparar un periodo contra otro (día vs día, semana vs
-// semana, mes vs mes, año vs año) ----
-// A diferencia de las gráficas de tendencia (que muestran cada lectura
-// individual en el tiempo), comparar dos periodos punto por punto en la
-// misma gráfica de línea no tendría mucho sentido visual — en cambio se
-// resume cada periodo a sus promedios (sistólica, diastólica, FC, PAM) y
-// número de lecturas, y se muestran lado a lado con una flecha/diferencia,
-// mismo lenguaje visual que el popup de comparación de una sola lectura
-// (ver readingCompareArrow_ en index.html).
 function filterByRange_(data, range, dateField) {
   if (!range) return (data || []).slice();
   return (data || []).filter(r => r[dateField] >= range.start && r[dateField] <= range.end);
 }
-function readingsAverages_(readings) {
-  const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
-  const sysVals = readings.map(r => r.sys).filter(v => v != null);
-  const diaVals = readings.map(r => r.dia).filter(v => v != null);
-  const hrVals = readings.map(r => r.hr).filter(v => v != null);
-  const pamVals = readings.filter(r => r.sys != null && r.dia != null).map(r => pamValue_(r.sys, r.dia));
-  return { sys: avg(sysVals), dia: avg(diaVals), hr: avg(hrVals), pam: avg(pamVals), count: readings.length };
+
+// ---- v33.2: comparar un periodo contra otro EN LA MISMA GRÁFICA (día vs
+// día, semana vs semana, mes vs mes, año vs año) ----
+// Para que dos periodos distintos se puedan ver superpuestos en una sola
+// gráfica de línea, ambos necesitan un eje X común — no tiene sentido
+// alinear por fecha real (el 10 de marzo no "cae junto" al 10 de abril). En
+// vez de eso, cada punto se recoloca según su posición DENTRO de su propio
+// periodo: día de la semana (semana), día del mes (mes), o mes del año
+// (año) — así "lunes de esta semana" queda justo debajo de "lunes de la
+// semana pasada", sin importar la fecha real de cada uno. Para "día" se usa
+// la hora (0-23h), útil sobre todo para PAM/FC que pueden tener varias
+// lecturas en un mismo día.
+function alignedLabelsForGranularity_(granularity) {
+  if (granularity === "week") return ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+  if (granularity === "month") return Array.from({ length: 31 }, (_, i) => String(i + 1));
+  if (granularity === "year") return MESES_ES_.map(m => m.charAt(0).toUpperCase() + m.slice(1));
+  if (granularity === "day") return Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+  return [];
 }
-function statsCompareArrow_(diff) {
-  if (diff == null || diff === 0) return { symbol: "→", color: "var(--text-muted)" };
-  return diff > 0 ? { symbol: "↑", color: "#B0554B" } : { symbol: "↓", color: "#4F7A6F" };
+function alignedIndexForGranularity_(granularity, dateStr, timeStr) {
+  if (granularity === "week") return dateStrToWeekday_(dateStr); // lunes = 0
+  if (granularity === "month") return Number(dateStr.split("-")[2]) - 1;
+  if (granularity === "year") return Number(dateStr.split("-")[1]) - 1;
+  if (granularity === "day") return timeStr ? Number(timeStr.split(":")[0]) : 0;
+  return 0;
 }
-function statsCompareCardHTML_(labelA, avgA, labelB, avgB) {
-  const rows = [
-    { label: "Sistólica", unit: "mmHg", a: avgA.sys, b: avgB.sys },
-    { label: "Diastólica", unit: "mmHg", a: avgA.dia, b: avgB.dia },
-    { label: "Frecuencia cardiaca", unit: "lpm", a: avgA.hr, b: avgB.hr },
-    { label: "PAM", unit: "mmHg", a: avgA.pam, b: avgB.pam },
-  ];
-  const rowsHtml = rows.map(r => {
-    if (r.a == null && r.b == null) return "";
-    const diff = (r.a != null && r.b != null) ? Math.round((r.b - r.a) * 10) / 10 : null;
-    const arrow = statsCompareArrow_(diff);
-    const diffLabel = diff == null ? "" : diff === 0 ? "sin cambio" : (diff > 0 ? `+${diff}` : `${diff}`);
-    return `
-      <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--border);">
-        <span style="font-size:13px; color:var(--text);">${r.label}</span>
-        <span style="display:flex; align-items:center; gap:8px; font-size:13px;">
-          <span style="color:var(--text-muted);">${r.a != null ? r.a : "sin dato"} ${r.a != null ? r.unit : ""}</span>
-          <span style="color:${arrow.color}; font-size:16px;">${arrow.symbol}</span>
-          <span style="font-weight:600;">${r.b != null ? r.b : "sin dato"} ${r.b != null ? r.unit : ""}</span>
-          ${diffLabel ? `<span style="font-size:11.5px; color:${arrow.color};">(${diffLabel})</span>` : ""}
-        </span>
-      </div>`;
-  }).join("");
-  return `
-    <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-bottom:6px;">
-      <span>A: ${labelA} (${avgA.count} lectura${avgA.count === 1 ? "" : "s"})</span>
-      <span>B: ${labelB} (${avgB.count} lectura${avgB.count === 1 ? "" : "s"})</span>
-    </div>
-    ${rowsHtml}`;
+// valueFn(row) => número o null. Si hay más de un dato en el mismo "casillero"
+// del eje (ej. dos lecturas de FC el mismo día de la semana), se promedian.
+function alignedSeriesForMetric_(data, granularity, dateField, timeField, valueFn) {
+  const labels = alignedLabelsForGranularity_(granularity);
+  const sums = new Array(labels.length).fill(0);
+  const counts = new Array(labels.length).fill(0);
+  (data || []).forEach(r => {
+    const v = valueFn(r);
+    if (v == null || !r[dateField]) return;
+    const idx = alignedIndexForGranularity_(granularity, r[dateField], timeField ? r[timeField] : null);
+    if (idx == null || idx < 0 || idx >= labels.length) return;
+    sums[idx] += v; counts[idx] += 1;
+  });
+  const values = sums.map((s, i) => counts[i] ? Math.round((s / counts[i]) * 10) / 10 : null);
+  return { labels, values };
+}
+function renderMetricCompareChart_(prevInstance, canvasEl, emptyEl, cmp, opts) {
+  if (prevInstance) prevInstance.destroy();
+  const hasData = cmp.valuesA.some(v => v != null) || cmp.valuesB.some(v => v != null);
+  if (emptyEl) emptyEl.style.display = hasData ? "none" : "block";
+  if (canvasEl) canvasEl.style.display = hasData ? "" : "none";
+  if (!hasData || !canvasEl) return null;
+  const ctx = canvasEl.getContext("2d");
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: cmp.labels,
+      datasets: [
+        { label: opts.labelA, data: cmp.valuesA, borderColor: opts.color, backgroundColor: opts.color, tension: 0.25, spanGaps: true, pointRadius: 3 },
+        { label: opts.labelB, data: cmp.valuesB, borderColor: opts.colorB || "#B0554B", backgroundColor: opts.colorB || "#B0554B", borderDash: [5, 3], tension: 0.25, spanGaps: true, pointRadius: 3 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+      scales: { y: { title: { display: true, text: opts.unit || "" }, beginAtZero: false } },
+    },
+  });
 }
 // v30.19: cuando el periodo "Día" trae su propio selector de fecha (en vez
 // de fijarse siempre a "hoy"), esto filtra a ESE día exacto — a diferencia
@@ -862,6 +875,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "33.2", changes: [
+    "El modo \"Comparar con otro periodo\" en Estadísticas ahora vive en cada gráfica (no en un filtro general aparte) y se ve directamente sobre esa gráfica: dos líneas superpuestas, alineadas por día de la semana/mes/mes del año según corresponda, para comparar de verdad día vs día, semana vs semana, mes vs mes o año vs año.",
+  ] },
   { version: "33.1", changes: [
     "La duración de sueño ahora se captura en horas (ej. 7.5), no en minutos.",
     "Se corrigió que en pantallas de celular las pestañas se salieran del borde derecho; ahora la barra de pestañas se desliza horizontalmente.",

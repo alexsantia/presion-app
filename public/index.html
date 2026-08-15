@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=33.1"></script>
+<script src="/shared/common.js?v=33.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -562,23 +562,7 @@
       <span id="statsAnchorLabel" style="font-size:12.5px; color:var(--text-muted);"></span>
       <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
     </div>
-    <!-- v33.1: comparar el periodo elegido arriba contra otro periodo del
-         mismo tipo (día vs día, semana vs semana, mes vs mes, año vs año). -->
-    <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
-      <label class="checkbox-label" style="display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer;">
-        <input type="checkbox" id="statsCompareToggle"> Comparar con otro periodo
-      </label>
-      <div id="statsComparePickerWrap" style="display:none; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px;">
-        <label for="statsCompareAnchorDay" style="font-size:12.5px; font-weight:600;">Comparar con:</label>
-        <input type="date" id="statsCompareAnchorDay" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-        <input type="date" id="statsCompareAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras comparar">
-        <input type="month" id="statsCompareAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-        <select id="statsCompareAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
-      </div>
-      <div id="statsCompareCardWrap" style="display:none; margin-top:10px;">
-        <div id="statsCompareCard"></div>
-      </div>
-    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:8px 0 0;">Para comparar un periodo contra otro (día vs día, semana vs semana, mes vs mes, año vs año), activa "Comparar" directamente en la gráfica que te interese, junto a su propio filtro.</p>
   </div>
 
   <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
@@ -1206,7 +1190,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v33.2</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1682,7 +1666,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("33.1");
+  showAboutOverlay_("33.2");
 });
 
 function openModal(id) {
@@ -2488,7 +2472,6 @@ function syncStatsAnchorPicker_() {
   document.getElementById("statsAnchorMonth").style.display = gran === "month" ? "" : "none";
   document.getElementById("statsAnchorYear").style.display = gran === "year" ? "" : "none";
   populateYearSelect_(document.getElementById("statsAnchorYear"));
-  populateYearSelect_(document.getElementById("statsCompareAnchorYear"));
   const today = todayStr();
   document.getElementById("statsAnchorDay").max = today;
   if (gran === "day") document.getElementById("statsAnchorDay").value = statsAnchors_.day || today;
@@ -2497,30 +2480,10 @@ function syncStatsAnchorPicker_() {
   if (gran === "year") document.getElementById("statsAnchorYear").value = statsAnchors_.year || String(new Date().getFullYear());
   const range = calendarRangeForGranularity_(gran, statsAnchors_[gran]);
   document.getElementById("statsAnchorLabel").textContent = range ? periodRangeLabel_(gran, range) : "";
-
-  const compareOn = document.getElementById("statsCompareToggle").checked;
-  document.getElementById("statsComparePickerWrap").style.display = compareOn ? "flex" : "none";
-  document.getElementById("statsCompareCardWrap").style.display = compareOn ? "" : "none";
-  ["statsCompareAnchorDay", "statsCompareAnchorWeek", "statsCompareAnchorMonth", "statsCompareAnchorYear"].forEach(id => {
-    document.getElementById(id).style.display = "none";
-  });
-  if (compareOn) {
-    const compareInputId = { day: "statsCompareAnchorDay", week: "statsCompareAnchorWeek", month: "statsCompareAnchorMonth", year: "statsCompareAnchorYear" }[gran];
-    document.getElementById(compareInputId).style.display = "";
-    if (gran === "day" || gran === "week") document.getElementById(compareInputId).max = today;
-    if (!compareAnchors_[gran]) {
-      // Default razonable: el periodo INMEDIATO ANTERIOR al elegido arriba,
-      // así "Comparar" ya muestra algo útil sin que el paciente tenga que
-      // elegir una segunda fecha a mano.
-      compareAnchors_[gran] = defaultPreviousAnchor_(gran, statsAnchors_[gran]);
-    }
-    if (gran === "day") document.getElementById("statsCompareAnchorDay").value = compareAnchors_.day;
-    if (gran === "week") document.getElementById("statsCompareAnchorWeek").value = compareAnchors_.week;
-    if (gran === "month") document.getElementById("statsCompareAnchorMonth").value = compareAnchors_.month;
-    if (gran === "year") document.getElementById("statsCompareAnchorYear").value = compareAnchors_.year;
-    renderStatsCompareCard_();
-  }
 }
+// v33.2: periodo INMEDIATO ANTERIOR a uno dado, para que "Comparar" (por
+// gráfica) ya muestre algo útil apenas se activa, sin que el paciente tenga
+// que elegir una segunda fecha a mano primero.
 function defaultPreviousAnchor_(gran, anchor) {
   const range = calendarRangeForGranularity_(gran, anchor);
   if (gran === "day") { const d = new Date(range.start + "T00:00:00"); d.setDate(d.getDate() - 1); return localDateStr_(d); }
@@ -2528,18 +2491,6 @@ function defaultPreviousAnchor_(gran, anchor) {
   if (gran === "month") { const [y, m] = range.start.split("-").map(Number); const d = new Date(y, m - 2, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
   if (gran === "year") return String(Number(range.start.split("-")[0]) - 1);
   return anchor;
-}
-function renderStatsCompareCard_() {
-  const gran = statsChartPeriod;
-  const rangeA = calendarRangeForGranularity_(gran, statsAnchors_[gran]);
-  const rangeB = calendarRangeForGranularity_(gran, compareAnchors_[gran]);
-  const dataA = filterByRange_(currentData, rangeA, "date");
-  const dataB = filterByRange_(currentData, rangeB, "date");
-  const avgA = readingsAverages_(dataA);
-  const avgB = readingsAverages_(dataB);
-  document.getElementById("statsCompareCard").innerHTML = statsCompareCardHTML_(
-    periodRangeLabel_(gran, rangeA), avgA, periodRangeLabel_(gran, rangeB), avgB
-  );
 }
 
 // ---- Estadísticas: comparación por franja horaria (v30) ----
@@ -2644,6 +2595,7 @@ function rerenderAllStatsCharts_() {
   renderWeekdayChart();
   renderLabHistoryCharts();
   syncStatsAnchorPicker_();
+  syncAllChartCompareUI_();
 }
 document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
@@ -2664,6 +2616,7 @@ document.getElementById("tabEstadisticas").addEventListener("click", e => {
   const key = btn.closest(".chart-filter-mini").dataset.chartKey;
   statsChartOverrides[key] = btn.dataset.statsPeriod;
   syncStatsFilterButtons_();
+  if (CHART_COMPARE_META_[key]) syncChartCompareUI_(key);
   // Solo esta gráfica cambió de periodo: se redibuja nada más ella, para que
   // las demás no parpadeen dando la falsa impresión de que también cambiaron.
   if (key === "timeOfDay") renderStatsChart();
@@ -2688,15 +2641,6 @@ document.getElementById("statsAnchorTodayBtn").addEventListener("click", () => {
   statsAnchors_[statsChartPeriod] = null; // null = "el periodo actual"
   rerenderAllStatsCharts_();
 });
-document.getElementById("statsCompareToggle").addEventListener("change", () => {
-  syncStatsAnchorPicker_();
-});
-["statsCompareAnchorDay", "statsCompareAnchorWeek", "statsCompareAnchorMonth", "statsCompareAnchorYear"].forEach(id => {
-  document.getElementById(id).addEventListener("change", e => {
-    compareAnchors_[statsChartPeriod] = e.target.value || null;
-    renderStatsCompareCard_();
-  });
-});
 // v30.19: elegir una fecha en el selector de "Día" solo redibuja esa
 // gráfica en particular (igual que al tocar Sem/Mes/Año en su mini-filtro).
 document.getElementById("tabEstadisticas").addEventListener("change", e => {
@@ -2712,6 +2656,66 @@ document.querySelectorAll(".chart-filter-mini-daypicker").forEach(input => {
 });
 syncStatsFilterButtons_();
 syncStatsAnchorPicker_();
+
+// ---- v33.2: controles de "Comparar" inyectados junto a cada mini-filtro
+// (uno por gráfica de tendencia; timeOfDay/weekday quedan fuera porque ya
+// son comparativas por diseño). Se inyectan por JS en vez de escribirse a
+// mano 10 veces en el HTML, para no repetir el mismo bloque de marcado. ----
+function chartCompareControlsHTML_(chartKey) {
+  return `
+    <div class="chart-compare-wrap" data-chart-key="${chartKey}" style="margin-top:4px;">
+      <label style="display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-muted); cursor:pointer;">
+        <input type="checkbox" class="chart-compare-toggle" data-chart-key="${chartKey}"> 🔁 Comparar con otro periodo
+      </label>
+      <span class="chart-compare-anchor-wrap" data-chart-key="${chartKey}" style="display:none; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px;">
+        <input type="date" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="day" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+        <input type="date" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="week" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;" title="Elige cualquier día de la semana a comparar">
+        <input type="month" class="chart-compare-anchor" data-chart-key="${chartKey}" data-gran="month" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+        <select class="chart-compare-anchor chart-compare-anchor-year" data-chart-key="${chartKey}" data-gran="year" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;"></select>
+      </span>
+    </div>`;
+}
+function injectChartCompareControls_() {
+  document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    if (!CHART_COMPARE_META_[key]) return;
+    if (wrap.nextElementSibling && wrap.nextElementSibling.classList.contains("chart-compare-wrap")) return;
+    wrap.insertAdjacentHTML("afterend", chartCompareControlsHTML_(key));
+  });
+}
+function syncChartCompareUI_(key) {
+  const anchorWrap = document.querySelector(`.chart-compare-anchor-wrap[data-chart-key="${key}"]`);
+  if (!anchorWrap) return;
+  const toggle = document.querySelector(`.chart-compare-toggle[data-chart-key="${key}"]`);
+  const on = !!chartCompareOn_[key];
+  if (toggle) toggle.checked = on;
+  anchorWrap.style.display = on ? "flex" : "none";
+  if (!on) return;
+  const gran = effectivePeriod_(key);
+  anchorWrap.querySelectorAll(".chart-compare-anchor").forEach(inp => {
+    inp.style.display = inp.dataset.gran === gran ? "" : "none";
+  });
+  if (gran === "year") populateYearSelect_(anchorWrap.querySelector(".chart-compare-anchor-year"));
+  const anchors = chartCompareAnchorFor_(key);
+  if (!anchors[gran]) {
+    // Default: el periodo INMEDIATO ANTERIOR al que ya está viendo esta
+    // gráfica, así "Comparar" ya muestra algo útil de entrada.
+    const rangeA = primaryRangeForChart_(key);
+    anchors[gran] = defaultPreviousAnchor_(gran, gran === "day" ? rangeA.start : (gran === "week" ? rangeA.start : (gran === "month" ? rangeA.start.slice(0, 7) : rangeA.start.slice(0, 4))));
+  }
+  const input = anchorWrap.querySelector(`.chart-compare-anchor[data-gran="${gran}"]`);
+  if (input) {
+    input.value = anchors[gran];
+    if (gran === "day" || gran === "week") input.max = todayStr();
+  }
+}
+function syncAllChartCompareUI_() {
+  Object.keys(CHART_COMPARE_META_).forEach(syncChartCompareUI_);
+}
+// v33.2: la llamada que activa todo lo de arriba (injectChartCompareControls_
+// / syncAllChartCompareUI_) vive más abajo, justo después de que
+// CHART_COMPARE_META_ se declara — antes de eso, referenciarlo tiraría un
+// ReferenceError de "no inicializado todavía" (temporal dead zone de const).
 
 // ---- Estadísticas: FC, peso, cintura, triglicéridos, colesterol (v30.6,
 // filtro de semana/mes/año agregado en v30.7 reutilizando el mismo selector
@@ -2760,85 +2764,159 @@ async function loadLabHistory() {
 // la falsa impresión de que sus valores también habían cambiado. Sin
 // onlyKeys (carga inicial, filtro general, "Eliminar filtros") sí se
 // redibujan todas, porque en esos casos de verdad les toca a todas.
+// ---- v33.2: comparar un periodo contra otro, POR GRÁFICA (día vs día,
+// semana vs semana, mes vs mes, año vs año) ----
+// Antes el modo "Comparar" vivía en el filtro general y solo mostraba una
+// tarjeta de promedios; el paciente pidió que el filtro de comparación
+// viva en cada gráfica y que se vea la comparación en la gráfica misma.
+// Cada gráfica de tendencia (menos las de franja horaria/día de la semana,
+// que ya son comparativas por diseño) puede activar su propio "Comparar"
+// junto a su mini-filtro; superpone dos periodos alineados por posición
+// dentro del periodo (ver alignedSeriesForMetric_ en common.js), no por
+// fecha real, para que ambos queden uno junto al otro visualmente.
+let chartCompareOn_ = {};
+let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year }
+function chartCompareAnchorFor_(key) {
+  if (!chartCompareAnchor_[key]) chartCompareAnchor_[key] = { day: null, week: null, month: null, year: null };
+  return chartCompareAnchor_[key];
+}
+function convertLabValue_(v, key) {
+  if (v == null) return null;
+  if (getUnitPref() !== "mmoll") return Number(v);
+  const factor = key === "cholesterol" ? CHOL_MGDL_PER_MMOLL : TRI_MGDL_PER_MMOLL;
+  return Math.round((v / factor) * 100) / 100;
+}
+const CHART_COMPARE_META_ = {
+  pam: { color: "#6E8FB0", unit: "mmHg", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => pamValue_(r.sys, r.dia) },
+  hr: { color: "#8a8a8a", unit: "lpm", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.hr },
+  weight: { color: "#9B8AC4", unit: "kg", dateField: "date", timeField: "time", data: () => currentData, valueFn: r => r.weight },
+  waist: { color: "#D9A15F", unit: "cm", dateField: "fecha", data: () => currentLabHistory, valueFn: r => r.waist },
+  triglycerides: { color: "#B0559B", unit: () => (getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL"), dateField: "fecha", data: () => currentLabHistory, valueFn: r => convertLabValue_(r.triglycerides, "triglycerides") },
+  cholesterol: { color: "#D98E5F", unit: () => (getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL"), dateField: "fecha", data: () => currentLabHistory, valueFn: r => convertLabValue_(r.cholesterol, "cholesterol") },
+  exercise: { color: "#2E9E96", unit: "kcal", dateField: "fecha", data: () => exerciseDailyTotalsForChart_(), valueFn: r => r.calorias },
+  medAdherence: { color: "#D9A15F", unit: "%", dateField: "fecha", data: () => currentMedAdherence, valueFn: r => r.pct },
+  sleepDuration: { color: "#6E8FB0", unit: "h", dateField: "fecha", data: () => currentSleep, valueFn: r => (r.duracion_min != null ? Math.round((r.duracion_min / 60) * 100) / 100 : null) },
+  sleepQuality: { color: "#9B8AC4", unit: "/10", dateField: "fecha", data: () => currentSleep, valueFn: r => r.calidad },
+};
+// El mismo rango que ya usa la línea sencilla de esta gráfica (ver
+// filterForChartPeriod_), pero como { start, end } en vez de datos ya
+// filtrados — se necesita el rango para construir la etiqueta ("Agosto
+// 2026") y para acotar los datos antes de alinearlos por posición.
+function primaryRangeForChart_(key) {
+  const gran = effectivePeriod_(key);
+  if (gran === "day") {
+    const day = statsChartOverrides[key] ? (statsChartDay[key] || todayStr()) : (statsAnchors_.day || todayStr());
+    return calendarRangeForGranularity_("day", day);
+  }
+  return calendarRangeForGranularity_(gran, statsAnchors_[gran]);
+}
+function buildCompareForChart_(key) {
+  const meta = CHART_COMPARE_META_[key];
+  const gran = effectivePeriod_(key);
+  const rangeA = primaryRangeForChart_(key);
+  const rangeB = calendarRangeForGranularity_(gran, chartCompareAnchorFor_(key)[gran]);
+  const dataA = filterByRange_(meta.data(), rangeA, meta.dateField);
+  const dataB = filterByRange_(meta.data(), rangeB, meta.dateField);
+  const seriesA = alignedSeriesForMetric_(dataA, gran, meta.dateField, meta.timeField, meta.valueFn);
+  const seriesB = alignedSeriesForMetric_(dataB, gran, meta.dateField, meta.timeField, meta.valueFn);
+  return {
+    labels: seriesA.labels, valuesA: seriesA.values, valuesB: seriesB.values,
+    labelA: periodRangeLabel_(gran, rangeA), labelB: periodRangeLabel_(gran, rangeB),
+  };
+}
+function renderTrendOrCompare_(key, instanceGetter, instanceSetter, canvasId, emptyId, opts, trendSeries) {
+  const canvasEl = document.getElementById(canvasId);
+  const emptyEl = document.getElementById(emptyId);
+  const unit = typeof opts.unit === "function" ? opts.unit() : opts.unit;
+  if (chartCompareOn_[key]) {
+    const cmp = buildCompareForChart_(key);
+    instanceSetter(renderMetricCompareChart_(instanceGetter(), canvasEl, emptyEl, cmp, {
+      labelA: cmp.labelA, labelB: cmp.labelB, color: opts.color, unit,
+    }));
+  } else {
+    instanceSetter(renderMetricTrendChart(instanceGetter(), canvasEl, emptyEl, trendSeries(), { label: opts.label, color: opts.color, unit, idealRange: opts.idealRange }));
+  }
+}
 function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
-  const unitLabel = getUnitPref() === "mmoll" ? "mmol/L" : "mg/dL";
   if (shouldRender("pam")) {
-    const pamData = filterForChartPeriod_(currentData, "pam", "date");
-    statsPamChartInstance = renderMetricTrendChart(
-      statsPamChartInstance, document.getElementById("statsPamChart"), document.getElementById("statsPamEmpty"),
-      pamSeriesForReadings_(pamData), { label: "PAM", color: "#6E8FB0", unit: "mmHg", idealRange: PAM_IDEAL_RANGE }
-    );
+    renderTrendOrCompare_("pam", () => statsPamChartInstance, v => statsPamChartInstance = v, "statsPamChart", "statsPamEmpty",
+      { label: "PAM", color: CHART_COMPARE_META_.pam.color, unit: "mmHg", idealRange: PAM_IDEAL_RANGE },
+      () => pamSeriesForReadings_(filterForChartPeriod_(currentData, "pam", "date")));
   }
   if (shouldRender("hr")) {
-    const hrData = filterForChartPeriod_(currentData, "hr", "date");
-    statsHrChartInstance = renderMetricTrendChart(
-      statsHrChartInstance, document.getElementById("statsHrChart"), document.getElementById("statsHrEmpty"),
-      readingsSeriesForKey_(hrData, "hr"), { label: "FC", color: "#8a8a8a", unit: "lpm" }
-    );
+    renderTrendOrCompare_("hr", () => statsHrChartInstance, v => statsHrChartInstance = v, "statsHrChart", "statsHrEmpty",
+      { label: "FC", color: CHART_COMPARE_META_.hr.color, unit: "lpm" },
+      () => readingsSeriesForKey_(filterForChartPeriod_(currentData, "hr", "date"), "hr"));
   }
   if (shouldRender("weight")) {
-    const weightData = filterForChartPeriod_(currentData, "weight", "date");
-    statsWeightChartInstance = renderMetricTrendChart(
-      statsWeightChartInstance, document.getElementById("statsWeightChart"), document.getElementById("statsWeightEmpty"),
-      readingsSeriesForKey_(weightData, "weight"), { label: "Peso", color: "#9B8AC4", unit: "kg" }
-    );
+    renderTrendOrCompare_("weight", () => statsWeightChartInstance, v => statsWeightChartInstance = v, "statsWeightChart", "statsWeightEmpty",
+      { label: "Peso", color: CHART_COMPARE_META_.weight.color, unit: "kg" },
+      () => readingsSeriesForKey_(filterForChartPeriod_(currentData, "weight", "date"), "weight"));
   }
   if (shouldRender("waist")) {
-    const waistHistory = filterForChartPeriod_(currentLabHistory, "waist", "fecha");
-    statsWaistChartInstance = renderMetricTrendChart(
-      statsWaistChartInstance, document.getElementById("statsWaistChart"), document.getElementById("statsWaistEmpty"),
-      labHistorySeriesConverted_("waist", waistHistory), { label: "Cintura", color: "#D9A15F", unit: "cm" }
-    );
+    renderTrendOrCompare_("waist", () => statsWaistChartInstance, v => statsWaistChartInstance = v, "statsWaistChart", "statsWaistEmpty",
+      { label: "Cintura", color: CHART_COMPARE_META_.waist.color, unit: "cm" },
+      () => labHistorySeriesConverted_("waist", filterForChartPeriod_(currentLabHistory, "waist", "fecha")));
   }
   if (shouldRender("triglycerides")) {
-    const triHistory = filterForChartPeriod_(currentLabHistory, "triglycerides", "fecha");
-    statsTriglyceridesChartInstance = renderMetricTrendChart(
-      statsTriglyceridesChartInstance, document.getElementById("statsTriglyceridesChart"), document.getElementById("statsTriglyceridesEmpty"),
-      labHistorySeriesConverted_("triglycerides", triHistory), { label: "Triglicéridos", color: "#B0559B", unit: unitLabel }
-    );
+    renderTrendOrCompare_("triglycerides", () => statsTriglyceridesChartInstance, v => statsTriglyceridesChartInstance = v, "statsTriglyceridesChart", "statsTriglyceridesEmpty",
+      { label: "Triglicéridos", color: CHART_COMPARE_META_.triglycerides.color, unit: CHART_COMPARE_META_.triglycerides.unit },
+      () => labHistorySeriesConverted_("triglycerides", filterForChartPeriod_(currentLabHistory, "triglycerides", "fecha")));
   }
   if (shouldRender("cholesterol")) {
-    const cholHistory = filterForChartPeriod_(currentLabHistory, "cholesterol", "fecha");
-    statsCholesterolChartInstance = renderMetricTrendChart(
-      statsCholesterolChartInstance, document.getElementById("statsCholesterolChart"), document.getElementById("statsCholesterolEmpty"),
-      labHistorySeriesConverted_("cholesterol", cholHistory), { label: "Colesterol", color: "#D98E5F", unit: unitLabel }
-    );
+    renderTrendOrCompare_("cholesterol", () => statsCholesterolChartInstance, v => statsCholesterolChartInstance = v, "statsCholesterolChart", "statsCholesterolEmpty",
+      { label: "Colesterol", color: CHART_COMPARE_META_.cholesterol.color, unit: CHART_COMPARE_META_.cholesterol.unit },
+      () => labHistorySeriesConverted_("cholesterol", filterForChartPeriod_(currentLabHistory, "cholesterol", "fecha")));
   }
   if (shouldRender("exercise")) {
-    const exerciseHistory = filterForChartPeriod_(exerciseDailyTotalsForChart_(), "exercise", "fecha");
-    statsExerciseChartInstance = renderMetricTrendChart(
-      statsExerciseChartInstance, document.getElementById("statsExerciseChart"), document.getElementById("statsExerciseEmpty"),
-      labHistorySeriesForKey_(exerciseHistory, "calorias"), { label: "Calorías", color: "#2E9E96", unit: "kcal" }
-    );
+    renderTrendOrCompare_("exercise", () => statsExerciseChartInstance, v => statsExerciseChartInstance = v, "statsExerciseChart", "statsExerciseEmpty",
+      { label: "Calorías", color: CHART_COMPARE_META_.exercise.color, unit: "kcal" },
+      () => labHistorySeriesForKey_(filterForChartPeriod_(exerciseDailyTotalsForChart_(), "exercise", "fecha"), "calorias"));
   }
   if (shouldRender("medAdherence")) {
-    const adherenceHistory = filterForChartPeriod_(currentMedAdherence, "medAdherence", "fecha");
-    statsMedAdherenceChartInstance = renderMetricTrendChart(
-      statsMedAdherenceChartInstance, document.getElementById("statsMedAdherenceChart"), document.getElementById("statsMedAdherenceEmpty"),
-      labHistorySeriesForKey_(adherenceHistory, "pct"), { label: "% de apego", color: "#D9A15F", unit: "%" }
-    );
+    renderTrendOrCompare_("medAdherence", () => statsMedAdherenceChartInstance, v => statsMedAdherenceChartInstance = v, "statsMedAdherenceChart", "statsMedAdherenceEmpty",
+      { label: "% de apego", color: CHART_COMPARE_META_.medAdherence.color, unit: "%" },
+      () => labHistorySeriesForKey_(filterForChartPeriod_(currentMedAdherence, "medAdherence", "fecha"), "pct"));
   }
   // v32: gráficas de Sueño
   if (shouldRender("sleepDuration")) {
-    const sleepHistory = filterForChartPeriod_(currentSleep, "sleepDuration", "fecha");
-    statsSleepDurationChartInstance = renderMetricTrendChart(
-      statsSleepDurationChartInstance, document.getElementById("statsSleepDurationChart"), document.getElementById("statsSleepDurationEmpty"),
-      sleepDurationSeriesForChart_(sleepHistory), { label: "Duración", color: "#6E8FB0", unit: "h" }
-    );
+    renderTrendOrCompare_("sleepDuration", () => statsSleepDurationChartInstance, v => statsSleepDurationChartInstance = v, "statsSleepDurationChart", "statsSleepDurationEmpty",
+      { label: "Duración", color: CHART_COMPARE_META_.sleepDuration.color, unit: "h" },
+      () => sleepDurationSeriesForChart_(filterForChartPeriod_(currentSleep, "sleepDuration", "fecha")));
   }
   if (shouldRender("sleepQuality")) {
-    const sleepHistory = filterForChartPeriod_(currentSleep, "sleepQuality", "fecha");
-    statsSleepQualityChartInstance = renderMetricTrendChart(
-      statsSleepQualityChartInstance, document.getElementById("statsSleepQualityChart"), document.getElementById("statsSleepQualityEmpty"),
-      sleepQualitySeriesForChart_(sleepHistory), { label: "Calidad", color: "#9B8AC4", unit: "/10" }
-    );
+    renderTrendOrCompare_("sleepQuality", () => statsSleepQualityChartInstance, v => statsSleepQualityChartInstance = v, "statsSleepQualityChart", "statsSleepQualityEmpty",
+      { label: "Calidad", color: CHART_COMPARE_META_.sleepQuality.color, unit: "/10" },
+      () => sleepQualitySeriesForChart_(filterForChartPeriod_(currentSleep, "sleepQuality", "fecha")));
   }
 }
 loadLabHistory();
 loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"]));
+
+// v33.2: recién aquí CHART_COMPARE_META_ ya está declarado (ver nota más
+// arriba, junto a syncAllChartCompareUI_).
+injectChartCompareControls_();
+document.getElementById("tabEstadisticas").addEventListener("change", e => {
+  const toggle = e.target.closest(".chart-compare-toggle");
+  if (toggle) {
+    const key = toggle.dataset.chartKey;
+    chartCompareOn_[key] = toggle.checked;
+    syncChartCompareUI_(key);
+    renderLabHistoryCharts([key]);
+    return;
+  }
+  const anchorInput = e.target.closest(".chart-compare-anchor");
+  if (anchorInput) {
+    const key = anchorInput.dataset.chartKey;
+    const gran = anchorInput.dataset.gran;
+    chartCompareAnchorFor_(key)[gran] = anchorInput.value || null;
+    renderLabHistoryCharts([key]);
+  }
+});
+syncAllChartCompareUI_();
 
 // La pestaña Estadísticas empieza oculta (display:none); Chart.js no puede
 // medir un canvas oculto, así que además de renderizar junto con la
