@@ -763,6 +763,15 @@ app.post("/api/ai-export-link", requireRole("patient"), asyncRoute(async (req, r
     origin: requestOrigin_(req),
   }));
 }));
+// v34.4: "Pregunta libre" con IA (Estadísticas) — función de plan "pro",
+// validada server-side en callSheetsApi/ai_free_prompt. Sin modo "mi propia
+// IA" a propósito, ver nota en db-postgres.js.
+app.post("/api/ai-free-prompt", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "ai_free_prompt", patient_id: req.session.patientId,
+    question: req.body.question, period: req.body.period,
+  }));
+}));
 if (DB_BACKEND === "postgres") {
   app.get("/api/ai-export/:token", asyncRoute(async (req, res) => {
     const { getAiExportPayload } = require("./db-postgres");

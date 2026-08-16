@@ -156,6 +156,12 @@ function anyRelatedInGrouped_(grouped) {
 function anySpecialInGrouped_(grouped) {
   return (grouped || []).some(g => g.special);
 }
+// v34.4: mismo chequeo que anySpecialInGrouped_ pero para series tipo
+// {values, special} como las que arma pamSeriesForReadings_ (para la
+// gráfica de PAM en Estadísticas, que no pasa por aggregateReadings).
+function anySpecialInSeries_(series) {
+  return !!(series && series.special && series.special.some(Boolean));
+}
 
 // Vista por horario del día, independiente del filtro de periodo: acota las
 // lecturas a la franja de horas elegida antes de agregarlas/graficarlas.
@@ -457,6 +463,10 @@ function pamSeriesForReadings_(data) {
     labels: filtered.map(r => fmtDate(r.date) + (r.time ? " " + r.time : "")),
     values: filtered.map(r => pamValue_(r.sys, r.dia)),
     obs: filtered.map(r => r.obs || ""),
+    // v34.4: igual que en la gráfica de Tendencia (pestaña principal), las
+    // lecturas marcadas con "situación especial" se resaltan distinto — ver
+    // renderMetricTrendChart más abajo.
+    special: filtered.map(r => !!r.special_situation),
   };
 }
 // v30.17: rango "óptimo" de PAM citado por referencias clínicas generales
@@ -505,11 +515,23 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
     yScaleOpts.suggestedMin = Math.min(idealRange.min - 10, ...vals);
     yScaleOpts.suggestedMax = Math.max(idealRange.max + 10, ...vals);
   }
+  // v34.4: si la serie trae "special" (por ahora solo PAM en Estadísticas la
+  // manda, ver pamSeriesForReadings_), las lecturas marcadas con "situación
+  // especial" se pintan distinto — mismo color/tamaño que ya se usa en la
+  // gráfica de Tendencia de la pestaña principal (ver SPECIAL_POINT_COLOR_).
+  const pointStyleOverrides = series.special
+    ? {
+        pointBackgroundColor: series.values.map((_, i) => series.special[i] ? SPECIAL_POINT_COLOR_ : opts.color),
+        pointBorderColor: series.values.map((_, i) => series.special[i] ? SPECIAL_POINT_COLOR_ : opts.color),
+        pointRadius: series.values.map((_, i) => series.special[i] ? 6 : 3),
+        pointHoverRadius: series.values.map((_, i) => series.special[i] ? 8 : 5),
+      }
+    : { pointRadius: 3 };
   return new Chart(ctx, {
     type: "line",
     data: { labels: series.labels, datasets: [{
       label: opts.label, data: series.values, borderColor: opts.color, backgroundColor: opts.color,
-      tension: 0.25, spanGaps: true, pointRadius: 3,
+      tension: 0.25, spanGaps: true, ...pointStyleOverrides,
     }] },
     plugins: idealRange ? [idealRangeBandPlugin_(idealRange)] : [],
     options: {
@@ -900,6 +922,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "34.4", changes: [
+    "En Estadísticas, el PAM ahora resalta en ámbar las lecturas marcadas con \"situación especial\", igual que la gráfica de Tendencia de la pestaña principal.",
+    "Nueva sección \"Pregunta libre\" en Estadísticas: escribe tu propia pregunta sobre tus datos de salud en la app y la IA responde con base en tu información real, con barreras para que solo se puedan hacer preguntas sobre tu propia salud en la app (no temas ajenos ni intentos de cambiar las reglas del asistente). Es una función de cuenta Pro; por ahora todas las cuentas son Pro.",
+  ] },
   { version: "34.3", changes: [
     "La Interpretación con IA de Estadísticas ahora deja elegir entre analizar todas las secciones (como antes) o enfocarse en una sola categoría (presión arterial, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos o laboratorios). La situación especial de tus lecturas ahora se toma en cuenta tanto en la Interpretación con IA como en la nota diaria de Alertas y notas, como posible explicación de una lectura atípica. Además, el checkbox y la nota de situación especial ahora se recuerdan de una lectura a la siguiente (igual que \"Medicado\"), para no tener que volver a escribirla mientras dure la misma situación.",
   ] },

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=34.3"></script>
+<script src="/shared/common.js?v=34.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -670,6 +670,42 @@
        pestaña Presión Arterial (prefijo "pa"). -->
   <div class="section" id="es_aiInterpretationSection"></div>
 
+  <!-- v34.4: "Pregunta libre" con IA — el paciente escribe su propia
+       pregunta sobre sus datos de salud en esta app (no un chat general).
+       Guardrails de tema en el servidor (ver AI_FREE_PROMPT_SYSTEM_ en
+       db-postgres.js): cualquier pregunta fuera de su salud/monitoreo aquí
+       se rechaza con una respuesta fija, incluyendo intentos de pedirle a
+       la IA que cambie de rol o ignore sus reglas. Sin modo "mi propia
+       IA" a propósito (siempre pasa por el servidor, para que el guardrail
+       no se pueda saltar). Función de plan "pro" (ver PLAN_FEATURES_) —
+       hoy todos los pacientes son "pro", pero freePromptGate ya deja lista
+       la validación para cuando eso cambie (ver applyPlanGating_). -->
+  <div class="section section-ai" id="freePromptSection">
+    <div class="toolbar">
+      <h2 style="flex:1">💬 Pregunta libre</h2>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Escribe tu propia pregunta sobre tus datos de salud en esta app (ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"). Solo responde temas relacionados con tu salud y monitoreo aquí — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
+    <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
+    <div id="freePromptForm">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px;">
+        <label for="freePromptPeriod" style="font-size:13px; font-weight:600;">Periodo</label>
+        <select id="freePromptPeriod" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+          <option value="7d">Últimos 7 días</option>
+          <option value="30d">Últimos 30 días</option>
+          <option value="90d" selected>Últimos 90 días</option>
+          <option value="all">Todo el historial</option>
+        </select>
+      </div>
+      <textarea id="freePromptQuestion" rows="3" maxlength="500" placeholder="Ej. ¿Cómo ha estado mi presión los fines de semana comparado con entre semana?" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:10px;">
+        <button type="button" class="btn-primary" id="freePromptBtn">Preguntar</button>
+        <span id="freePromptCharCount" style="font-size:12px; color:var(--text-muted);">0/500</span>
+      </div>
+      <div id="freePromptResult" style="display:none; margin-top:10px; padding:12px 14px; background:var(--bg-page); border:1px solid var(--border); border-radius:10px; font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
+      <div id="freePromptError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
+    </div>
+  </div>
+
   <!-- v32.1: contenedor de gráficas reordenables — cada .section-chart de
        aquí adentro lleva data-order-key + draggable="true"; el orden
        preferido se guarda en localStorage (ver wireStatsChartReorder_ en el
@@ -697,6 +733,9 @@
     </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsPamChart"></canvas></div>
     <div id="statsPamEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Aún no hay lecturas suficientes para calcular la PAM.</div>
+    <!-- v34.4: igual que en la gráfica de Tendencia de la pestaña principal,
+         las lecturas marcadas con "situación especial" se resaltan en ámbar. -->
+    <div class="legend-hint" id="statsPamSpecialLegend" style="display:none;"><span class="legend-hint-emoji">🟠</span> Punto ámbar = lectura marcada con una situación especial</div>
   </div>
 
   <div class="section section-chart" data-order-key="timeOfDay" draggable="true">
@@ -1285,7 +1324,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.3</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.4</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1661,6 +1700,7 @@ async function loadAccount() {
     renderGreeting();
     fillParamsForm();
     applyDefaultWeight();
+    applyPlanGating_();
     const medName = medicationName(currentAccount);
     document.getElementById("medNameLabel").textContent = medName;
     document.getElementById("medLegendLabel").textContent = medName === "medicamento" ? "Medicado" : medName;
@@ -1793,7 +1833,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("34.3");
+  showAboutOverlay_("34.4");
 });
 
 function openModal(id) {
@@ -2111,6 +2151,53 @@ document.getElementById("pa_aiInterpretationSection").innerHTML = aiInterpretati
 document.getElementById("es_aiInterpretationSection").innerHTML = aiInterpretationSectionHTML_("es");
 wireAiInterpretationSection_("pa");
 wireAiInterpretationSection_("es");
+
+// ---- v34.4: "Pregunta libre" con IA (Estadísticas) — SOLO en esta pestaña
+// (no se duplica en Presión Arterial como Interpretación con IA), y sin
+// modo "mi propia IA" a propósito: siempre llama al servidor para que el
+// guardrail de tema (ver AI_FREE_PROMPT_SYSTEM_ en db-postgres.js) se
+// aplique de verdad. ----
+document.getElementById("freePromptQuestion").addEventListener("input", e => {
+  document.getElementById("freePromptCharCount").textContent = `${e.target.value.length}/500`;
+});
+document.getElementById("freePromptBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("freePromptBtn");
+  const question = document.getElementById("freePromptQuestion").value.trim();
+  const resultBox = document.getElementById("freePromptResult");
+  const errorBox = document.getElementById("freePromptError");
+  resultBox.style.display = "none";
+  errorBox.style.display = "none";
+  if (!question) {
+    errorBox.textContent = "Escribe una pregunta primero.";
+    errorBox.style.display = "";
+    return;
+  }
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+  try {
+    const period = document.getElementById("freePromptPeriod").value;
+    const result = await apiPost("/api/ai-free-prompt", { question, period });
+    resultBox.textContent = aiSanitizeAiText_(result.response_text);
+    resultBox.style.display = "";
+  } catch (err) {
+    errorBox.textContent = "No se pudo generar: " + err.message;
+    errorBox.style.display = "";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+});
+// v34.4: modelo SaaSificado del lado del cliente — hoy currentAccount.plan
+// siempre es "pro" (default en el servidor), así que esto no oculta nada
+// todavía, pero deja lista la reacción del cliente para cuando exista un
+// plan gratuito real. La validación real (la que de verdad importa) vive
+// en el servidor, ver planHasFeature_ en db-postgres.js.
+function applyPlanGating_() {
+  const isPro = !currentAccount || currentAccount.plan === "pro"; // sin cuenta cargada aún: no ocultar de más
+  document.getElementById("freePromptForm").style.display = isPro ? "" : "none";
+  document.getElementById("freePromptGate").style.display = isPro ? "none" : "";
+}
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
@@ -3016,9 +3103,15 @@ function renderLabHistoryCharts(onlyKeys) {
   const only = onlyKeys ? new Set(onlyKeys) : null;
   const shouldRender = key => !only || only.has(key);
   if (shouldRender("pam")) {
+    // v34.4: se calcula una vez aparte (en vez de dentro del closure
+    // trendSeries) para poder revisar series.special y prender/apagar la
+    // leyenda de "situación especial" antes de pintar la gráfica.
+    const pamSeries = pamSeriesForReadings_(filterForChartPeriod_(currentData, "pam", "date"));
+    const pamSpecialLegendEl = document.getElementById("statsPamSpecialLegend");
+    if (pamSpecialLegendEl) pamSpecialLegendEl.style.display = (!chartCompareOn_.pam && anySpecialInSeries_(pamSeries)) ? "" : "none";
     renderTrendOrCompare_("pam", () => statsPamChartInstance, v => statsPamChartInstance = v, "statsPamChart", "statsPamEmpty",
       { label: "PAM", color: CHART_COMPARE_META_.pam.color, unit: "mmHg", idealRange: PAM_IDEAL_RANGE },
-      () => pamSeriesForReadings_(filterForChartPeriod_(currentData, "pam", "date")));
+      () => pamSeries);
   }
   if (shouldRender("hr")) {
     renderTrendOrCompare_("hr", () => statsHrChartInstance, v => statsHrChartInstance = v, "statsHrChart", "statsHrEmpty",

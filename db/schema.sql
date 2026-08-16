@@ -606,3 +606,13 @@ ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS special_situation_note text;
 -- (/api/ai-export/:token) sepa qué payload armar sin tener que volver a
 -- preguntar.
 ALTER TABLE ai_export_tokens ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'general';
+
+-- v34.4: "plan" del paciente, primer paso de un modelo SaaSificado
+-- (activar/desactivar funciones por plan) para la nueva sección de
+-- "Pregunta libre" con IA en Estadísticas, que en su momento será de paga.
+-- Por ahora, mientras no exista un flujo de cobro real, TODOS los pacientes
+-- se crean en 'pro' (acceso completo) — ver PLAN_FEATURES_/planHasFeature_
+-- en db-postgres.js, que ya valida el entitlement en el servidor (no solo en
+-- el cliente) para que baste con cambiar el default aquí y agregar un flujo
+-- de cobro más adelante, sin tocar la lógica de la función en sí.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'pro';
