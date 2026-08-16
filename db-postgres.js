@@ -1407,21 +1407,83 @@ async function buildDailyNoteSummary_(patientId, today) {
   ].filter(Boolean);
   return lines.join(" ");
 }
+// v35.4: tope del historial de frases célebres por paciente (ver columna
+// pacientes.daily_ai_note_quote_history en schema.sql). Hay muchísimas más
+// frases genuinas y verificables de escritores/artistas/políticos/filósofos
+// que este tope, así que nunca es el cuello de botella real — solo evita que
+// el prompt crezca sin límite con el paso de los años.
+const AI_DAILY_NOTE_QUOTE_HISTORY_MAX_ = 60;
+// Aísla del texto libre de la nota la frase célebre de cierre (formato
+// pedido en AI_DAILY_NOTE_SYSTEM_: «cita» — Autor), para poder llevar un
+// historial por paciente y decirle a la IA en cada llamada siguiente cuáles
+// NO debe repetir. Tolera variantes razonables de comillas/guion por si el
+// modelo no siguió el formato exacto; si de plano no se puede aislar, regresa
+// null y esa vez simplemente no se agrega nada al historial (no rompe la
+// nota, solo no se puede llevar registro de esa frase en particular).
+function extractDailyNoteQuote_(text) {
+  if (!text) return null;
+  const m = text.match(/[«"“]([^»"”]{3,300})[»"”]\s*[-—–]\s*([^.\n]{2,80})[.\s]*$/);
+  if (!m) return null;
+  const quote = m[1].trim();
+  const author = m[2].trim().replace(/[.\s]+$/, "");
+  if (!quote || !author) return null;
+  return { quote, author };
+}
+function dailyNoteQuoteKey_(q) {
+  return `${q.quote}|${q.author}`.toLowerCase().replace(/\s+/g, " ").trim();
+}
+function dailyNoteQuoteExclusionText_(history) {
+  if (!history || !history.length) return "";
+  const list = history.map(h => `«${h.quote}» — ${h.author}`).join("; ");
+  return `\n\nFrases célebres que YA usaste antes en notas anteriores de este mismo paciente — hay millones de frases genuinas de escritores, artistas, políticos y filósofos para elegir, así que NUNCA repitas ninguna de estas, elige siempre una distinta (también genuina y verificable): ${list}`;
+}
 // Único punto que realmente llama a la API de Anthropic para la nota diaria
 // — reusado tanto por la generación perezosa (getOrGenerateDailyNote) como
-// por la regeneración forzada (forceDailyNote).
-async function callAnthropicDailyNote_(summary) {
+// por la regeneración forzada (forceDailyNote). quoteHistory (arreglo de
+// {quote, author}) se manda como parte del system prompt para que la frase
+// de cierre nunca repita una ya usada con este paciente.
+async function callAnthropicDailyNote_(summary, quoteHistory) {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: AI_DAILY_NOTE_MODEL, max_tokens: AI_DAILY_NOTE_MAX_TOKENS,
-      system: AI_DAILY_NOTE_SYSTEM_, messages: [{ role: "user", content: summary }],
+      system: AI_DAILY_NOTE_SYSTEM_ + dailyNoteQuoteExclusionText_(quoteHistory),
+      messages: [{ role: "user", content: summary }],
     }),
   });
   if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
   const data = await resp.json();
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+}
+// v35.4: genera el texto de la nota diaria evitando repetir una frase célebre
+// ya usada con este paciente. Si el modelo de todas formas repite una (puede
+// pasar, un LLM no sigue instrucciones con garantía dura), se reintenta UNA
+// vez con el mismo resumen; si aun así repite, se acepta esa segunda
+// respuesta tal cual (mejor una nota con una frase repetida que ninguna
+// nota) — no se reintenta en bucle. Regresa el texto final y el historial ya
+// actualizado (sin mutar el arreglo que se recibió), listo para guardarse.
+async function generateDailyNoteText_(summary, quoteHistory) {
+  const history = quoteHistory || [];
+  const historyKeys = new Set(history.map(dailyNoteQuoteKey_));
+  let text = await callAnthropicDailyNote_(summary, history);
+  let extracted = extractDailyNoteQuote_(text);
+  if (extracted && historyKeys.has(dailyNoteQuoteKey_(extracted))) {
+    try {
+      const retryText = await callAnthropicDailyNote_(summary, history);
+      if (retryText) {
+        text = retryText;
+        extracted = extractDailyNoteQuote_(text);
+      }
+    } catch (err) {
+      console.error("[daily-note] reintento por frase repetida falló, se conserva la primera respuesta:", err.message);
+    }
+  }
+  let updatedHistory = history;
+  if (extracted && !historyKeys.has(dailyNoteQuoteKey_(extracted))) {
+    updatedHistory = [...history, extracted].slice(-AI_DAILY_NOTE_QUOTE_HISTORY_MAX_);
+  }
+  return { text, quoteHistory: updatedHistory };
 }
 
 // v33.4: tope de regeneraciones FORZADAS (botón "Actualizar con IA"), aparte
@@ -1438,7 +1500,7 @@ async function getOrGenerateDailyNote(patientId) {
   const { dateStr: today } = nowInAppTz_();
   const { rows } = await pool.query(
     `SELECT daily_ai_note, to_char(daily_ai_note_date, 'YYYY-MM-DD') AS daily_ai_note_date,
-            daily_ai_note_manual_count, daily_ai_note_manual_window_start
+            daily_ai_note_manual_count, daily_ai_note_manual_window_start, daily_ai_note_quote_history
      FROM pacientes WHERE id = $1`,
     [patientId]
   );
@@ -1452,9 +1514,10 @@ async function getOrGenerateDailyNote(patientId) {
   if (!aiEnabled) return { ok: true, note: null, ai_enabled: false, manual_remaining, manual_limit };
   const summary = await buildDailyNoteSummary_(patientId, today);
   if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true, manual_remaining, manual_limit };
-  let text = "";
+  const quoteHistory = parseJsonColumn_(row.daily_ai_note_quote_history, []);
+  let text = "", newQuoteHistory = quoteHistory;
   try {
-    text = await callAnthropicDailyNote_(summary);
+    ({ text, quoteHistory: newQuoteHistory } = await generateDailyNoteText_(summary, quoteHistory));
   } catch (err) {
     console.error("[daily-note] no se pudo generar:", err.message);
     return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining, manual_limit };
@@ -1479,7 +1542,10 @@ async function getOrGenerateDailyNote(patientId) {
     const freshRemaining = manualNoteRemaining_(freshRow.daily_ai_note_manual_count, freshRow.daily_ai_note_manual_window_start);
     return { ok: true, note: freshRow.daily_ai_note, ai_enabled: true, cached: true, manual_remaining: freshRemaining, manual_limit };
   }
-  await pool.query(`UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2 WHERE id = $3`, [text, today, patientId]);
+  await pool.query(
+    `UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2, daily_ai_note_quote_history = $3 WHERE id = $4`,
+    [text, today, JSON.stringify(newQuoteHistory), patientId]
+  );
   return { ok: true, note: text, ai_enabled: true, cached: false, manual_remaining, manual_limit };
 }
 // v33.4: regeneración forzada de la nota diaria (botón "Actualizar con IA"),
@@ -1490,7 +1556,7 @@ async function getOrGenerateDailyNote(patientId) {
 async function forceDailyNote(patientId) {
   const { dateStr: today } = nowInAppTz_();
   const { rows } = await pool.query(
-    `SELECT daily_ai_note_manual_count, daily_ai_note_manual_window_start FROM pacientes WHERE id = $1`,
+    `SELECT daily_ai_note_manual_count, daily_ai_note_manual_window_start, daily_ai_note_quote_history FROM pacientes WHERE id = $1`,
     [patientId]
   );
   const row = rows[0];
@@ -1508,9 +1574,10 @@ async function forceDailyNote(patientId) {
   const summary = await buildDailyNoteSummary_(patientId, today);
   if (!summary) return { ok: true, note: null, ai_enabled: true, no_data: true, manual_remaining: MANUAL_NOTE_LIMIT - effectiveCount, manual_limit };
 
-  let text = "";
+  const quoteHistory = parseJsonColumn_(row.daily_ai_note_quote_history, []);
+  let text = "", newQuoteHistory = quoteHistory;
   try {
-    text = await callAnthropicDailyNote_(summary);
+    ({ text, quoteHistory: newQuoteHistory } = await generateDailyNoteText_(summary, quoteHistory));
   } catch (err) {
     console.error("[daily-note] force: no se pudo generar:", err.message);
     return { ok: true, note: null, ai_enabled: true, error: true, manual_remaining: MANUAL_NOTE_LIMIT - effectiveCount, manual_limit };
@@ -1520,8 +1587,8 @@ async function forceDailyNote(patientId) {
   const newCount = effectiveCount + 1;
   const newWindowStart = windowExpired ? nowIso() : row.daily_ai_note_manual_window_start;
   await pool.query(
-    `UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2, daily_ai_note_manual_count = $3, daily_ai_note_manual_window_start = $4 WHERE id = $5`,
-    [text, today, newCount, newWindowStart, patientId]
+    `UPDATE pacientes SET daily_ai_note = $1, daily_ai_note_date = $2, daily_ai_note_manual_count = $3, daily_ai_note_manual_window_start = $4, daily_ai_note_quote_history = $5 WHERE id = $6`,
+    [text, today, newCount, newWindowStart, JSON.stringify(newQuoteHistory), patientId]
   );
   return { ok: true, note: text, ai_enabled: true, cached: false, manual_remaining: MANUAL_NOTE_LIMIT - newCount, manual_limit };
 }

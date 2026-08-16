@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.3"></script>
+<script src="/shared/common.js?v=35.4"></script>
 <style>
   :root {
     color-scheme: light;
@@ -86,7 +86,7 @@
   .ai-controls label { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
   textarea#aiOutput { width: 100%; height: 220px; font-family: ui-monospace, monospace; font-size: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; box-sizing: border-box; }
   .disclaimer { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
-  /* v34.0: Generador de reportes (Estadísticas) */
+  /* v34.0: Gráficas personalizadas (Estadísticas), antes "Generador de reportes" */
   .report-builder-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .report-builder-row select { padding: 8px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
   .report-quick-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -628,49 +628,72 @@
 <!-- /tabPresion -->
 
 <div id="tabEstadisticas" class="tab-panel" style="display:none;">
-  <div class="section stats-filter-panel">
+  <!-- v35.4: orden de las secciones de arriba de Estadísticas, de arriba a
+       abajo: 1) Asistente inteligente personal, 2) Interpretación con IA,
+       3) Gráficas personalizadas (antes "Generador de reportes"), 4) Filtro
+       general — justo antes de las gráficas reordenables, que es a lo que
+       aplica. -->
+  <!-- v34.4: "Pregunta libre" con IA — el paciente escribe su propia
+       pregunta sobre sus datos de salud en esta app (no un chat general).
+       Guardrails de tema en el servidor (ver AI_FREE_PROMPT_SYSTEM_ en
+       db-postgres.js): cualquier pregunta fuera de su salud/monitoreo aquí
+       se rechaza con una respuesta fija, incluyendo intentos de pedirle a
+       la IA que cambie de rol o ignore sus reglas. Sin modo "mi propia
+       IA" a propósito (siempre pasa por el servidor, para que el guardrail
+       no se pueda saltar). Función de plan "pro" (ver PLAN_FEATURES_) —
+       hoy todos los pacientes son "pro", pero freePromptGate ya deja lista
+       la validación para cuando eso cambie (ver applyPlanGating_). -->
+  <div class="section section-ai" id="freePromptSection">
     <div class="toolbar">
-      <h2 style="flex:1">Filtro general</h2>
-      <div class="chart-filter" id="statsGeneralFilter" role="group" aria-label="Periodo general">
-        <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
-        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
-        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
-        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
-        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
+      <h2 style="flex:1">💬 Asistente inteligente personal</h2>
+      <button type="button" class="btn-secondary" id="freePromptNewChatBtn" style="display:none;" title="Borra esta conversación y empieza una nueva">🗑️ Nueva conversación</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-top:-4px;">Solo responde temas relacionados con tu salud y monitoreo en esta app — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
+    <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
+    <div id="freePromptChatWrap">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 10px;">
+        <label for="freePromptPeriod" style="font-size:13px; font-weight:600;">Periodo</label>
+        <select id="freePromptPeriod" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+          <option value="7d">Últimos 7 días</option>
+          <option value="30d">Últimos 30 días</option>
+          <option value="90d" selected>Últimos 90 días</option>
+          <option value="all">Todo el historial</option>
+        </select>
       </div>
-      <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
+      <div class="free-prompt-messages" id="freePromptMessages">
+        <div class="free-prompt-empty" id="freePromptEmpty">💬 Escribe tu primera pregunta sobre tus datos de salud en esta app.<br>Ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"</div>
+      </div>
+      <div id="freePromptError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
+      <div class="free-prompt-inputrow">
+        <textarea id="freePromptQuestion" rows="1" maxlength="500" placeholder="Escribe tu pregunta… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
+        <button type="button" class="btn-primary" id="freePromptBtn">Enviar</button>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+        <span id="freePromptCharCount" style="font-size:11px; color:var(--text-muted);">0/500</span>
+      </div>
     </div>
-    <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
-    <!-- v33.1: elegir cualquier día/semana/mes/año concreto, no solo "el
-         actual". El control que se muestra cambia según la granularidad
-         elegida arriba (ver syncStatsAnchorPicker_). -->
-    <div id="statsAnchorPickerWrap" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
-      <label for="statsAnchorDay" style="font-size:12.5px; font-weight:600;">Ver:</label>
-      <input type="date" id="statsAnchorDay" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-      <input type="date" id="statsAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras ver">
-      <input type="month" id="statsAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-      <select id="statsAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
-      <!-- v35.0: "Libre" — de una fecha específica a otra. -->
-      <span id="statsAnchorCustomWrap" style="display:none; align-items:center; gap:6px;">
-        <input type="date" id="statsAnchorCustomStart" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-        <span style="font-size:12.5px; color:var(--text-muted);">a</span>
-        <input type="date" id="statsAnchorCustomEnd" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-      </span>
-      <span id="statsAnchorLabel" style="font-size:12.5px; color:var(--text-muted);"></span>
-      <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
-    </div>
-    <p style="font-size:12px; color:var(--text-muted); margin:8px 0 0;">Para comparar un periodo contra otro (día vs día, semana vs semana, mes vs mes, año vs año), activa "Comparar" directamente en la gráfica que te interese, junto a su propio filtro.</p>
   </div>
 
-  <!-- v34.0: Generador de reportes — arma una "pregunta" combinando
-       indicador + tipo de análisis + periodo (o elige un insight especial ya
-       armado) y genera un mini-reporte con su gráfica, cuando los datos lo
-       permiten. Todo se calcula en el navegador con los datos que ya están
-       cargados (currentData, currentLabHistory, currentSleep, etc.) — no
-       llama a ninguna IA, así que es instantáneo y no tiene costo. -->
+  <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
+       sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos,
+       laboratorios y consultas) del periodo elegido y pide a una IA que las
+       interprete (automática, o copiar/pegar en la IA de tu preferencia).
+       Nunca sustituye a tu médico (ver disclaimer que acompaña la respuesta).
+       Contenido montado por JS (aiInterpretationSectionHTML_) con prefijo
+       "es", para compartir la misma lógica con la copia de este bloque en la
+       pestaña Presión Arterial (prefijo "pa"). -->
+  <div class="section" id="es_aiInterpretationSection"></div>
+
+  <!-- v34.0: Gráficas personalizadas (antes "Generador de reportes") — arma
+       una "pregunta" combinando indicador + tipo de análisis + periodo (o
+       elige un insight especial ya armado) y genera un mini-reporte con su
+       gráfica, cuando los datos lo permiten. Todo se calcula en el
+       navegador con los datos que ya están cargados (currentData,
+       currentLabHistory, currentSleep, etc.) — no llama a ninguna IA, así
+       que es instantáneo y no tiene costo. -->
   <div class="section" id="reportBuilderSection">
     <div class="toolbar">
-      <h2 style="flex:1">🔎 Generador de reportes</h2>
+      <h2 style="flex:1">🔎 Gráficas personalizadas</h2>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Arma tu pregunta eligiendo qué quieres saber, y genera un mini-reporte con su gráfica (cuando haya datos suficientes). Por ejemplo: "¿Cuál fue mi presión diastólica más alta en los últimos 30 días?" o "¿Cuál fue mi frecuencia cardiaca promedio de esta semana?".</p>
     <div class="report-builder-row">
@@ -726,55 +749,38 @@
     <div id="reportOutput" style="margin-top:14px;"></div>
   </div>
 
-  <!-- v32/v32.1: interpretación con IA — junta todas tus capturas (presión,
-       sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos,
-       laboratorios y consultas) del periodo elegido y pide a una IA que las
-       interprete (automática, o copiar/pegar en la IA de tu preferencia).
-       Nunca sustituye a tu médico (ver disclaimer que acompaña la respuesta).
-       Contenido montado por JS (aiInterpretationSectionHTML_) con prefijo
-       "es", para compartir la misma lógica con la copia de este bloque en la
-       pestaña Presión Arterial (prefijo "pa"). -->
-  <div class="section" id="es_aiInterpretationSection"></div>
-
-  <!-- v34.4: "Pregunta libre" con IA — el paciente escribe su propia
-       pregunta sobre sus datos de salud en esta app (no un chat general).
-       Guardrails de tema en el servidor (ver AI_FREE_PROMPT_SYSTEM_ en
-       db-postgres.js): cualquier pregunta fuera de su salud/monitoreo aquí
-       se rechaza con una respuesta fija, incluyendo intentos de pedirle a
-       la IA que cambie de rol o ignore sus reglas. Sin modo "mi propia
-       IA" a propósito (siempre pasa por el servidor, para que el guardrail
-       no se pueda saltar). Función de plan "pro" (ver PLAN_FEATURES_) —
-       hoy todos los pacientes son "pro", pero freePromptGate ya deja lista
-       la validación para cuando eso cambie (ver applyPlanGating_). -->
-  <div class="section section-ai" id="freePromptSection">
+  <div class="section stats-filter-panel">
     <div class="toolbar">
-      <h2 style="flex:1">💬 Asistente inteligente personal</h2>
-      <button type="button" class="btn-secondary" id="freePromptNewChatBtn" style="display:none;" title="Borra esta conversación y empieza una nueva">🗑️ Nueva conversación</button>
+      <h2 style="flex:1">Filtro general</h2>
+      <div class="chart-filter" id="statsGeneralFilter" role="group" aria-label="Periodo general">
+        <button type="button" class="chart-filter-btn" data-stats-period="day">Día</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
+        <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
+      </div>
+      <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
     </div>
-    <p style="font-size:12px; color:var(--text-muted); margin-top:-4px;">Solo responde temas relacionados con tu salud y monitoreo en esta app — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
-    <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
-    <div id="freePromptChatWrap">
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 10px;">
-        <label for="freePromptPeriod" style="font-size:13px; font-weight:600;">Periodo</label>
-        <select id="freePromptPeriod" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-          <option value="7d">Últimos 7 días</option>
-          <option value="30d">Últimos 30 días</option>
-          <option value="90d" selected>Últimos 90 días</option>
-          <option value="all">Todo el historial</option>
-        </select>
-      </div>
-      <div class="free-prompt-messages" id="freePromptMessages">
-        <div class="free-prompt-empty" id="freePromptEmpty">💬 Escribe tu primera pregunta sobre tus datos de salud en esta app.<br>Ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"</div>
-      </div>
-      <div id="freePromptError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
-      <div class="free-prompt-inputrow">
-        <textarea id="freePromptQuestion" rows="1" maxlength="500" placeholder="Escribe tu pregunta… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
-        <button type="button" class="btn-primary" id="freePromptBtn">Enviar</button>
-      </div>
-      <div style="display:flex; justify-content:flex-end; margin-top:4px;">
-        <span id="freePromptCharCount" style="font-size:11px; color:var(--text-muted);">0/500</span>
-      </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
+    <!-- v33.1: elegir cualquier día/semana/mes/año concreto, no solo "el
+         actual". El control que se muestra cambia según la granularidad
+         elegida arriba (ver syncStatsAnchorPicker_). -->
+    <div id="statsAnchorPickerWrap" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
+      <label for="statsAnchorDay" style="font-size:12.5px; font-weight:600;">Ver:</label>
+      <input type="date" id="statsAnchorDay" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="date" id="statsAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras ver">
+      <input type="month" id="statsAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <select id="statsAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      <!-- v35.0: "Libre" — de una fecha específica a otra. -->
+      <span id="statsAnchorCustomWrap" style="display:none; align-items:center; gap:6px;">
+        <input type="date" id="statsAnchorCustomStart" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <span style="font-size:12.5px; color:var(--text-muted);">a</span>
+        <input type="date" id="statsAnchorCustomEnd" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      </span>
+      <span id="statsAnchorLabel" style="font-size:12.5px; color:var(--text-muted);"></span>
+      <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
     </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:8px 0 0;">Para comparar un periodo contra otro (día vs día, semana vs semana, mes vs mes, año vs año), activa "Comparar" directamente en la gráfica que te interese, junto a su propio filtro.</p>
   </div>
 
   <!-- v32.1: contenedor de gráficas reordenables — cada .section-chart de
@@ -1428,7 +1434,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.3</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.4</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1970,7 +1976,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.3");
+  showAboutOverlay_("35.4");
 });
 
 function openModal(id) {
@@ -5661,7 +5667,8 @@ document.getElementById("pushTestBtn").addEventListener("click", async () => {
 });
 
 // ============================================================
-// v34.0: Generador de reportes (Estadísticas) — motor genérico
+// v34.0: Gráficas personalizadas (Estadísticas, antes "Generador de
+// reportes") — motor genérico
 // (indicador + tipo de análisis + periodo) más un puñado de "insights
 // especiales" ya armados, para preguntas que no caben en el patrón genérico
 // (semana con más malos hábitos, actividad de wellness favorita, etc.).

@@ -588,6 +588,15 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_date date;
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_count integer NOT NULL DEFAULT 0;
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_window_start timestamptz;
 
+-- v35.4: historial de las frases célebres con las que la nota diaria ha
+-- cerrado antes (ver AI_DAILY_NOTE_SYSTEM_), para que la IA nunca repita una
+-- ya usada con este paciente. Guarda objetos {quote, author} en jsonb, más
+-- reciente al final; se topa a un máximo razonable (ver
+-- AI_DAILY_NOTE_QUOTE_HISTORY_MAX_ en db-postgres.js) para no inflar el
+-- prompt sin necesidad — hay muchísimas más frases genuinas disponibles que
+-- ese tope, así que nunca se vuelve el cuello de botella real.
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_quote_history jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 -- v34.2: "Situación especial" en una lectura de presión — checkbox + nota
 -- libre opcional para marcar que la lectura ocurrió en un contexto fuera de
 -- lo cotidiano (ej. "Viaje a la playa", "Boda de mi hermana"), para poder
