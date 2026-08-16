@@ -900,6 +900,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "34.3", changes: [
+    "La Interpretación con IA de Estadísticas ahora deja elegir entre analizar todas las secciones (como antes) o enfocarse en una sola categoría (presión arterial, sueño, ejercicio, malos hábitos, síntomas, wellness, medicamentos o laboratorios). La situación especial de tus lecturas ahora se toma en cuenta tanto en la Interpretación con IA como en la nota diaria de Alertas y notas, como posible explicación de una lectura atípica. Además, el checkbox y la nota de situación especial ahora se recuerdan de una lectura a la siguiente (igual que \"Medicado\"), para no tener que volver a escribirla mientras dure la misma situación.",
+  ] },
   { version: "34.2", changes: [
     "Nuevo campo opcional \"Situación especial\" al agregar o editar una lectura de presión: un checkbox con nota libre (ej. \"Viaje a la playa\") para marcar que ocurrió en un contexto fuera de lo cotidiano. Esas lecturas se resaltan con un color especial (ámbar) en la gráfica de Tendencia y se indican con una etiqueta en el Historial de lecturas.",
   ] },
@@ -1994,6 +1997,20 @@ function aiInterpretationSectionHTML_(prefix) {
         <option value="90d" selected>Últimos 90 días</option>
         <option value="all">Todo el historial</option>
       </select>
+      <!-- v34.3: elegir analizar todo (como antes) o enfocarse en una sola
+           categoría — ver AI_CATEGORY_LABELS_ en db-postgres.js. -->
+      <label for="${prefix}_ai_category" style="font-size:13px; font-weight:600;">Categoría</label>
+      <select id="${prefix}_ai_category" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <option value="general" selected>General (todas las secciones)</option>
+        <option value="presion">Presión arterial</option>
+        <option value="sueno">Sueño</option>
+        <option value="ejercicio">Ejercicio</option>
+        <option value="habitos">Malos hábitos</option>
+        <option value="sintomas">Síntomas</option>
+        <option value="wellness">Wellness</option>
+        <option value="medicamentos">Medicamentos y apego</option>
+        <option value="laboratorios">Laboratorios</option>
+      </select>
       <button type="button" class="btn-primary" id="${prefix}_aiActionBtn">Generar interpretación</button>
     </div>
     <div id="${prefix}_aiInterpretationResult" style="display:none; margin-top:10px; padding:12px 14px; background:var(--bg-page); border:1px solid var(--border); border-radius:10px; font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
@@ -2067,6 +2084,7 @@ function wireAiInterpretationSection_(prefix) {
   const copyStatus = document.getElementById(`${prefix}_aiCopyStatus`);
   const errorBox = document.getElementById(`${prefix}_aiInterpretationError`);
   const periodSelect = document.getElementById(`${prefix}_ai_period`);
+  const categorySelect = document.getElementById(`${prefix}_ai_category`);
   const modeRadios = document.querySelectorAll(`input[name="${prefix}_ai_mode"]`);
 
   function currentMode() {
@@ -2093,11 +2111,11 @@ function wireAiInterpretationSection_(prefix) {
     actionBtn.textContent = mode === "interna" ? "Generando… puede tardar unos segundos" : "Generando prompt…";
     try {
       if (mode === "interna") {
-        const result = await apiPost(`/api/ai-interpretation`, { period: periodSelect.value, profundidad: depth });
+        const result = await apiPost(`/api/ai-interpretation`, { period: periodSelect.value, profundidad: depth, category: categorySelect ? categorySelect.value : "general" });
         resultBox.textContent = aiSanitizeAiText_(result.response_text);
         resultBox.style.display = "";
       } else {
-        const result = await apiPost(`/api/ai-export-link`, { period: periodSelect.value, profundidad: depth });
+        const result = await apiPost(`/api/ai-export-link`, { period: periodSelect.value, profundidad: depth, category: categorySelect ? categorySelect.value : "general" });
         promptText.value = result.prompt;
         promptWrap.style.display = "";
         copyStatus.style.display = "none";

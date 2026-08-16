@@ -938,11 +938,44 @@ const AI_DEPTH_PROMPT_HINT_ = {
 // Arterial y Estadísticas); "familia" y "medico" quedan listos en el backend
 // para conectarse a su propia interfaz más adelante.
 const AI_AUDIENCES_ = { paciente: 1, familia: 1, medico: 1 };
+// v34.3: "Interpretación con IA" ahora deja elegir analizar TODAS las
+// secciones (general, el comportamiento de siempre) o enfocarse en una sola
+// categoría. Cada llave mapea a los campos del payload de
+// buildAiExportPayload_ que se conservan cuando se elige esa categoría (el
+// resto se omite del JSON, para que el análisis quede enfocado y el prompt
+// sea más corto). "paciente" (edad/género/peso/etc.) siempre se conserva,
+// sea cual sea la categoría, porque es contexto base útil en cualquier caso.
+const AI_CATEGORY_LABELS_ = {
+  general: "todas las secciones (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, medicamentos y laboratorios)",
+  presion: "presión arterial",
+  sueno: "sueño",
+  ejercicio: "ejercicio",
+  habitos: "malos hábitos",
+  sintomas: "síntomas",
+  wellness: "wellness",
+  medicamentos: "medicamentos y apego al tratamiento",
+  laboratorios: "laboratorios (colesterol, triglicéridos, cintura)",
+};
+const AI_CATEGORY_FIELDS_ = {
+  presion: ["lecturas_presion_arterial", "lecturas_presion_durante_ejercicio"],
+  sueno: ["sueno"],
+  ejercicio: ["ejercicio", "lecturas_presion_durante_ejercicio"],
+  habitos: ["malos_habitos"],
+  sintomas: ["sintomas"],
+  wellness: ["wellness"],
+  medicamentos: ["medicamentos_activos", "apego_medicamentos", "medicamentos_eventuales"],
+  laboratorios: ["historial_laboratorio"],
+};
 // v32.2: instrucción de formato compartida por las tres audiencias — se pide
 // explícitamente evitar markdown porque el texto se muestra tal cual (no se
 // renderiza), así que "##" o "**" aparecían como símbolos sueltos en vez de
 // dar formato.
 const AI_NO_MARKDOWN_INSTRUCTIONS_ = "Muy importante sobre el formato: escribe como si estuvieras platicando de viva voz con la persona, en párrafos naturales. No uses markdown de ningún tipo: nada de \"#\" o \"##\" para títulos, nada de \"**\" para negritas, nada de viñetas con guion o asterisco. Si quieres dar énfasis a algo, hazlo con las palabras mismas, no con símbolos.";
+// v34.3: las lecturas de presión arterial pueden traer special_situation /
+// special_situation_note (ej. "Viaje a la playa") — se le pide explícitamente
+// a la IA que las use como contexto para explicar variaciones, en vez de
+// tratarlas como anomalías sin causa aparente.
+const AI_SPECIAL_SITUATION_INSTRUCTIONS_ = "Algunas lecturas de presión arterial pueden traer el campo special_situation en true, con una nota en special_situation_note (por ejemplo \"Viaje a la playa\" o \"Boda de mi hermana\"): son lecturas que el paciente marcó como tomadas en un contexto fuera de lo cotidiano. Tómalas en cuenta como posible explicación al comentar variaciones o valores atípicos en esas fechas (por ejemplo, una presión más alta durante un viaje puede deberse al contexto, no necesariamente a un problema de salud) — menciónalo cuando ayude a interpretar el dato, en vez de señalarlo como una anomalía sin causa aparente.";
 const AI_SYSTEM_INSTRUCTIONS_PACIENTE_ = "Eres el coach de salud personal de un paciente con hipertensión: alguien de su entera confianza con quien revisa sus datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Le hablas de tú, en español, con calidez y cercanía. Celebra y felicita con entusiasmo cuando los datos muestren esfuerzo o mejora. Pero cuando veas descuido o inconsistencia (por ejemplo baja adherencia a medicamentos o presión fuera de control), sé firme y directo al señalarlo, con un tono más disciplinario si hace falta, siempre buscando motivar a corregirlo, nunca para regañar sin propósito. Señala patrones relevantes entre secciones (por ejemplo entre sueño, ejercicio o malos hábitos y la presión arterial). Deja siempre claro que esto NO es un diagnóstico y nunca sugieras cambios de dosis de medicamentos por tu cuenta. Termina siempre recordando que esto no sustituye a un médico.";
 const AI_SYSTEM_INSTRUCTIONS_FAMILIA_ = "Eres un asistente que ayuda a la familia o amigos cercanos de un paciente con hipertensión a entender, de forma objetiva y en tono conciliador, cómo va su ser querido con sus datos de monitoreo en casa (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, laboratorios y consultas médicas). Habla en español, con un tono cálido y realista: ni alarmista ni minimices lo que haga falta atender. Cuando el paciente lo esté haciendo bien, invita a la familia a seguir reconociéndoselo; cuando haya áreas de oportunidad (por ejemplo baja adherencia o presión elevada), preséntalo como una oportunidad para que la familia lo apoye y lo motive, sin culpar a nadie ni generar conflicto. Deja siempre claro que esto NO es un diagnóstico y nunca sugieras cambios de dosis de medicamentos. Termina siempre recordando que esto no sustituye la valoración de un médico.";
 const AI_SYSTEM_INSTRUCTIONS_MEDICO_ = "Eres un asistente clínico que apoya a un médico tratante resumiendo el automonitoreo en casa de su paciente con hipertensión (presión arterial, sueño, ejercicio, hábitos, síntomas, wellness, apego a medicamentos, historial de laboratorio y consultas previas). Escribe en español, con lenguaje médico profesional y directo, como lo haría un colega o un enfermero(a) auxiliar entregando un reporte de apoyo. Prioriza lo clínicamente relevante: tendencias de presión arterial, variabilidad, adherencia al tratamiento, correlaciones con hábitos, sueño o ejercicio, síntomas relevantes y valores de laboratorio fuera de rango. Cuida el tiempo de lectura del médico: ve directo a los hallazgos, sin relleno ni explicaciones básicas que un médico no necesita. No sugieras cambios de tratamiento ni de dosis, esa decisión es exclusiva del médico. Si hace falta profundizar en algún punto, indícalo brevemente al final en vez de extenderte.";
@@ -950,7 +983,7 @@ function buildSystemInstructions_(audience) {
   const persona = audience === "familia" ? AI_SYSTEM_INSTRUCTIONS_FAMILIA_
     : audience === "medico" ? AI_SYSTEM_INSTRUCTIONS_MEDICO_
     : AI_SYSTEM_INSTRUCTIONS_PACIENTE_;
-  return `${persona}\n\n${AI_NO_MARKDOWN_INSTRUCTIONS_}`;
+  return `${persona}\n\n${AI_NO_MARKDOWN_INSTRUCTIONS_}\n\n${AI_SPECIAL_SITUATION_INSTRUCTIONS_}`;
 }
 if (!aiEnabled) {
   console.warn("[ai] falta ANTHROPIC_API_KEY en el entorno: la interpretación con IA queda desactivada");
@@ -967,6 +1000,10 @@ function filterByPeriodDays_(rows, days, dateField) {
 // (útiles para que la IA pueda comentar sobre IMC o dosis relativas a peso,
 // por ejemplo), ya que este JSON viaja por una liga pública aunque sea
 // temporal.
+// v34.3: el recorte por categoría (general vs. una sola sección) se aplica
+// aparte, con filterAiPayloadByCategory_ más abajo — aquí siempre se arman
+// todos los datos (es más simple y no vale la pena optimizar las consultas
+// por esto).
 async function buildAiExportPayload_(patientId, period) {
   const days = AI_PERIOD_DAYS_.hasOwnProperty(period) ? AI_PERIOD_DAYS_[period] : 90;
   const p = await findPatientById(patientId);
@@ -1001,17 +1038,27 @@ async function buildAiExportPayload_(patientId, period) {
     consultas_medicas: filterByPeriodDays_(consultations, days, "fecha"),
   };
 }
+// Recorta el payload completo a solo "paciente" + los campos de la
+// categoría elegida; si category es "general" o no reconocida, regresa el
+// payload sin tocar (comportamiento de siempre).
+function filterAiPayloadByCategory_(payload, category) {
+  const fields = AI_CATEGORY_FIELDS_[category];
+  if (!payload || !fields) return payload;
+  const filtered = { generado_en: payload.generado_en, periodo: payload.periodo, categoria: category, paciente: payload.paciente };
+  fields.forEach(key => { filtered[key] = payload[key]; });
+  return filtered;
+}
 // v32.3: audience/depth se guardan junto con el token para que la liga misma
 // pueda devolver las instrucciones ya en el tono correcto (ver
 // getAiExportPayload) — así el prompt de copiar/pegar ya no necesita traer
 // las instrucciones ni los datos incrustados, solo la liga.
-async function createAiExportToken_(patientId, period, audience, depth) {
+async function createAiExportToken_(patientId, period, audience, depth, category) {
   const token = uuid();
   const id = uuid();
   const expiresAt = new Date(Date.now() + AI_EXPORT_TOKEN_TTL_MS);
   await pool.query(
-    `INSERT INTO ai_export_tokens (id, token, patient_id, period, expires_at, created_at, audience, profundidad) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-    [id, token, patientId, period, expiresAt.toISOString(), nowIso(), audience || "paciente", depth || "profunda"]
+    `INSERT INTO ai_export_tokens (id, token, patient_id, period, expires_at, created_at, audience, profundidad, category) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [id, token, patientId, period, expiresAt.toISOString(), nowIso(), audience || "paciente", depth || "profunda", category || "general"]
   );
   return { token, expiresAt };
 }
@@ -1026,14 +1073,17 @@ async function createAiExportToken_(patientId, period, audience, depth) {
 // todo lo que necesita en un solo lugar, sin que el prompt de copiar/pegar
 // tenga que traer nada de esto incrustado.
 async function getAiExportPayload(token) {
-  const { rows } = await pool.query(`SELECT patient_id, period, expires_at, audience, profundidad FROM ai_export_tokens WHERE token = $1`, [token]);
+  const { rows } = await pool.query(`SELECT patient_id, period, expires_at, audience, profundidad, category FROM ai_export_tokens WHERE token = $1`, [token]);
   const row = rows[0];
   if (!row) return { error: "not_found" };
   if (new Date(row.expires_at).getTime() < Date.now()) return { error: "expired" };
-  const datos = await buildAiExportPayload_(row.patient_id, row.period);
+  const fullPayload = await buildAiExportPayload_(row.patient_id, row.period);
+  const category = row.category || "general";
+  const datos = filterAiPayloadByCategory_(fullPayload, category);
   const depthHint = AI_DEPTH_PROMPT_HINT_[row.profundidad] || AI_DEPTH_PROMPT_HINT_.profunda;
-  const instrucciones = `${buildSystemInstructions_(row.audience)}\n\n${depthHint}`;
-  return { instrucciones, periodo: AI_PERIOD_LABELS_[row.period] || row.period, datos };
+  const categoryHint = category !== "general" ? `El usuario pidió enfocar el análisis SOLO en: ${AI_CATEGORY_LABELS_[category] || category}. No comentes otras secciones que no vengan en los datos.` : "";
+  const instrucciones = [buildSystemInstructions_(row.audience), depthHint, categoryHint].filter(Boolean).join("\n\n");
+  return { instrucciones, periodo: AI_PERIOD_LABELS_[row.period] || row.period, categoria: category, datos };
 }
 // Disclaimer clínico fijo: va tanto en el prompt que recibe el modelo como
 // pegado al inicio de la respuesta que ve el paciente, por si el modelo no
@@ -1045,10 +1095,12 @@ const AI_DISCLAIMER = "Esta interpretación fue generada por un modelo de inteli
 // preferencia (ahí no hay un rol "system" aparte, así que todo va junto).
 // v32.2: ahora la persona depende de la audiencia (buildSystemInstructions_)
 // y el mensaje de datos incluye también la pista de profundidad elegida.
-function buildAiUserMessage_(payload, exportUrl, period, depth) {
+function buildAiUserMessage_(payload, exportUrl, period, depth, category) {
   const periodLabel = AI_PERIOD_LABELS_[period] || period;
   const depthHint = AI_DEPTH_PROMPT_HINT_[depth] || AI_DEPTH_PROMPT_HINT_.profunda;
-  return `${depthHint}\n\nAquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
+  const categoryHint = category && category !== "general"
+    ? `El usuario pidió enfocar el análisis SOLO en: ${AI_CATEGORY_LABELS_[category] || category}. No comentes otras secciones que no vengan en los datos.\n\n` : "";
+  return `${depthHint}\n\n${categoryHint}Aquí están los datos del paciente (periodo: ${periodLabel}), en formato JSON. También se generó una liga temporal (válida aproximadamente 1 hora) con este mismo contenido, por si necesitas volver a consultarlo: ${exportUrl}\n\n${JSON.stringify(payload)}`;
 }
 // v32.1: texto listo para que el paciente lo copie y pegue en la IA de su
 // preferencia (ChatGPT, Gemini, etc.) — modo "mi propia IA", alternativa a
@@ -1063,8 +1115,8 @@ function buildAiExternalPromptText_(exportUrl, period) {
   const periodLabel = AI_PERIOD_LABELS_[period] || period;
   return `Por favor entra a esta liga (temporal, válida ~1 hora) y encontrarás ahí mismo las instrucciones de cómo interpretar la información, junto con los datos de monitoreo en casa de un paciente con hipertensión, periodo: ${periodLabel}: ${exportUrl}\n\nSigue las instrucciones que vienen en esa liga y dame tu interpretación en español.`;
 }
-async function callAnthropicInterpretation_(payload, exportUrl, period, audience, depth) {
-  const userText = buildAiUserMessage_(payload, exportUrl, period, depth);
+async function callAnthropicInterpretation_(payload, exportUrl, period, audience, depth, category) {
+  const userText = buildAiUserMessage_(payload, exportUrl, period, depth, category);
   const maxTokens = AI_DEPTH_MAX_TOKENS_[depth] || AI_DEPTH_MAX_TOKENS_.profunda;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1118,7 +1170,7 @@ const AI_DAILY_NOTE_MAX_TOKENS = 320;
 // decir con criterio si conviene bajar, subir o mantener, no solo reportar
 // que no hay cambios. La misma idea aplica a presión (ya viene categorizada
 // por classifyReading), sueño (contra las 7-9h recomendadas), etc.
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si te dan \"Situaciones especiales marcadas en el rango\" (ej. un viaje o un evento fuera de lo cotidiano), tómalas en cuenta como posible explicación de una lectura atípica en esa fecha, en vez de señalarla como algo preocupante sin causa aparente. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 function dailyNotePam_(sys, dia) {
   if (sys == null || dia == null) return null;
   return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
@@ -1223,12 +1275,22 @@ async function buildDailyNoteSummary_(patientId, today) {
     ? Math.round(recentAdherence.reduce((s, d) => s + d.pct, 0) / recentAdherence.length)
     : null;
 
+  // ---- v34.3: "Situación especial" — lecturas del rango marcadas con un
+  // contexto fuera de lo cotidiano (ej. "Viaje a la playa"), para que la IA
+  // las use como posible explicación de una lectura atípica en vez de
+  // señalarla como una anomalía sin causa aparente. ----
+  const specialSituations = recent.filter(r => r.special_situation);
+  const specialSituationLine = specialSituations.length
+    ? `Situaciones especiales marcadas en el rango: ${specialSituations.map(r => `${fmtFecha(r.date)}${r.special_situation_note ? ` — ${r.special_situation_note}` : ""}`).join("; ")}.`
+    : "";
+
   const lines = [
     `Rango de datos disponible: del ${fmtFecha(cutoff)} al ${fmtFecha(today)}.`,
     `Presión arterial por día: ${dailyBpLines.join("; ")}.`,
     dayOverDayLine,
     sysVals.length ? `Promedio del rango: ${avg(sysVals)}/${avg(diaVals)} mmHg, PAM promedio ${avg(pamVals)} mmHg.` : "",
     highest ? `Lectura más alta del rango: ${fmtFecha(highest.date)} — ${highest.sys}/${highest.dia} mmHg, PAM ${dailyNotePam_(highest.sys, highest.dia)} mmHg (${classifyReading(highest.sys, highest.dia).label}).` : "",
+    specialSituationLine,
     weightLine,
     sleepLine,
     symptomsLine,
@@ -2424,14 +2486,18 @@ async function handlePost(body) {
     // no romper el flujo actual si algún cliente viejo no manda estos campos.
     const audience = AI_AUDIENCES_.hasOwnProperty(body.audience) ? body.audience : "paciente";
     const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
+    // v34.3: categoría a analizar — "general" (todas las secciones, default)
+    // o una sola sección (ver AI_CATEGORY_LABELS_/AI_CATEGORY_FIELDS_).
+    const category = AI_CATEGORY_LABELS_.hasOwnProperty(body.category) ? body.category : "general";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
-    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth);
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth, category);
     const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
-    const payload = await buildAiExportPayload_(body.patient_id, period);
+    const fullPayload = await buildAiExportPayload_(body.patient_id, period);
+    const payload = filterAiPayloadByCategory_(fullPayload, category);
     let responseText;
     try {
-      responseText = await callAnthropicInterpretation_(payload, exportUrl, period, audience, depth);
+      responseText = await callAnthropicInterpretation_(payload, exportUrl, period, audience, depth, category);
     } catch (err) {
       console.error("[ai] error llamando a Anthropic:", err);
       return { ok: false, error: "no se pudo generar la interpretación en este momento, intenta de nuevo en unos minutos" };
@@ -2443,7 +2509,7 @@ async function handlePost(body) {
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [id, body.patient_id, period, token, fullText, AI_MODEL, nowIso()]
     );
-    return { ok: true, id, period, audience, profundidad: depth, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
+    return { ok: true, id, period, audience, profundidad: depth, categoria: category, response_text: fullText, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- v32.1: modo "mi propia IA" — el paciente prefiere usar ChatGPT,
@@ -2461,12 +2527,13 @@ async function handlePost(body) {
     const period = AI_PERIOD_DAYS_.hasOwnProperty(body.period) ? body.period : "90d";
     const audience = AI_AUDIENCES_.hasOwnProperty(body.audience) ? body.audience : "paciente";
     const depth = AI_DEPTHS_.hasOwnProperty(body.profundidad) ? body.profundidad : "profunda";
+    const category = AI_CATEGORY_LABELS_.hasOwnProperty(body.category) ? body.category : "general";
     const p = await findPatientById(body.patient_id);
     if (!p) return { ok: false, error: "no encontrado" };
-    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth);
+    const { token, expiresAt } = await createAiExportToken_(body.patient_id, period, audience, depth, category);
     const exportUrl = `${body.origin || ""}/api/ai-export/${token}`;
     const prompt = buildAiExternalPromptText_(exportUrl, period);
-    return { ok: true, period, audience, profundidad: depth, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
+    return { ok: true, period, audience, profundidad: depth, categoria: category, prompt, export_url: exportUrl, expires_at: expiresAt.toISOString() };
   }
 
   // ---- Consultas médicas (v30.12) ----

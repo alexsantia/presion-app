@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=34.2"></script>
+<script src="/shared/common.js?v=34.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1285,7 +1285,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.2</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.3</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1495,6 +1495,9 @@ let currentComments = [];
 let currentAccount = null;
 let avatarWired = false;
 let lastMedicated = null;
+// v34.3: se recuerda igual que lastMedicated, ver applyDefaultSpecialSituation().
+let lastSpecialSituation = null;
+let lastSpecialSituationNote = "";
 let commentDay = todayStr();
 let commentDayInitialized = false;
 let notifications = [];
@@ -1585,6 +1588,22 @@ function applyDefaultMedicated() {
   if (el && !editingId && lastMedicated != null) {
     el.checked = lastMedicated;
   }
+}
+
+// ---- v34.3: "Situación especial" — el checkbox y la nota de "nueva
+// lectura" precargan siempre lo que quedó en la última lectura guardada
+// (igual patrón que applyDefaultMedicated), para no tener que reescribir la
+// nota día tras día mientras dure la misma situación (ej. un viaje de varios
+// días). Se queda así hasta que el paciente la cambie o la desmarque a
+// mano — en ese momento, ESA lectura pasa a ser la nueva "última", así que
+// el recuerdo se actualiza solo. Al editar una lectura existente no aplica
+// (startEdit ya restaura el estado propio de esa lectura). ----
+function applyDefaultSpecialSituation() {
+  const checkboxEl = document.getElementById("f_special_situation");
+  if (!checkboxEl || editingId) return;
+  checkboxEl.checked = !!lastSpecialSituation;
+  document.getElementById("f_special_situation_note").value = lastSpecialSituation ? lastSpecialSituationNote : "";
+  updateSpecialSituationVisibility_();
 }
 
 function setStatus(kind, msg) {
@@ -1774,7 +1793,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("34.2");
+  showAboutOverlay_("34.3");
 });
 
 function openModal(id) {
@@ -2328,13 +2347,22 @@ async function loadAndRender() {
   try {
     currentData = await apiGet("/api/readings");
     currentData.sort((a,b) => (a.date+"T"+a.time).localeCompare(b.date+"T"+b.time));
-    if (currentData.length) lastMedicated = !!currentData[currentData.length - 1].medicated;
+    if (currentData.length) {
+      lastMedicated = !!currentData[currentData.length - 1].medicated;
+      // v34.3: "Situación especial" se recuerda igual que "Medicado" — toma
+      // el estado de la última lectura guardada, para no tener que
+      // reescribirla cada vez (ej. varios días seguidos de un mismo viaje),
+      // hasta que el paciente la cambie o la quite a mano.
+      lastSpecialSituation = !!currentData[currentData.length - 1].special_situation;
+      lastSpecialSituationNote = currentData[currentData.length - 1].special_situation_note || "";
+    }
     setStatus(null);
     render();
     renderComments();
     renderStreak();
     renderGreeting();
     applyDefaultMedicated();
+    applyDefaultSpecialSituation();
   } catch (err) {
     setStatus("error", "No se pudo cargar la hoja de cálculo: " + err.message);
   }
@@ -3337,9 +3365,9 @@ function cancelEdit() {
   document.getElementById("editingBanner").style.display = "none";
   relatedType_ = null; relatedId_ = null; relatedLabel_ = null;
   updateRelatedSummary_();
-  updateSpecialSituationVisibility_();
   applyDefaultMedicated();
   applyDefaultWeight();
+  applyDefaultSpecialSituation();
 }
 document.getElementById("cancelEditBtn").addEventListener("click", cancelEdit);
 

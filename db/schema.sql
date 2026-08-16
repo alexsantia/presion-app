@@ -598,3 +598,11 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_window_start
 -- libre que el paciente escribe él mismo.
 ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS special_situation boolean NOT NULL DEFAULT false;
 ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS special_situation_note text;
+
+-- v34.3: "Interpretación con IA" (Estadísticas) ahora deja elegir una
+-- categoría específica en vez de analizar siempre todas las secciones a la
+-- vez (ver AI_CATEGORY_LABELS_ en db-postgres.js). category viaja junto con
+-- period/audience/profundidad en el mismo token, para que la liga temporal
+-- (/api/ai-export/:token) sepa qué payload armar sin tener que volver a
+-- preguntar.
+ALTER TABLE ai_export_tokens ADD COLUMN IF NOT EXISTS category text NOT NULL DEFAULT 'general';

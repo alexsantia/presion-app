@@ -748,7 +748,9 @@ app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req
     // en "paciente" aquí porque este botón solo lo ve el paciente; el
     // backend ya soporta "familia"/"medico" para cuando se conecten sus
     // propios botones en doctor.html/familia.html.
-    period: req.body.period, profundidad: req.body.profundidad, audience: "paciente",
+    // v34.3: category ("general" o una sola sección) viene del selector
+    // nuevo en la sección de Interpretación con IA.
+    period: req.body.period, profundidad: req.body.profundidad, category: req.body.category, audience: "paciente",
     origin: requestOrigin_(req),
   }));
 }));
@@ -757,7 +759,7 @@ app.post("/api/ai-interpretation", requireRole("patient"), asyncRoute(async (req
 app.post("/api/ai-export-link", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "create_ai_export_link", patient_id: req.session.patientId,
-    period: req.body.period, profundidad: req.body.profundidad, audience: "paciente",
+    period: req.body.period, profundidad: req.body.profundidad, category: req.body.category, audience: "paciente",
     origin: requestOrigin_(req),
   }));
 }));
@@ -770,7 +772,7 @@ if (DB_BACKEND === "postgres") {
     // v32.3: ahora también trae "instrucciones" (tono + profundidad ya
     // resueltos), no solo los datos, para que una IA externa que visite esta
     // liga directamente tenga todo lo que necesita en una sola consulta.
-    res.json({ ok: true, instrucciones: result.instrucciones, periodo: result.periodo, datos: result.datos });
+    res.json({ ok: true, instrucciones: result.instrucciones, periodo: result.periodo, categoria: result.categoria, datos: result.datos });
   }));
 }
 
