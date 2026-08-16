@@ -946,6 +946,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.5", changes: [
+    "El Asistente inteligente personal ahora usa \"Todo el historial\" como periodo por default.",
+    "En la gráfica de Tendencia se aclararon los textos de las leyendas (\"Lectura marcada con condición especial\" y \"Activa o desactiva líneas en la gráfica.\"), y ahora se recuerda entre sesiones qué líneas dejaste activadas o desactivadas.",
+  ] },
   { version: "35.4", changes: [
     "En Estadísticas, se reordenaron las secciones de arriba: Asistente inteligente personal, Interpretación con IA, Gráficas personalizadas (antes \"Generador de reportes\") y Filtro general, justo antes de las gráficas.",
     "La nota diaria de \"Alertas y notas\" nunca vuelve a cerrar con la misma frase célebre dos veces: se lleva un historial por paciente y se le pide a la IA que siempre elija una distinta.",

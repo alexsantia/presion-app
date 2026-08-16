@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.4"></script>
+<script src="/shared/common.js?v=35.5"></script>
 <style>
   :root {
     color-scheme: light;
@@ -524,8 +524,8 @@
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
   <!-- v31: solo visible cuando alguna lectura mostrada está "Relacionada con" -->
   <div class="legend-hint" id="relatedChartLegend" style="display:none;"><span class="legend-hint-emoji">🟣</span> Punto morado = lectura relacionada con ejercicio, síntoma u otra actividad</div>
-  <div class="legend-hint" id="specialChartLegend" style="display:none;"><span class="legend-hint-emoji">🟠</span> Punto ámbar = lectura marcada con una situación especial</div>
-  <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
+  <div class="legend-hint" id="specialChartLegend" style="display:none;"><span class="legend-hint-emoji">🟠</span> Lectura marcada con condición especial</div>
+  <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Activa o desactiva líneas en la gráfica.</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
     <button type="button" class="legend-btn active" data-dataset="dia" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#5ba7d9"></span>Diastólica</button>
@@ -656,8 +656,8 @@
         <select id="freePromptPeriod" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
           <option value="7d">Últimos 7 días</option>
           <option value="30d">Últimos 30 días</option>
-          <option value="90d" selected>Últimos 90 días</option>
-          <option value="all">Todo el historial</option>
+          <option value="90d">Últimos 90 días</option>
+          <option value="all" selected>Todo el historial</option>
         </select>
       </div>
       <div class="free-prompt-messages" id="freePromptMessages">
@@ -1434,7 +1434,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.4</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.5</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1976,7 +1976,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.4");
+  showAboutOverlay_("35.5");
 });
 
 function openModal(id) {
@@ -2848,13 +2848,43 @@ document.getElementById("chartTimeView").addEventListener("change", e => {
 });
 
 // ---- Mostrar/ocultar líneas de la gráfica (leyenda como botones) ----
-let hiddenDatasets = { sys: false, dia: false, hr: false, weight: false, medicated: false };
+// v35.5: qué líneas están activadas/desactivadas ahora se recuerda entre
+// sesiones (localStorage, por dispositivo — igual que el orden de gráficas
+// de Estadísticas), para que la vista de Tendencia se abra tal como se dejó
+// la última vez, en vez de reiniciarse siempre con todas las líneas visibles.
+const CHART_HIDDEN_DATASETS_KEY_ = "bp_chart_hidden_datasets_v1";
+function loadHiddenDatasets_() {
+  const base = { sys: false, dia: false, hr: false, weight: false, medicated: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHART_HIDDEN_DATASETS_KEY_) || "[]");
+    if (Array.isArray(saved)) saved.forEach(k => { if (k in base) base[k] = true; });
+  } catch (err) { /* ignorar preferencia corrupta, se queda el default (todas visibles) */ }
+  return base;
+}
+function saveHiddenDatasets_() {
+  try {
+    const hiddenKeys = Object.keys(hiddenDatasets).filter(k => hiddenDatasets[k]);
+    localStorage.setItem(CHART_HIDDEN_DATASETS_KEY_, JSON.stringify(hiddenKeys));
+  } catch (err) { /* ignorar cuota llena */ }
+}
+// Los botones de la leyenda arrancan en el HTML con la clase "active" fija
+// en los 5; en cuanto se conoce la preferencia guardada, se sincronizan para
+// reflejarla antes del primer renderChart().
+function syncChartLegendButtons_() {
+  document.querySelectorAll("#chartLegend .legend-btn").forEach(btn => {
+    const key = btn.dataset.dataset;
+    if (key in hiddenDatasets) btn.classList.toggle("active", !hiddenDatasets[key]);
+  });
+}
+let hiddenDatasets = loadHiddenDatasets_();
+syncChartLegendButtons_();
 document.getElementById("chartLegend").addEventListener("click", e => {
   const btn = e.target.closest(".legend-btn");
   if (!btn) return;
   const key = btn.dataset.dataset;
   hiddenDatasets[key] = !hiddenDatasets[key];
   btn.classList.toggle("active", !hiddenDatasets[key]);
+  saveHiddenDatasets_();
   renderChart();
 });
 
