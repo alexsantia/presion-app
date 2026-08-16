@@ -1982,6 +1982,129 @@ async function listGoals(patientId) {
 }
 
 // ============================================================
+// Métricas personalizadas (v35.0) — hasta 5 métricas que el propio paciente
+// diseña (ej. "Días sin alcohol", "Pasos caminados", "Glucosa"), armando sus
+// campos de captura (número con unidad, sí/no, escala 1-10, texto libre) en
+// un diseñador de arrastrar y soltar en el cliente. El servidor es quien
+// valida de verdad los topes (5 métricas, 6 campos por métrica) y el tipo de
+// cada valor capturado — el cliente solo ofrece una buena experiencia, nunca
+// es la fuente de verdad de estas reglas.
+// ============================================================
+const MAX_CUSTOM_METRICS_ = 5;
+const MAX_CUSTOM_METRIC_FIELDS_ = 6;
+const CUSTOM_METRIC_FIELD_TYPES_ = ["number", "boolean", "scale", "text"];
+const CUSTOM_METRIC_NAME_MAX_LEN_ = 60;
+const CUSTOM_METRIC_FIELD_LABEL_MAX_LEN_ = 40;
+const CUSTOM_METRIC_UNIT_MAX_LEN_ = 20;
+const CUSTOM_METRIC_TEXT_VALUE_MAX_LEN_ = 300;
+const CUSTOM_METRIC_NOTE_MAX_LEN_ = 300;
+
+// Valida y "limpia" la lista de campos que llega del diseñador (arrastrar y
+// soltar) antes de guardarla — nunca se confía en el orden, las llaves ni
+// los tipos tal cual los manda el cliente. key: identificador corto y
+// estable de cada campo (se usa luego como llave dentro de field_values de
+// cada registro); si el cliente no manda uno usable, se genera aquí mismo.
+function validateCustomMetricFields_(fieldsIn) {
+  if (!Array.isArray(fieldsIn) || !fieldsIn.length) return { error: "agrega al menos un campo a tu métrica (arrástralo desde la paleta)" };
+  if (fieldsIn.length > MAX_CUSTOM_METRIC_FIELDS_) return { error: `una métrica puede tener hasta ${MAX_CUSTOM_METRIC_FIELDS_} campos` };
+  const seenKeys = new Set();
+  const fields = [];
+  for (let i = 0; i < fieldsIn.length; i++) {
+    const f = fieldsIn[i] || {};
+    if (!CUSTOM_METRIC_FIELD_TYPES_.includes(f.type)) return { error: `tipo de campo no reconocido: ${f.type}` };
+    const label = String(f.label || "").trim().slice(0, CUSTOM_METRIC_FIELD_LABEL_MAX_LEN_);
+    if (!label) return { error: "cada campo necesita un nombre" };
+    let key = String(f.key || "").slice(0, 24).replace(/[^a-zA-Z0-9_]/g, "");
+    if (!key) key = `f${i + 1}`;
+    if (seenKeys.has(key)) key = `${key}_${i + 1}`;
+    seenKeys.add(key);
+    const field = { key, type: f.type, label, required: !!f.required, order: i };
+    if (f.type === "number" && f.unit) field.unit = String(f.unit).trim().slice(0, CUSTOM_METRIC_UNIT_MAX_LEN_);
+    fields.push(field);
+  }
+  return { fields };
+}
+// Convierte el valor crudo que manda el cliente para UN campo al tipo que le
+// corresponde según su definición — nunca se guarda tal cual llegó. Regresa
+// null si el valor está vacío o no se pudo interpretar (ej. "abc" para un
+// campo numérico), para que quien llama decida si eso es un error (campo
+// obligatorio) o simplemente un campo opcional sin capturar esta vez.
+function coerceCustomMetricFieldValue_(field, raw) {
+  if (raw == null || raw === "") return null;
+  if (field.type === "number") {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (field.type === "boolean") return !!raw;
+  if (field.type === "scale") {
+    const n = Math.round(Number(raw));
+    return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : null;
+  }
+  return String(raw).trim().slice(0, CUSTOM_METRIC_TEXT_VALUE_MAX_LEN_); // text
+}
+// Arma field_values para un registro a partir de los campos definidos por la
+// métrica (no de lo que mande el cliente) — así un campo que ya no existe en
+// la métrica (se borró después de capturar registros viejos) simplemente se
+// ignora, y un campo obligatorio ausente sí truena con un error claro.
+function buildCustomMetricEntryValues_(fields, valuesIn) {
+  const values = {};
+  for (const field of fields) {
+    const raw = valuesIn ? valuesIn[field.key] : undefined;
+    const value = coerceCustomMetricFieldValue_(field, raw);
+    if (field.required && (value == null || value === "")) return { error: `falta "${field.label}"` };
+    if (value != null && value !== "") values[field.key] = value;
+  }
+  return { values };
+}
+// pg-mem (pruebas) y Postgres real a veces difieren en si una columna jsonb
+// ya llega parseada a objeto/arreglo o como texto — se normaliza aquí una
+// sola vez en vez de repetir el try/parse en cada mapeador de fila.
+function parseJsonColumn_(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch (err) { return fallback; }
+}
+function customMetricRowToObject_(row) {
+  return {
+    id: row.id, patient_id: row.patient_id, name: row.name, icon: row.icon || "📊",
+    fields: parseJsonColumn_(row.fields, []),
+    order_index: row.order_index,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listCustomMetrics(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, name, icon, fields, order_index, created_at
+     FROM custom_metrics WHERE patient_id = $1 ORDER BY order_index, created_at`,
+    [patientId]
+  );
+  return rows.map(customMetricRowToObject_);
+}
+function customMetricEntryRowToObject_(row) {
+  return {
+    id: row.id, metric_id: row.metric_id, date: row.date,
+    field_values: parseJsonColumn_(row.field_values, {}),
+    note: row.note || "",
+  };
+}
+// metricId (opcional): si se da, solo regresa los registros de esa métrica;
+// si no, regresa TODOS los registros de TODAS las métricas del paciente en
+// una sola lista plana (cada registro trae su metric_id), para poder cargar
+// la pestaña completa de un jalón como ya hacen list_sleep/list_goals.
+async function listCustomMetricEntries(patientId, metricId) {
+  const params = [patientId];
+  let where = `m.patient_id = $1`;
+  if (metricId) { params.push(metricId); where += ` AND e.metric_id = $2`; }
+  const { rows } = await pool.query(
+    `SELECT e.id, e.metric_id, to_char(e.date, 'YYYY-MM-DD') AS date, e.field_values, e.note
+     FROM custom_metric_entries e JOIN custom_metrics m ON m.id = e.metric_id
+     WHERE ${where} ORDER BY e.date, e.created_at`,
+    params
+  );
+  return rows.map(customMetricEntryRowToObject_);
+}
+
+// ============================================================
 // doGet equivalente
 // ============================================================
 async function handleGet(params) {
@@ -2065,6 +2188,12 @@ async function handleGet(params) {
   }
   if (action === "list_goals") {
     return { ok: true, data: await listGoals(params.patient_id) };
+  }
+  if (action === "list_custom_metrics") {
+    return { ok: true, data: await listCustomMetrics(params.patient_id) };
+  }
+  if (action === "list_custom_metric_entries") {
+    return { ok: true, data: await listCustomMetricEntries(params.patient_id, params.metric_id) };
   }
   if (action === "list_exercises") {
     return { ok: true, data: await listExercises(params.patient_id) };
@@ -2536,6 +2665,88 @@ async function handlePost(body) {
     const { rowCount } = await pool.query(`DELETE FROM metas WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
     if (!rowCount) return { ok: false, error: "no encontrada" };
     emitChange(body.patient_id, "metas");
+    return { ok: true };
+  }
+
+  // ---- v35.0: Métricas personalizadas — el paciente diseña la métrica
+  // (nombre + campos) en el diseñador de arrastrar y soltar; aquí solo se
+  // valida y guarda lo que ya armó (ver validateCustomMetricFields_). Editar
+  // una métrica reemplaza toda su lista de campos: si el paciente quita un
+  // campo que ya tenía registros capturados, esos valores viejos no se
+  // borran (siguen en field_values de cada registro), solo dejan de
+  // mostrarse porque ya no hay un campo definido que los explique — es una
+  // decisión consciente de no perder datos históricos por un rediseño.
+  if (body.action === "add_custom_metric") {
+    const name = String(body.name || "").trim().slice(0, CUSTOM_METRIC_NAME_MAX_LEN_);
+    if (!name) return { ok: false, error: "ponle un nombre a tu métrica" };
+    const { fields, error } = validateCustomMetricFields_(body.fields);
+    if (error) return { ok: false, error };
+    const { rows: countRows } = await pool.query(`SELECT COUNT(*)::int AS n FROM custom_metrics WHERE patient_id = $1`, [body.patient_id]);
+    if (countRows[0].n >= MAX_CUSTOM_METRICS_) {
+      return { ok: false, error: `ya tienes el máximo de ${MAX_CUSTOM_METRICS_} métricas personalizadas — elimina una para crear otra` };
+    }
+    const icon = String(body.icon || "📊").trim().slice(0, 8) || "📊";
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO custom_metrics (id, patient_id, name, icon, fields, order_index, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
+      [id, body.patient_id, name, icon, JSON.stringify(fields), countRows[0].n, now]
+    );
+    emitChange(body.patient_id, "custom_metrics");
+    return { ok: true, id };
+  }
+  if (body.action === "update_custom_metric") {
+    const name = String(body.name || "").trim().slice(0, CUSTOM_METRIC_NAME_MAX_LEN_);
+    if (!name) return { ok: false, error: "ponle un nombre a tu métrica" };
+    const { fields, error } = validateCustomMetricFields_(body.fields);
+    if (error) return { ok: false, error };
+    const icon = String(body.icon || "📊").trim().slice(0, 8) || "📊";
+    const { rowCount } = await pool.query(
+      `UPDATE custom_metrics SET name = $1, icon = $2, fields = $3, updated_at = $4 WHERE id = $5 AND patient_id = $6`,
+      [name, icon, JSON.stringify(fields), now, body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrada" };
+    emitChange(body.patient_id, "custom_metrics");
+    return { ok: true };
+  }
+  if (body.action === "delete_custom_metric") {
+    const { rowCount } = await pool.query(`DELETE FROM custom_metrics WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrada" };
+    emitChange(body.patient_id, "custom_metrics");
+    return { ok: true };
+  }
+  if (body.action === "add_custom_metric_entry" || body.action === "update_custom_metric_entry") {
+    if (!body.date) return { ok: false, error: "falta la fecha" };
+    const { rows: metricRows } = await pool.query(`SELECT id, fields FROM custom_metrics WHERE id = $1 AND patient_id = $2`, [body.metric_id, body.patient_id]);
+    if (!metricRows.length) return { ok: false, error: "métrica no encontrada" };
+    const fields = parseJsonColumn_(metricRows[0].fields, []);
+    const { values, error } = buildCustomMetricEntryValues_(fields, body.field_values);
+    if (error) return { ok: false, error };
+    const note = String(body.note || "").trim().slice(0, CUSTOM_METRIC_NOTE_MAX_LEN_);
+    if (body.action === "add_custom_metric_entry") {
+      const id = uuid();
+      await pool.query(
+        `INSERT INTO custom_metric_entries (id, metric_id, date, field_values, note, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+        [id, body.metric_id, body.date, JSON.stringify(values), note, now]
+      );
+      emitChange(body.patient_id, "custom_metrics");
+      return { ok: true, id };
+    } else {
+      const { rowCount } = await pool.query(
+        `UPDATE custom_metric_entries SET date = $1, field_values = $2, note = $3, updated_at = $4 WHERE id = $5 AND metric_id = $6`,
+        [body.date, JSON.stringify(values), note, now, body.id, body.metric_id]
+      );
+      if (!rowCount) return { ok: false, error: "no encontrado" };
+      emitChange(body.patient_id, "custom_metrics");
+      return { ok: true };
+    }
+  }
+  if (body.action === "delete_custom_metric_entry") {
+    const { rowCount } = await pool.query(
+      `DELETE FROM custom_metric_entries WHERE id = $1 AND metric_id IN (SELECT id FROM custom_metrics WHERE patient_id = $2)`,
+      [body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "custom_metrics");
     return { ok: true };
   }
 

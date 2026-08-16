@@ -720,6 +720,35 @@ app.delete("/api/goals/:id", requireRole("patient"), asyncRoute(async (req, res)
   res.json(await callSheetsApi(null, { action: "delete_meta", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
+// ---- v35.0: Métricas personalizadas — hasta 5 métricas que el propio
+// paciente diseña (nombre + campos), con sus propios registros por fecha.
+// Sección exclusiva del paciente (no se comparte con médico ni familia, a
+// diferencia de Metas), por eso todas las rutas exigen requireRole("patient").
+app.get("/api/custom-metrics", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_custom_metrics", patient_id: req.session.patientId }));
+}));
+app.post("/api/custom-metrics", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_custom_metric", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/custom-metrics/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_custom_metric", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/custom-metrics/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_custom_metric", patient_id: req.session.patientId, id: req.params.id }));
+}));
+app.get("/api/custom-metric-entries", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_custom_metric_entries", patient_id: req.session.patientId, metric_id: req.query.metric_id }));
+}));
+app.post("/api/custom-metric-entries", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "add_custom_metric_entry", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/custom-metric-entries/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_custom_metric_entry", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/custom-metric-entries/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_custom_metric_entry", patient_id: req.session.patientId, id: req.params.id }));
+}));
+
 // ---- v32: interpretación con IA — junta todas las capturas del paciente en
 // un JSON, genera una liga temporal (~1 hora) hacia ese JSON, y llama a la
 // API de Anthropic para generar una interpretación en español. origin se

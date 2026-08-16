@@ -616,3 +616,43 @@ ALTER TABLE ai_export_tokens ADD COLUMN IF NOT EXISTS category text NOT NULL DEF
 -- el cliente) para que baste con cambiar el default aquí y agregar un flujo
 -- de cobro más adelante, sin tocar la lógica de la función en sí.
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS plan text NOT NULL DEFAULT 'pro';
+
+-- v35.0: Métricas personalizadas — el propio paciente diseña hasta 5
+-- métricas propias (ej. "Días sin alcohol", "Pasos caminados", "Glucosa"),
+-- cada una con sus propios campos de captura (número con unidad, sí/no,
+-- escala 1-10 o texto libre), armados en un diseñador de arrastrar y soltar
+-- en el cliente. "fields" guarda la lista de campos como jsonb en vez de
+-- columnas fijas, porque cada paciente define una forma distinta — el tope
+-- de 5 métricas y de campos por métrica se valida en la aplicación (ver
+-- MAX_CUSTOM_METRICS_/MAX_CUSTOM_METRIC_FIELDS_ en db-postgres.js), no aquí,
+-- para poder ajustarlo sin migrar el esquema. Cada campo dentro de "fields"
+-- tiene la forma { key, type, label, unit?, required, order }, con type en
+-- "number" | "boolean" | "scale" | "text".
+CREATE TABLE IF NOT EXISTS custom_metrics (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  icon text NOT NULL DEFAULT '📊',
+  fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+  order_index integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_custom_metrics_patient ON custom_metrics(patient_id, order_index);
+
+-- Un registro por fecha (puede haber varios el mismo día, igual que
+-- lecturas/sueño/ejercicio) con los valores capturados para esa métrica.
+-- field_values es un objeto { <field.key>: valor }, con el tipo de cada
+-- valor según el tipo de su campo (number → numeric, boolean → true/false,
+-- scale → entero 1-10, text → string). No se usa el nombre "values" a
+-- secas porque es palabra reservada en SQL.
+CREATE TABLE IF NOT EXISTS custom_metric_entries (
+  id uuid PRIMARY KEY,
+  metric_id uuid NOT NULL REFERENCES custom_metrics(id) ON DELETE CASCADE,
+  date date NOT NULL,
+  field_values jsonb NOT NULL DEFAULT '{}'::jsonb,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_custom_metric_entries_metric ON custom_metric_entries(metric_id, date);

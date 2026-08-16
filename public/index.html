@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=34.4"></script>
+<script src="/shared/common.js?v=35.0"></script>
 <style>
   :root {
     color-scheme: light;
@@ -184,6 +184,34 @@
   .hamburger-item:hover { background: var(--accent-soft); }
   .modal-overlay { position: fixed; inset: 0; background: rgba(30,40,36,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
   .modal-card { background: var(--bg-card); border-radius: 14px; max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,0.22); }
+  .modal-card-wide { max-width: 720px; }
+  /* v35.0: Métricas personalizadas — diseñador de arrastrar y soltar */
+  .metric-icon-picker { display: flex; flex-wrap: wrap; gap: 6px; }
+  .metric-icon-btn { font-size: 18px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-page); cursor: pointer; }
+  .metric-icon-btn.active { border-color: var(--accent); background: var(--accent-soft); }
+  .metric-designer-label { font-size: 12px; font-weight: 650; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 16px 0 8px 0; }
+  .metric-designer-palette { display: flex; flex-wrap: wrap; gap: 8px; }
+  .metric-palette-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px dashed var(--accent); border-radius: 20px; background: var(--accent-soft); color: var(--accent); font-size: 13px; cursor: grab; user-select: none; }
+  .metric-palette-chip:active { cursor: grabbing; }
+  .metric-designer-canvas { min-height: 70px; border: 2px dashed var(--border); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; transition: border-color 0.15s, background 0.15s; }
+  .metric-designer-canvas.is-drop-target { border-color: var(--accent); background: var(--accent-soft); }
+  .metric-designer-canvas-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 14px 4px; }
+  .metric-field-card { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg-page); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+  .metric-field-card.is-dragging { opacity: 0.4; }
+  .metric-field-card.drag-over-top { border-top: 3px solid var(--accent); }
+  .metric-field-card.drag-over-bottom { border-bottom: 3px solid var(--accent); }
+  .metric-field-drag-handle { cursor: grab; color: var(--text-muted); }
+  .metric-field-type-badge { font-size: 15px; }
+  .metric-field-label-input { flex: 1; min-width: 110px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+  .metric-field-unit-input { width: 90px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+  .metric-field-required-toggle { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .metric-field-move-btns { display: flex; flex-direction: column; gap: 1px; }
+  .metric-field-move-btns button { padding: 1px 5px; font-size: 10px; }
+  .custom-metric-entry-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+  .custom-metric-entry-form .field-inline { display: flex; flex-direction: column; gap: 3px; }
+  .custom-metric-entry-form .field-inline label { font-size: 12px; color: var(--text-muted); }
+  .custom-metric-entry-form input[type="text"], .custom-metric-entry-form input[type="number"], .custom-metric-entry-form input[type="date"] { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .custom-metric-entry-form .field-inline-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; padding-bottom: 7px; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   .modal-header h2 { margin: 0; font-size: 17px; }
   .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); padding: 4px; line-height: 1; }
@@ -381,6 +409,7 @@
   <button type="button" class="page-tab-btn" data-page-tab="wellness">🧘 Wellness</button>
   <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
   <button type="button" class="page-tab-btn" data-page-tab="metas">🎯 Metas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metricas">📈 Métricas</button>
   <!-- v30.10: el Directorio Médico (antes "Catálogo de médicos") se movió al
        extremo derecho y lleva un fondo distinto (.page-tab-btn-directory)
        porque no es parte de la captura habitual de datos del paciente, sino
@@ -455,8 +484,16 @@
       <button type="button" class="chart-filter-btn active" data-granularity="week">Semana</button>
       <button type="button" class="chart-filter-btn" data-granularity="month">Mes</button>
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
+      <button type="button" class="chart-filter-btn" data-granularity="custom">Libre</button>
     </div>
     <input type="date" id="chartDayPicker" class="chart-day-picker" style="display:none;">
+    <!-- v35.0: "Libre" — de una fecha específica a otra, no atado a
+         día/semana/mes/año del calendario. -->
+    <span id="chartRangePicker" class="chart-day-picker" style="display:none; align-items:center; gap:6px;">
+      <input type="date" id="chartRangeStart" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <span style="font-size:12px; color:var(--text-muted);">a</span>
+      <input type="date" id="chartRangeEnd" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+    </span>
     <select id="chartTimeView" class="chart-day-picker" aria-label="Vista por horario">
       <option value="regular">Regular</option>
       <option value="manana">Mañanas (5–12h)</option>
@@ -525,14 +562,17 @@
     <div class="pagination-controls">
       <label>Por página
         <select id="pageSizeSelect">
+          <option value="5">5</option>
           <option value="10" selected>10</option>
           <option value="20">20</option>
           <option value="30">30</option>
         </select>
       </label>
+      <button type="button" class="btn-mini" id="firstPageBtn" title="Primera página">« Primera</button>
       <button type="button" class="btn-mini" id="prevPageBtn">‹ Anterior</button>
       <span id="pageIndicator"></span>
       <button type="button" class="btn-mini" id="nextPageBtn">Siguiente ›</button>
+      <button type="button" class="btn-mini" id="lastPageBtn" title="Última página">Última »</button>
     </div>
   </div>
 </div>
@@ -577,6 +617,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Semana</button>
         <button type="button" class="chart-filter-btn active" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
       <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
     </div>
@@ -590,6 +631,12 @@
       <input type="date" id="statsAnchorWeek" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;" title="Elige cualquier día de la semana que quieras ver">
       <input type="month" id="statsAnchorMonth" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <select id="statsAnchorYear" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;"></select>
+      <!-- v35.0: "Libre" — de una fecha específica a otra. -->
+      <span id="statsAnchorCustomWrap" style="display:none; align-items:center; gap:6px;">
+        <input type="date" id="statsAnchorCustomStart" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <span style="font-size:12.5px; color:var(--text-muted);">a</span>
+        <input type="date" id="statsAnchorCustomEnd" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      </span>
       <span id="statsAnchorLabel" style="font-size:12.5px; color:var(--text-muted);"></span>
       <button type="button" class="btn-mini" id="statsAnchorTodayBtn">Hoy/actual</button>
     </div>
@@ -1324,7 +1371,60 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.4</footer>
+<!-- v35.0: Métricas personalizadas — hasta 5 métricas que el propio
+     paciente diseña (nombre + campos: número con unidad, sí/no, escala
+     1-10, texto libre), armadas en el diseñador de arrastrar y soltar
+     (#metricDesignerModal, más abajo). Cada métrica tiene su propio
+     formulario de captura, tabla de registros y gráfica, montados por JS
+     (ver renderCustomMetricsTab_) porque el número y tipo de campos varía
+     por métrica y por paciente. -->
+<div id="tabMetricas" class="tab-panel" style="display:none;">
+  <div class="section">
+    <div class="toolbar">
+      <h2 style="flex:1">📈 Métricas personalizadas</h2>
+      <button type="button" class="btn-primary" id="newCustomMetricBtn">+ Nueva métrica</button>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Diseña tus propias métricas para dar seguimiento a lo que te importa a ti — por ejemplo "Días sin alcohol", pasos caminados o niveles de glucosa. Hasta 5 métricas, con los campos que tú elijas.</p>
+  </div>
+  <div id="customMetricsEmpty" class="section" style="display:none; text-align:center; color:var(--text-muted); font-size:13px; padding:26px 16px;">
+    Todavía no tienes ninguna métrica personalizada. Toca "+ Nueva métrica" para crear la primera.
+  </div>
+  <div id="customMetricsContainer"></div>
+</div>
+
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.0</footer>
+
+<!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
+<div class="modal-overlay" id="metricDesignerModal" style="display:none;">
+  <div class="modal-card modal-card-wide">
+    <div class="modal-header"><h2 id="metricDesignerTitle">📈 Nueva métrica</h2><button type="button" class="modal-close" data-close-modal="metricDesignerModal">✕</button></div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Ponle un nombre y arrastra los tipos de campo que quieras capturar hacia el área de abajo (en el celular, tócalos). Puedes reordenar los campos arrastrándolos o con las flechas, y editar su nombre en cualquier momento.</p>
+    <div class="field">
+      <label>Nombre de la métrica</label>
+      <input type="text" id="metricDesignerName" placeholder="Ej. Días sin alcohol, Pasos caminados, Glucosa" maxlength="60">
+    </div>
+    <div class="field">
+      <label>Ícono</label>
+      <div class="metric-icon-picker" id="metricIconPicker"></div>
+    </div>
+    <div class="metric-designer-label">Tipos de campo — arrastra o toca para agregar</div>
+    <div class="metric-designer-palette" id="metricDesignerPalette">
+      <div class="metric-palette-chip" draggable="true" data-field-type="number">🔢 Número</div>
+      <div class="metric-palette-chip" draggable="true" data-field-type="boolean">✅ Sí / No</div>
+      <div class="metric-palette-chip" draggable="true" data-field-type="scale">🎚️ Escala 1-10</div>
+      <div class="metric-palette-chip" draggable="true" data-field-type="text">📝 Texto libre</div>
+    </div>
+    <div class="metric-designer-label">Campos de tu métrica</div>
+    <div class="metric-designer-canvas" id="metricDesignerCanvas">
+      <div class="metric-designer-canvas-empty" id="metricDesignerCanvasEmpty">Arrastra aquí un tipo de campo (o tócalo) para empezar</div>
+    </div>
+    <div id="metricDesignerError" style="display:none; font-size:13px; color:#B0554B; margin-top:8px;"></div>
+    <div class="row-actions" style="margin-top:14px;">
+      <button type="button" class="btn-primary" id="metricDesignerSaveBtn">Guardar métrica</button>
+      <button type="button" class="btn-mini" data-close-modal="metricDesignerModal">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1466,6 +1566,7 @@
     <div class="field">
       <label>Lecturas por página (por defecto)</label>
       <select id="setting_pagesize">
+        <option value="5">5</option>
         <option value="10">10</option>
         <option value="20">20</option>
         <option value="30">30</option>
@@ -1833,7 +1934,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("34.4");
+  showAboutOverlay_("35.0");
 });
 
 function openModal(id) {
@@ -1875,6 +1976,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabWellness").style.display = btn.dataset.pageTab === "wellness" ? "" : "none";
     document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
     document.getElementById("tabMetas").style.display = btn.dataset.pageTab === "metas" ? "" : "none";
+    document.getElementById("tabMetricas").style.display = btn.dataset.pageTab === "metricas" ? "" : "none";
   });
 });
 
@@ -2462,6 +2564,7 @@ function renderStreak() {
 
 // ---- Paginación de la tabla ----
 let currentPage = 1;
+let currentTotalPages = 1; // v35.0: para poder saltar directo a la última página
 let pageSize = Number(localStorage.getItem("bp_page_size")) || 10;
 document.getElementById("pageSizeSelect").value = String(pageSize);
 
@@ -2525,6 +2628,7 @@ function renderTablePage() {
   const descending = [...data].reverse(); // más reciente primero en la tabla
   const { pageData, page, totalPages } = paginateData(descending, currentPage, pageSize);
   currentPage = page;
+  currentTotalPages = totalPages;
 
   tbody.innerHTML = "";
   pageData.forEach(r => {
@@ -2554,6 +2658,8 @@ function renderTablePage() {
   document.getElementById("pageIndicator").textContent = `Página ${page} de ${totalPages}`;
   document.getElementById("prevPageBtn").disabled = page <= 1;
   document.getElementById("nextPageBtn").disabled = page >= totalPages;
+  document.getElementById("firstPageBtn").disabled = page <= 1;
+  document.getElementById("lastPageBtn").disabled = page >= totalPages;
 }
 
 document.getElementById("pageSizeSelect").addEventListener("change", e => {
@@ -2566,24 +2672,41 @@ document.getElementById("pageSizeSelect").addEventListener("change", e => {
 });
 document.getElementById("prevPageBtn").addEventListener("click", () => { currentPage--; renderTablePage(); });
 document.getElementById("nextPageBtn").addEventListener("click", () => { currentPage++; renderTablePage(); });
+document.getElementById("firstPageBtn").addEventListener("click", () => { currentPage = 1; renderTablePage(); });
+document.getElementById("lastPageBtn").addEventListener("click", () => { currentPage = currentTotalPages; renderTablePage(); });
 
 // ---- Filtro de la gráfica por periodo ----
 let chartGranularity = "week";
 let chartDay = todayStr();
+// v35.0: rango "Libre" del filtro de la gráfica de Tendencia — null hasta
+// que el paciente elija ambas fechas.
+let chartRange = { start: null, end: null };
 const chartDayPickerEl = document.getElementById("chartDayPicker");
 chartDayPickerEl.value = chartDay;
 chartDayPickerEl.max = todayStr();
+const chartRangePickerEl = document.getElementById("chartRangePicker");
+const chartRangeStartEl = document.getElementById("chartRangeStart");
+const chartRangeEndEl = document.getElementById("chartRangeEnd");
+chartRangeStartEl.max = todayStr();
+chartRangeEndEl.max = todayStr();
 document.getElementById("chartFilter").addEventListener("click", e => {
   const btn = e.target.closest(".chart-filter-btn");
   if (!btn) return;
   chartGranularity = btn.dataset.granularity;
   document.querySelectorAll("#chartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   chartDayPickerEl.style.display = chartGranularity === "day" ? "inline-block" : "none";
+  chartRangePickerEl.style.display = chartGranularity === "custom" ? "inline-flex" : "none";
   renderChart();
 });
 chartDayPickerEl.addEventListener("change", e => {
   chartDay = e.target.value || todayStr();
   renderChart();
+});
+[chartRangeStartEl, chartRangeEndEl].forEach(input => {
+  input.addEventListener("change", () => {
+    chartRange = { start: chartRangeStartEl.value || null, end: chartRangeEndEl.value || null };
+    renderChart();
+  });
 });
 let chartTimeView = "regular";
 document.getElementById("chartTimeView").addEventListener("change", e => {
@@ -2604,7 +2727,7 @@ document.getElementById("chartLegend").addEventListener("click", e => {
 
 function renderChart() {
   const data = currentData;
-  const grouped = chartDataForFilter(data, chartGranularity, chartDay, chartTimeView);
+  const grouped = chartDataForFilter(data, chartGranularity, chartDay, chartTimeView, chartRange);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
@@ -2695,15 +2818,23 @@ function syncStatsAnchorPicker_() {
   document.getElementById("statsAnchorWeek").style.display = gran === "week" ? "" : "none";
   document.getElementById("statsAnchorMonth").style.display = gran === "month" ? "" : "none";
   document.getElementById("statsAnchorYear").style.display = gran === "year" ? "" : "none";
+  document.getElementById("statsAnchorCustomWrap").style.display = gran === "custom" ? "inline-flex" : "none";
+  document.getElementById("statsAnchorTodayBtn").style.display = gran === "custom" ? "none" : "";
   populateYearSelect_(document.getElementById("statsAnchorYear"));
   const today = todayStr();
   document.getElementById("statsAnchorDay").max = today;
+  document.getElementById("statsAnchorCustomStart").max = today;
+  document.getElementById("statsAnchorCustomEnd").max = today;
   if (gran === "day") document.getElementById("statsAnchorDay").value = statsAnchors_.day || today;
   if (gran === "week") document.getElementById("statsAnchorWeek").value = statsAnchors_.week || today;
   if (gran === "month") document.getElementById("statsAnchorMonth").value = statsAnchors_.month || currentMonthAnchor_();
   if (gran === "year") document.getElementById("statsAnchorYear").value = statsAnchors_.year || String(new Date().getFullYear());
+  if (gran === "custom") {
+    document.getElementById("statsAnchorCustomStart").value = (statsAnchors_.custom && statsAnchors_.custom.start) || "";
+    document.getElementById("statsAnchorCustomEnd").value = (statsAnchors_.custom && statsAnchors_.custom.end) || "";
+  }
   const range = calendarRangeForGranularity_(gran, statsAnchors_[gran]);
-  document.getElementById("statsAnchorLabel").textContent = range ? periodRangeLabel_(gran, range) : "";
+  document.getElementById("statsAnchorLabel").textContent = range ? periodRangeLabel_(gran, range) : (gran === "custom" ? "Elige ambas fechas" : "");
 }
 // v33.2: periodo INMEDIATO ANTERIOR a uno dado, para que "Comparar" (por
 // gráfica) ya muestre algo útil apenas se activa, sin que el paciente tenga
@@ -2861,6 +2992,15 @@ document.getElementById("statsClearFiltersBtn").addEventListener("click", () => 
     rerenderAllStatsCharts_();
   });
 });
+// v35.0: "Libre" — ambas fechas se guardan juntas como { start, end }.
+["statsAnchorCustomStart", "statsAnchorCustomEnd"].forEach(id => {
+  document.getElementById(id).addEventListener("change", () => {
+    const start = document.getElementById("statsAnchorCustomStart").value || null;
+    const end = document.getElementById("statsAnchorCustomEnd").value || null;
+    statsAnchors_.custom = (start || end) ? { start, end } : null;
+    rerenderAllStatsCharts_();
+  });
+});
 document.getElementById("statsAnchorTodayBtn").addEventListener("click", () => {
   statsAnchors_[statsChartPeriod] = null; // null = "el periodo actual"
   rerenderAllStatsCharts_();
@@ -2919,14 +3059,21 @@ function injectChartCompareControls_() {
   });
 }
 function syncChartCompareUI_(key) {
+  const gran = effectivePeriod_(key);
+  // v35.0: "Comparar" no tiene sentido en "Libre" (no existe un "periodo
+  // anterior" con el que comparar un rango elegido a mano) — se oculta el
+  // control por completo mientras la gráfica esté en "Libre", y se apaga si
+  // ya estaba encendido, para no dejarlo en un estado a medias.
+  const wholeWrap = document.querySelector(`.chart-compare-wrap[data-chart-key="${key}"]`);
+  if (wholeWrap) wholeWrap.style.display = gran === "custom" ? "none" : "";
+  if (gran === "custom") { chartCompareOn_[key] = false; }
   const anchorWrap = document.querySelector(`.chart-compare-anchor-wrap[data-chart-key="${key}"]`);
   if (!anchorWrap) return;
   const toggle = document.querySelector(`.chart-compare-toggle[data-chart-key="${key}"]`);
   const on = !!chartCompareOn_[key];
   if (toggle) toggle.checked = on;
   anchorWrap.style.display = on ? "block" : "none";
-  if (!on) return;
-  const gran = effectivePeriod_(key);
+  if (!on || gran === "custom") return;
   anchorWrap.querySelectorAll(".chart-compare-anchor").forEach(inp => {
     inp.style.display = inp.dataset.gran === gran ? "" : "none";
   });
@@ -3200,6 +3347,10 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     // cargado después del arranque inicial de la página (peso, lecturas,
     // sueño, apego a medicamentos cargan todos por su cuenta y en paralelo).
     if (btn.dataset.pageTab === "metas") renderGoalIndicatorPicker_();
+    // v35.0: mismo motivo que Estadísticas — Chart.js no puede medir un
+    // canvas oculto, así que las gráficas de Métricas se vuelven a dibujar
+    // justo al entrar a esa pestaña.
+    if (btn.dataset.pageTab === "metricas") renderAllCustomMetricCharts_();
   });
 });
 
@@ -4757,6 +4908,459 @@ document.getElementById("metaForm").addEventListener("submit", async e => {
 });
 loadGoals();
 
+// ============================================================
+// Métricas personalizadas (v35.0) — el paciente diseña hasta 5 métricas
+// propias con un diseñador de arrastrar y soltar (paleta de tipos de campo
+// -> lienzo), y cada una tiene su formulario de captura, tabla de registros
+// y gráfica. Todo el marcado de cada métrica se genera por JS (no a mano en
+// el HTML) porque el número y tipo de campos varía por métrica.
+// ============================================================
+const CUSTOM_METRIC_ICONS_ = ["📊", "🏃", "💧", "🍷", "😴", "🩸", "🥗", "🧘", "☀️", "💊", "📈", "🚶", "🫀", "🧠", "⚖️"];
+const CUSTOM_METRIC_FIELD_TYPE_META_ = {
+  number: { icon: "🔢", label: "Número" },
+  boolean: { icon: "✅", label: "Sí / No" },
+  scale: { icon: "🎚️", label: "Escala 1-10" },
+  text: { icon: "📝", label: "Texto libre" },
+};
+const CUSTOM_METRIC_CHART_COLORS_ = ["#2e6fd9", "#D9A15F", "#9B8AC4", "#4F9E8C", "#B0559B", "#8a8a8a"];
+
+let currentCustomMetrics = [];
+let currentCustomMetricEntries = [];
+let customMetricChartInstances_ = {};
+let editingCustomMetricId_ = null; // null = creando una métrica nueva
+let editingCustomMetricEntryId_ = {}; // metric_id -> id del registro en edición
+let designerFields_ = []; // estado del diseñador mientras el modal está abierto
+let draggingPaletteType_ = null;
+let draggingFieldKey_ = null;
+
+async function loadCustomMetrics() {
+  try { currentCustomMetrics = await apiGet("/api/custom-metrics"); } catch (err) { currentCustomMetrics = []; }
+}
+async function loadCustomMetricEntries() {
+  try { currentCustomMetricEntries = await apiGet("/api/custom-metric-entries"); } catch (err) { currentCustomMetricEntries = []; }
+}
+async function loadAndRenderCustomMetrics_() {
+  await Promise.all([loadCustomMetrics(), loadCustomMetricEntries()]);
+  renderCustomMetricsTab_();
+}
+
+// ---- Formulario de captura + tabla + gráfica por métrica ----
+function customMetricFieldInputHTML_(field) {
+  const label = escapeHtml_(field.label) + (field.type === "number" && field.unit ? ` (${escapeHtml_(field.unit)})` : field.type === "scale" ? " (1-10)" : "");
+  if (field.type === "boolean") {
+    return `<label class="field-inline-checkbox"><input type="checkbox" class="custom-metric-field-input" data-field-key="${field.key}" data-field-type="boolean"> ${label}</label>`;
+  }
+  if (field.type === "number") {
+    return `<div class="field-inline"><label>${label}</label><input type="number" step="any" class="custom-metric-field-input" data-field-key="${field.key}" data-field-type="number" ${field.required ? "required" : ""}></div>`;
+  }
+  if (field.type === "scale") {
+    return `<div class="field-inline"><label>${label}</label><input type="number" min="1" max="10" step="1" class="custom-metric-field-input" data-field-key="${field.key}" data-field-type="scale" ${field.required ? "required" : ""}></div>`;
+  }
+  return `<div class="field-inline"><label>${label}</label><input type="text" maxlength="300" class="custom-metric-field-input" data-field-key="${field.key}" data-field-type="text" ${field.required ? "required" : ""}></div>`;
+}
+function customMetricCardHTML_(metric) {
+  return `
+    <div class="section section-chart" data-metric-id="${metric.id}">
+      <div class="toolbar">
+        <h2 style="flex:1">${metric.icon} ${escapeHtml_(metric.name)}</h2>
+        <button type="button" class="btn-mini custom-metric-edit-btn" data-metric-id="${metric.id}">Editar</button>
+        <button type="button" class="btn-mini danger custom-metric-delete-btn" data-metric-id="${metric.id}">Eliminar</button>
+      </div>
+      <form class="custom-metric-entry-form" data-metric-id="${metric.id}">
+        <div class="field-inline"><label>Fecha</label><input type="date" class="custom-metric-entry-date" required></div>
+        ${metric.fields.map(customMetricFieldInputHTML_).join("")}
+        <button type="submit" class="btn-primary">Guardar registro</button>
+        <button type="button" class="btn-mini custom-metric-cancel-edit-btn" style="display:none;">Cancelar edición</button>
+      </form>
+      <div class="custom-metric-entry-error" data-metric-id="${metric.id}" style="display:none; font-size:13px; color:#B0554B; margin-top:6px;"></div>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table class="custom-metric-table">
+          <thead><tr><th>Fecha</th>${metric.fields.map(f => `<th>${escapeHtml_(f.label)}</th>`).join("")}<th>Acciones</th></tr></thead>
+          <tbody data-metric-id="${metric.id}"></tbody>
+        </table>
+      </div>
+      <div class="chart-wrap" style="margin-top:14px;"><canvas class="custom-metric-chart" data-metric-id="${metric.id}"></canvas></div>
+      <div class="custom-metric-chart-empty" data-metric-id="${metric.id}" style="display:none; font-size:13px; color:var(--text-muted); text-align:center; padding:10px;">Todavía no hay suficientes registros numéricos o sí/no para graficar.</div>
+    </div>`;
+}
+function customMetricEntryCellValue_(field, value) {
+  if (value == null || value === "") return "—";
+  if (field.type === "boolean") return value ? "✅ Sí" : "❌ No";
+  if (field.type === "number") return field.unit ? `${value} ${escapeHtml_(field.unit)}` : String(value);
+  if (field.type === "scale") return `${value}/10`;
+  return escapeHtml_(String(value));
+}
+function renderCustomMetricTable_(metric, entries) {
+  const tbody = document.querySelector(`.custom-metric-table tbody[data-metric-id="${metric.id}"]`);
+  if (!tbody) return;
+  const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date)); // más reciente primero
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="${metric.fields.length + 2}" style="text-align:center; color:var(--text-muted);">Todavía no tienes registros</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sorted.map(entry => `
+    <tr data-entry-id="${entry.id}">
+      <td>${fmtDate(entry.date)}</td>
+      ${metric.fields.map(f => `<td>${customMetricEntryCellValue_(f, entry.field_values[f.key])}</td>`).join("")}
+      <td><div class="row-actions">
+        <button type="button" class="btn-mini custom-metric-entry-edit-btn" data-metric-id="${metric.id}" data-entry-id="${entry.id}">Editar</button>
+        <button type="button" class="btn-mini danger custom-metric-entry-delete-btn" data-metric-id="${metric.id}" data-entry-id="${entry.id}">Eliminar</button>
+      </div></td>
+    </tr>`).join("");
+}
+function renderCustomMetricChart_(metric, entries) {
+  const canvas = document.querySelector(`.custom-metric-chart[data-metric-id="${metric.id}"]`);
+  const emptyEl = document.querySelector(`.custom-metric-chart-empty[data-metric-id="${metric.id}"]`);
+  if (!canvas) return;
+  const chartableFields = metric.fields.filter(f => f.type === "number" || f.type === "scale" || f.type === "boolean");
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const hasAnyValue = chartableFields.length && sorted.some(e => chartableFields.some(f => e.field_values[f.key] != null));
+  if (customMetricChartInstances_[metric.id]) { customMetricChartInstances_[metric.id].destroy(); delete customMetricChartInstances_[metric.id]; }
+  if (!hasAnyValue) {
+    canvas.style.display = "none";
+    if (emptyEl) emptyEl.style.display = "";
+    return;
+  }
+  canvas.style.display = "";
+  if (emptyEl) emptyEl.style.display = "none";
+  const labels = sorted.map(e => fmtDate(e.date));
+  const datasets = chartableFields.map((f, i) => ({
+    label: f.label + (f.type === "boolean" ? " (Sí=1/No=0)" : f.unit ? ` (${f.unit})` : ""),
+    data: sorted.map(e => {
+      const v = e.field_values[f.key];
+      if (v == null) return null;
+      return f.type === "boolean" ? (v ? 1 : 0) : v;
+    }),
+    borderColor: CUSTOM_METRIC_CHART_COLORS_[i % CUSTOM_METRIC_CHART_COLORS_.length],
+    backgroundColor: CUSTOM_METRIC_CHART_COLORS_[i % CUSTOM_METRIC_CHART_COLORS_.length],
+    tension: 0.25, spanGaps: true,
+  }));
+  const ctx = canvas.getContext("2d");
+  customMetricChartInstances_[metric.id] = new Chart(ctx, {
+    type: "line",
+    data: { labels, datasets },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { position: "bottom" } } },
+  });
+}
+function renderAllCustomMetricCharts_() {
+  currentCustomMetrics.forEach(metric => {
+    renderCustomMetricChart_(metric, currentCustomMetricEntries.filter(e => e.metric_id === metric.id));
+  });
+}
+function renderCustomMetricsTab_() {
+  const container = document.getElementById("customMetricsContainer");
+  const emptyEl = document.getElementById("customMetricsEmpty");
+  if (!currentCustomMetrics.length) {
+    container.innerHTML = "";
+    emptyEl.style.display = "";
+    return;
+  }
+  emptyEl.style.display = "none";
+  container.innerHTML = currentCustomMetrics.map(customMetricCardHTML_).join("");
+  currentCustomMetrics.forEach(metric => {
+    renderCustomMetricTable_(metric, currentCustomMetricEntries.filter(e => e.metric_id === metric.id));
+    const dateInput = document.querySelector(`.custom-metric-entry-form[data-metric-id="${metric.id}"] .custom-metric-entry-date`);
+    if (dateInput && !dateInput.value) dateInput.value = todayStr();
+  });
+  // Las gráficas solo se pueden medir/dibujar si la pestaña está visible
+  // ahora mismo (Chart.js no mide un canvas oculto); si no, se difiere a
+  // cuando se entre a la pestaña (ver el listener de [data-page-tab]).
+  const tab = document.getElementById("tabMetricas");
+  if (tab && tab.style.display !== "none") renderAllCustomMetricCharts_();
+}
+function startEditCustomMetricEntry_(metricId, entryId) {
+  const entry = currentCustomMetricEntries.find(e => e.id === entryId);
+  const metric = currentCustomMetrics.find(m => m.id === metricId);
+  if (!entry || !metric) return;
+  editingCustomMetricEntryId_[metricId] = entryId;
+  const form = document.querySelector(`.custom-metric-entry-form[data-metric-id="${metricId}"]`);
+  if (!form) return;
+  form.querySelector(".custom-metric-entry-date").value = entry.date;
+  metric.fields.forEach(f => {
+    const input = form.querySelector(`.custom-metric-field-input[data-field-key="${f.key}"]`);
+    if (!input) return;
+    const v = entry.field_values[f.key];
+    if (f.type === "boolean") input.checked = !!v;
+    else input.value = v != null ? v : "";
+  });
+  form.querySelector("button[type=submit]").textContent = "Guardar cambios";
+  form.querySelector(".custom-metric-cancel-edit-btn").style.display = "";
+  form.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function cancelEditCustomMetricEntry_(metricId) {
+  delete editingCustomMetricEntryId_[metricId];
+  const form = document.querySelector(`.custom-metric-entry-form[data-metric-id="${metricId}"]`);
+  if (!form) return;
+  form.reset();
+  form.querySelector(".custom-metric-entry-date").value = todayStr();
+  form.querySelector("button[type=submit]").textContent = "Guardar registro";
+  form.querySelector(".custom-metric-cancel-edit-btn").style.display = "none";
+}
+document.getElementById("customMetricsContainer").addEventListener("click", e => {
+  const editBtn = e.target.closest(".custom-metric-edit-btn");
+  if (editBtn) {
+    const metric = currentCustomMetrics.find(m => m.id === editBtn.dataset.metricId);
+    if (metric) openMetricDesigner_(metric);
+    return;
+  }
+  const deleteBtn = e.target.closest(".custom-metric-delete-btn");
+  if (deleteBtn) {
+    if (!confirm("¿Eliminar esta métrica y todos sus registros? Esta acción no se puede deshacer.")) return;
+    apiDelete(`/api/custom-metrics/${deleteBtn.dataset.metricId}`).then(loadAndRenderCustomMetrics_).catch(err => alert("No se pudo eliminar: " + err.message));
+    return;
+  }
+  const entryEditBtn = e.target.closest(".custom-metric-entry-edit-btn");
+  if (entryEditBtn) { startEditCustomMetricEntry_(entryEditBtn.dataset.metricId, entryEditBtn.dataset.entryId); return; }
+  const entryDeleteBtn = e.target.closest(".custom-metric-entry-delete-btn");
+  if (entryDeleteBtn) {
+    if (!confirm("¿Eliminar este registro?")) return;
+    apiDelete(`/api/custom-metric-entries/${entryDeleteBtn.dataset.entryId}`).then(loadAndRenderCustomMetrics_).catch(err => alert("No se pudo eliminar: " + err.message));
+    return;
+  }
+  const cancelBtn = e.target.closest(".custom-metric-cancel-edit-btn");
+  if (cancelBtn) cancelEditCustomMetricEntry_(cancelBtn.closest(".custom-metric-entry-form").dataset.metricId);
+});
+document.getElementById("customMetricsContainer").addEventListener("submit", async e => {
+  const form = e.target.closest(".custom-metric-entry-form");
+  if (!form) return;
+  e.preventDefault();
+  const metricId = form.dataset.metricId;
+  const metric = currentCustomMetrics.find(m => m.id === metricId);
+  if (!metric) return;
+  const errorBox = document.querySelector(`.custom-metric-entry-error[data-metric-id="${metricId}"]`);
+  if (errorBox) errorBox.style.display = "none";
+  const date = form.querySelector(".custom-metric-entry-date").value;
+  const field_values = {};
+  metric.fields.forEach(f => {
+    const input = form.querySelector(`.custom-metric-field-input[data-field-key="${f.key}"]`);
+    if (!input) return;
+    field_values[f.key] = f.type === "boolean" ? input.checked : input.value;
+  });
+  const editingId = editingCustomMetricEntryId_[metricId];
+  const submitBtn = form.querySelector("button[type=submit]");
+  submitBtn.disabled = true;
+  try {
+    if (editingId) await apiPut(`/api/custom-metric-entries/${editingId}`, { metric_id: metricId, date, field_values });
+    else await apiPost("/api/custom-metric-entries", { metric_id: metricId, date, field_values });
+    cancelEditCustomMetricEntry_(metricId);
+    await loadAndRenderCustomMetrics_();
+  } catch (err) {
+    if (errorBox) { errorBox.textContent = "No se pudo guardar: " + err.message; errorBox.style.display = ""; }
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+// ---- Diseñador de arrastrar y soltar (crear/editar una métrica) ----
+function newDesignerFieldKey_() {
+  return "f_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+}
+function metricFieldCardHTML_(f) {
+  const meta = CUSTOM_METRIC_FIELD_TYPE_META_[f.type];
+  return `
+    <div class="metric-field-card" draggable="true" data-field-key="${f.key}" data-field-type="${f.type}">
+      <span class="metric-field-drag-handle" title="Arrastra para reordenar">⠿</span>
+      <span class="metric-field-type-badge" title="${meta.label}">${meta.icon}</span>
+      <input type="text" class="metric-field-label-input" value="${escapeHtml_(f.label)}" placeholder="Nombre del campo" maxlength="40">
+      ${f.type === "number" ? `<input type="text" class="metric-field-unit-input" value="${escapeHtml_(f.unit || "")}" placeholder="Unidad (ej. pasos)" maxlength="20">` : ""}
+      <label class="metric-field-required-toggle"><input type="checkbox" class="metric-field-required-input" ${f.required ? "checked" : ""}> Obligatorio</label>
+      <div class="metric-field-move-btns">
+        <button type="button" class="btn-mini metric-field-move-up" title="Mover arriba">▲</button>
+        <button type="button" class="btn-mini metric-field-move-down" title="Mover abajo">▼</button>
+      </div>
+      <button type="button" class="btn-mini danger metric-field-remove" title="Quitar campo">✕</button>
+    </div>`;
+}
+function renderDesignerCanvas_() {
+  const canvas = document.getElementById("metricDesignerCanvas");
+  if (!designerFields_.length) {
+    canvas.innerHTML = `<div class="metric-designer-canvas-empty" id="metricDesignerCanvasEmpty">Arrastra aquí un tipo de campo (o tócalo) para empezar</div>`;
+    return;
+  }
+  canvas.innerHTML = designerFields_.map(metricFieldCardHTML_).join("");
+}
+// Lee el estado real de las tarjetas del lienzo (orden + lo que el paciente
+// haya editado a mano: nombre, unidad, obligatorio) — se usa antes de
+// cualquier cambio estructural (agregar/quitar/reordenar) para no perder
+// ediciones que todavía no se habían guardado en designerFields_, y también
+// al hacer clic en "Guardar métrica".
+function collectDesignerFieldsFromDOM_() {
+  const cards = document.querySelectorAll("#metricDesignerCanvas .metric-field-card");
+  const fields = [];
+  cards.forEach(card => {
+    const key = card.dataset.fieldKey;
+    const original = designerFields_.find(f => f.key === key);
+    const type = original ? original.type : "text";
+    const label = card.querySelector(".metric-field-label-input").value.trim();
+    const required = card.querySelector(".metric-field-required-input").checked;
+    const field = { key, type, label, required };
+    const unitInput = card.querySelector(".metric-field-unit-input");
+    if (unitInput) field.unit = unitInput.value.trim();
+    fields.push(field);
+  });
+  return fields;
+}
+function addDesignerField_(type, atIndex) {
+  designerFields_ = collectDesignerFieldsFromDOM_();
+  const meta = CUSTOM_METRIC_FIELD_TYPE_META_[type];
+  const field = { key: newDesignerFieldKey_(), type, label: meta.label, required: false };
+  if (type === "number") field.unit = "";
+  if (atIndex == null || atIndex < 0 || atIndex > designerFields_.length) designerFields_.push(field);
+  else designerFields_.splice(atIndex, 0, field);
+  renderDesignerCanvas_();
+}
+function removeDesignerField_(key) {
+  designerFields_ = collectDesignerFieldsFromDOM_().filter(f => f.key !== key);
+  renderDesignerCanvas_();
+}
+function moveDesignerField_(key, delta) {
+  designerFields_ = collectDesignerFieldsFromDOM_();
+  const idx = designerFields_.findIndex(f => f.key === key);
+  const newIdx = idx + delta;
+  if (idx < 0 || newIdx < 0 || newIdx >= designerFields_.length) return;
+  const [moved] = designerFields_.splice(idx, 1);
+  designerFields_.splice(newIdx, 0, moved);
+  renderDesignerCanvas_();
+}
+function reorderDesignerField_(key, beforeKey) {
+  designerFields_ = collectDesignerFieldsFromDOM_();
+  const idx = designerFields_.findIndex(f => f.key === key);
+  if (idx < 0) return;
+  const [moved] = designerFields_.splice(idx, 1);
+  const targetIdx = beforeKey ? designerFields_.findIndex(f => f.key === beforeKey) : -1;
+  if (targetIdx < 0) designerFields_.push(moved); else designerFields_.splice(targetIdx, 0, moved);
+  renderDesignerCanvas_();
+}
+function renderMetricIconPicker_(selected) {
+  const wrap = document.getElementById("metricIconPicker");
+  wrap.innerHTML = CUSTOM_METRIC_ICONS_.map(icon => `<button type="button" class="metric-icon-btn ${icon === selected ? "active" : ""}" data-icon="${icon}">${icon}</button>`).join("");
+}
+function selectedMetricIcon_() {
+  const active = document.querySelector("#metricIconPicker .metric-icon-btn.active");
+  return active ? active.dataset.icon : CUSTOM_METRIC_ICONS_[0];
+}
+function openMetricDesigner_(metric) {
+  editingCustomMetricId_ = metric ? metric.id : null;
+  document.getElementById("metricDesignerTitle").textContent = metric ? `📈 Editar "${metric.name}"` : "📈 Nueva métrica";
+  document.getElementById("metricDesignerName").value = metric ? metric.name : "";
+  renderMetricIconPicker_(metric ? metric.icon : CUSTOM_METRIC_ICONS_[0]);
+  designerFields_ = metric ? metric.fields.map(f => ({ ...f })) : [];
+  renderDesignerCanvas_();
+  document.getElementById("metricDesignerError").style.display = "none";
+  document.getElementById("metricDesignerSaveBtn").textContent = metric ? "Guardar cambios" : "Guardar métrica";
+  openModal("metricDesignerModal");
+}
+document.getElementById("newCustomMetricBtn").addEventListener("click", () => openMetricDesigner_(null));
+document.getElementById("metricIconPicker").addEventListener("click", e => {
+  const btn = e.target.closest(".metric-icon-btn");
+  if (!btn) return;
+  document.querySelectorAll("#metricIconPicker .metric-icon-btn").forEach(b => b.classList.toggle("active", b === btn));
+});
+document.querySelectorAll("#metricDesignerPalette .metric-palette-chip").forEach(chip => {
+  chip.addEventListener("dragstart", e => {
+    draggingPaletteType_ = chip.dataset.fieldType;
+    e.dataTransfer.effectAllowed = "copy";
+    try { e.dataTransfer.setData("text/plain", chip.dataset.fieldType); } catch (err) {}
+  });
+  chip.addEventListener("dragend", () => { draggingPaletteType_ = null; });
+  // Fallback para celular (drag-and-drop nativo de HTML5 no funciona bien en
+  // navegadores móviles): tocar el chip agrega el campo al final.
+  chip.addEventListener("click", () => addDesignerField_(chip.dataset.fieldType, null));
+});
+const metricDesignerCanvasEl_ = document.getElementById("metricDesignerCanvas");
+metricDesignerCanvasEl_.addEventListener("dragstart", e => {
+  const card = e.target.closest(".metric-field-card");
+  if (!card) return;
+  draggingFieldKey_ = card.dataset.fieldKey;
+  card.classList.add("is-dragging");
+  e.dataTransfer.effectAllowed = "move";
+});
+metricDesignerCanvasEl_.addEventListener("dragend", e => {
+  const card = e.target.closest(".metric-field-card");
+  if (card) card.classList.remove("is-dragging");
+  metricDesignerCanvasEl_.classList.remove("is-drop-target");
+  metricDesignerCanvasEl_.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach(x => x.classList.remove("drag-over-top", "drag-over-bottom"));
+  draggingFieldKey_ = null;
+});
+metricDesignerCanvasEl_.addEventListener("dragover", e => {
+  if (!draggingPaletteType_ && !draggingFieldKey_) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = draggingPaletteType_ ? "copy" : "move";
+  metricDesignerCanvasEl_.classList.add("is-drop-target");
+  metricDesignerCanvasEl_.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach(x => x.classList.remove("drag-over-top", "drag-over-bottom"));
+  const card = e.target.closest(".metric-field-card");
+  if (card && card.dataset.fieldKey !== draggingFieldKey_) {
+    const rect = card.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    card.classList.toggle("drag-over-top", before);
+    card.classList.toggle("drag-over-bottom", !before);
+  }
+});
+metricDesignerCanvasEl_.addEventListener("dragleave", e => {
+  if (e.target === metricDesignerCanvasEl_) metricDesignerCanvasEl_.classList.remove("is-drop-target");
+});
+metricDesignerCanvasEl_.addEventListener("drop", e => {
+  e.preventDefault();
+  metricDesignerCanvasEl_.classList.remove("is-drop-target");
+  const overCard = e.target.closest(".metric-field-card");
+  metricDesignerCanvasEl_.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach(x => x.classList.remove("drag-over-top", "drag-over-bottom"));
+  if (draggingPaletteType_) {
+    const type = draggingPaletteType_;
+    draggingPaletteType_ = null;
+    let atIndex = designerFields_.length;
+    if (overCard) {
+      const rect = overCard.getBoundingClientRect();
+      const before = (e.clientY - rect.top) < rect.height / 2;
+      const idx = designerFields_.findIndex(f => f.key === overCard.dataset.fieldKey);
+      atIndex = before ? idx : idx + 1;
+    }
+    addDesignerField_(type, atIndex);
+    return;
+  }
+  if (draggingFieldKey_) {
+    const key = draggingFieldKey_;
+    draggingFieldKey_ = null;
+    if (!overCard || overCard.dataset.fieldKey === key) return;
+    const rect = overCard.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    const beforeKey = before ? overCard.dataset.fieldKey : (overCard.nextElementSibling ? overCard.nextElementSibling.dataset.fieldKey : null);
+    reorderDesignerField_(key, beforeKey);
+  }
+});
+metricDesignerCanvasEl_.addEventListener("click", e => {
+  const removeBtn = e.target.closest(".metric-field-remove");
+  if (removeBtn) { removeDesignerField_(removeBtn.closest(".metric-field-card").dataset.fieldKey); return; }
+  const upBtn = e.target.closest(".metric-field-move-up");
+  if (upBtn) { moveDesignerField_(upBtn.closest(".metric-field-card").dataset.fieldKey, -1); return; }
+  const downBtn = e.target.closest(".metric-field-move-down");
+  if (downBtn) { moveDesignerField_(downBtn.closest(".metric-field-card").dataset.fieldKey, 1); return; }
+});
+document.getElementById("metricDesignerSaveBtn").addEventListener("click", async () => {
+  const errorBox = document.getElementById("metricDesignerError");
+  errorBox.style.display = "none";
+  const name = document.getElementById("metricDesignerName").value.trim();
+  const icon = selectedMetricIcon_();
+  const fields = collectDesignerFieldsFromDOM_();
+  if (!name) { errorBox.textContent = "Ponle un nombre a tu métrica."; errorBox.style.display = ""; return; }
+  if (!fields.length) { errorBox.textContent = "Agrega al menos un campo (arrastra o toca un tipo de campo)."; errorBox.style.display = ""; return; }
+  if (fields.some(f => !f.label)) { errorBox.textContent = "Todos los campos necesitan un nombre."; errorBox.style.display = ""; return; }
+  const btn = document.getElementById("metricDesignerSaveBtn");
+  btn.disabled = true;
+  try {
+    if (editingCustomMetricId_) await apiPut(`/api/custom-metrics/${editingCustomMetricId_}`, { name, icon, fields });
+    else await apiPost("/api/custom-metrics", { name, icon, fields });
+    closeModal("metricDesignerModal");
+    await loadAndRenderCustomMetrics_();
+  } catch (err) {
+    errorBox.textContent = "No se pudo guardar: " + err.message;
+    errorBox.style.display = "";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+loadAndRenderCustomMetrics_();
+
 // ---- Tiempo real (v28): lecturas/comentarios/reacciones nuevas aparecen
 // solas en pantalla, sin depender de un refresh manual (útil si tienes esta
 // misma cuenta abierta en más de un dispositivo, o mientras tu médico
@@ -4784,6 +5388,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "wellness") loadWellness(); // v31
   if (kind === "sleep") loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
   if (kind === "metas") loadGoals(); // v33
+  if (kind === "custom_metrics") loadAndRenderCustomMetrics_(); // v35.0
   if (kind === "consultation") loadConsultations();
   if (kind === "reaction") {
     loadReactions().then(() => {

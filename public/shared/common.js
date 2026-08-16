@@ -186,12 +186,20 @@ function filterByTimeView(data, timeView) {
 //   (sin agrupar ni promediar).
 // timeView (opcional): "regular" | "manana" | "tarde" | "noche" | "madrugada"
 // — filtra además por franja horaria, combinable con cualquier chartPeriod.
-function chartDataForFilter(data, chartPeriod, selectedDay, timeView) {
+// v35.0: customRange (opcional) = { start, end } en YYYY-MM-DD, solo se usa
+// cuando chartPeriod === "custom" ("Libre" — una fecha específica a otra).
+function chartDataForFilter(data, chartPeriod, selectedDay, timeView, customRange) {
   if (chartPeriod === "day") {
     const day = selectedDay || todayStr();
     let filtered = (data || []).filter(r => r.date === day);
     filtered = filterByTimeView(filtered, timeView);
     return aggregateReadings(filtered, "hour");
+  }
+  if (chartPeriod === "custom") {
+    if (!customRange || !customRange.start || !customRange.end) return [];
+    let filtered = filterByRange_(data, customRange, "date");
+    filtered = filterByTimeView(filtered, timeView);
+    return rawSeriesForChart(filtered);
   }
   let filtered = filterByPeriod(data, chartPeriod);
   filtered = filterByTimeView(filtered, timeView);
@@ -269,7 +277,7 @@ function weekdayComparisonData(data, granularity, timeView) {
 // otro. statsAnchors_ vive aquí (no en cada página) para que las ~10
 // llamadas ya existentes a filterByPeriodField_ no tengan que cambiar de
 // firma.
-let statsAnchors_ = { day: null, week: null, month: null, year: null };
+let statsAnchors_ = { day: null, week: null, month: null, year: null, custom: null };
 function mondayOfWeek_(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   const dow = (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
@@ -305,6 +313,16 @@ function calendarRangeForGranularity_(granularity, anchor) {
     const y = anchor || String(today.getFullYear());
     return { start: `${y}-01-01`, end: `${y}-12-31` };
   }
+  // v35.0: "Libre" — un rango de fechas elegido a mano (de una fecha
+  // específica a otra), no atado a ningún calendario. anchor aquí es un
+  // objeto { start, end } (YYYY-MM-DD) en vez de una sola fecha/mes/año como
+  // en los demás casos. Si todavía no se ha elegido un rango completo,
+  // regresa null (igual que "all") para que quien llame muestre "sin datos"
+  // en vez de una gráfica vacía por error.
+  if (granularity === "custom") {
+    if (!anchor || !anchor.start || !anchor.end) return null;
+    return anchor.start <= anchor.end ? { start: anchor.start, end: anchor.end } : { start: anchor.end, end: anchor.start };
+  }
   return null; // "all" u otro valor no soportado
 }
 const MESES_ES_ = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -320,6 +338,7 @@ function periodRangeLabel_(granularity, range) {
     return `${MESES_ES_[Number(m) - 1]} ${y}`;
   }
   if (granularity === "year") return range.start.split("-")[0];
+  if (granularity === "custom") return range.start === range.end ? fmt(range.start) : `Del ${fmt(range.start)} al ${fmt(range.end)}`;
   return "";
 }
 // v33.5: etiqueta del rango de fechas cubierto por un arreglo de lecturas ya
@@ -344,7 +363,12 @@ function filterByPeriodField_(data, granularity, dateField, anchors) {
   if (granularity === "all" || !granularity) return list.slice();
   const anchorSet = anchors || statsAnchors_;
   const range = calendarRangeForGranularity_(granularity, anchorSet[granularity]);
-  if (!range) return list.slice();
+  if (!range) {
+    // v35.0: para "Libre" sin un rango completo elegido todavía, no hay
+    // periodo que aplicar — a diferencia de "all", aquí lo correcto es "sin
+    // datos" (vacío), no "todo el historial" por error.
+    return granularity === "custom" ? [] : list.slice();
+  }
   return list.filter(r => r[dateField] >= range.start && r[dateField] <= range.end);
 }
 
@@ -922,6 +946,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.0", changes: [
+    "Nueva sección \"Métricas personalizadas\": diseña hasta 5 métricas propias (por ejemplo \"Días sin alcohol\", pasos caminados o niveles de glucosa) con un diseñador de arrastrar y soltar — número con unidad, sí/no, escala 1-10 o texto libre, cada campo marcable como obligatorio u opcional. Cada métrica tiene su propio formulario de captura, tabla de registros (editables) y gráfica.",
+    "El Historial de lecturas ahora tiene 5 registros por página como opción y botones para saltar directo a la primera o la última página.",
+    "Los filtros de periodo (Tendencia y Estadísticas) ahora incluyen \"Libre\": elige una fecha de inicio y una de fin específicas para graficar cualquier rango, no solo día/semana/mes/año.",
+  ] },
   { version: "34.4", changes: [
     "En Estadísticas, el PAM ahora resalta en ámbar las lecturas marcadas con \"situación especial\", igual que la gráfica de Tendencia de la pestaña principal.",
     "Nueva sección \"Pregunta libre\" en Estadísticas: escribe tu propia pregunta sobre tus datos de salud en la app y la IA responde con base en tu información real, con barreras para que solo se puedan hacer preguntas sobre tu propia salud en la app (no temas ajenos ni intentos de cambiar las reglas del asistente). Es una función de cuenta Pro; por ahora todas las cuentas son Pro.",
