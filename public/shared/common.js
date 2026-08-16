@@ -946,6 +946,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.2", changes: [
+    "El filtro de periodo \"Libre\" (elegir una fecha de inicio y una de fin) ahora existe también en cada gráfica de Estadísticas por separado, no solo en el filtro general — cada gráfica puede tener su propio rango de fechas, independiente de las demás.",
+  ] },
   { version: "35.1", changes: [
     "\"Pregunta libre\" ahora se llama \"Asistente inteligente personal\".",
     "Se corrigió que, con preguntas que de verdad requerían razonar (ej. cruzar una situación especial con varias lecturas), el Asistente inteligente personal podía regresar una respuesta vacía o cortada a la mitad — se le dio más espacio de respuesta y se limpió el mensaje que se muestra cuando de plano no alcanza.",

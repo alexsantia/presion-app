@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.1"></script>
+<script src="/shared/common.js?v=35.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -769,6 +769,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
       <input type="date" class="chart-filter-mini-daypicker" data-chart-key="pam" style="display:none;">
     </div>
@@ -792,6 +793,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de tus lecturas en cada franja del día, para ver si tu presión cambia según la hora en que te la tomas.</p>
@@ -810,6 +812,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Promedio de tus lecturas agrupadas por día de la semana, para comparar por ejemplo todas tus mañanas del lunes contra las del viernes.</p>
@@ -835,6 +838,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
       <input type="date" class="chart-filter-mini-daypicker" data-chart-key="hr" style="display:none;">
     </div>
@@ -849,6 +853,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <div class="chart-wrap" style="height:220px;"><canvas id="statsWeightChart"></canvas></div>
@@ -862,6 +867,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
@@ -876,6 +882,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
@@ -890,6 +897,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Se grafica cada vez que actualizas este dato en Parámetros.</p>
@@ -905,6 +913,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Suma de calorías estimadas por día, según lo registrado en la pestaña Ejercicio.</p>
@@ -919,6 +928,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Porcentaje de tomas programadas que se marcaron como tomadas cada día.</p>
@@ -934,6 +944,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Horas dormidas por noche, según lo registrado en la pestaña Sueño.</p>
@@ -947,6 +958,7 @@
         <button type="button" class="chart-filter-btn" data-stats-period="week">Sem</button>
         <button type="button" class="chart-filter-btn" data-stats-period="month">Mes</button>
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
+        <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Calidad de sueño (1-10) en las noches en que se capturó.</p>
@@ -1392,7 +1404,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.2</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1934,7 +1946,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.1");
+  showAboutOverlay_("35.2");
 });
 
 function openModal(id) {
@@ -2771,6 +2783,11 @@ function effectivePeriod_(chartKey) { return statsChartOverrides[chartKey] || st
 // "hoy" a secas; ahora aparece un selector de fecha (igual que en la
 // gráfica de Tendencia) para poder ver cualquier día concreto.
 let statsChartDay = { pam: todayStr(), hr: todayStr() };
+// v35.1: "Libre" ahora también se puede elegir gráfica por gráfica (antes
+// solo existía en el filtro general y en la Tendencia de la pestaña
+// principal) — cada gráfica guarda su propio rango { start, end } cuando se
+// desliga del filtro general con su propio "Libre".
+let statsChartRange = { pam: null, hr: null, weight: null, waist: null, triglycerides: null, cholesterol: null, exercise: null, medAdherence: null, sleepDuration: null, sleepQuality: null, timeOfDay: null, weekday: null };
 // v33.1: cuando el periodo efectivo de una gráfica es "day", si esa gráfica
 // tiene su PROPIO filtro "Día" activado (mini-toolbar) usa su propia fecha
 // (statsChartDay); si el "Día" viene heredado del filtro general, usa la
@@ -2778,9 +2795,18 @@ let statsChartDay = { pam: todayStr(), hr: todayStr() };
 // podían usar "Día"; ahora cualquier gráfica puede heredarlo del general.
 function filterForChartPeriod_(data, chartKey, dateField) {
   const period = effectivePeriod_(chartKey);
-  if (period !== "day") return filterByPeriodField_(data, period, dateField);
-  const day = statsChartOverrides[chartKey] ? (statsChartDay[chartKey] || todayStr()) : (statsAnchors_.day || todayStr());
-  return filterByExactDate_(data, day, dateField);
+  if (period === "day") {
+    const day = statsChartOverrides[chartKey] ? (statsChartDay[chartKey] || todayStr()) : (statsAnchors_.day || todayStr());
+    return filterByExactDate_(data, day, dateField);
+  }
+  if (period === "custom") {
+    // v35.1/v35.2: "Libre" puede venir del filtro general (statsAnchors_.custom)
+    // o, ahora, de un rango propio de esta gráfica (statsChartRange[chartKey])
+    // cuando está desligada del filtro general con su propio "Libre".
+    const range = statsChartOverrides[chartKey] ? statsChartRange[chartKey] : statsAnchors_.custom;
+    return filterByPeriodField_(data, "custom", dateField, { custom: range });
+  }
+  return filterByPeriodField_(data, period, dateField);
 }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -2794,6 +2820,19 @@ function syncStatsFilterButtons_() {
     const key = input.dataset.chartKey;
     input.style.display = effectivePeriod_(key) === "day" ? "inline-block" : "none";
     if (statsChartDay[key] && input.value !== statsChartDay[key]) input.value = statsChartDay[key];
+  });
+  // v35.2: mismo criterio que el day-picker de arriba, pero para el rango
+  // "Libre" propio de cada gráfica (dos fechas en vez de una).
+  document.querySelectorAll(".chart-filter-mini-rangepicker").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    wrap.style.display = effectivePeriod_(key) === "custom" ? "inline-flex" : "none";
+    const range = statsChartRange[key];
+    const startInput = wrap.querySelector(".range-start");
+    const endInput = wrap.querySelector(".range-end");
+    const startVal = (range && range.start) || "";
+    const endVal = (range && range.end) || "";
+    if (startInput && startInput.value !== startVal) startInput.value = startVal;
+    if (endInput && endInput.value !== endVal) endInput.value = endVal;
   });
 }
 
@@ -3007,7 +3046,27 @@ document.getElementById("statsAnchorTodayBtn").addEventListener("click", () => {
 });
 // v30.19: elegir una fecha en el selector de "Día" solo redibuja esa
 // gráfica en particular (igual que al tocar Sem/Mes/Año en su mini-filtro).
+// v35.2: el mismo listener también atiende el rango "Libre" propio de cada
+// gráfica — editar cualquiera de las dos fechas SIEMPRE desliga esa gráfica
+// del filtro general (la deja en su propio "Libre"), para que de verdad
+// funcione "cada gráfica independientemente" aunque el paciente no haya
+// tocado antes el botón "Libre" de esa gráfica en particular.
 document.getElementById("tabEstadisticas").addEventListener("change", e => {
+  const rangeInput = e.target.closest(".chart-filter-mini-rangepicker input");
+  if (rangeInput) {
+    const wrap = rangeInput.closest(".chart-filter-mini-rangepicker");
+    const key = wrap.dataset.chartKey;
+    const start = wrap.querySelector(".range-start").value || null;
+    const end = wrap.querySelector(".range-end").value || null;
+    statsChartRange[key] = (start || end) ? { start, end } : null;
+    statsChartOverrides[key] = "custom";
+    syncStatsFilterButtons_();
+    if (CHART_COMPARE_META_[key]) syncChartCompareUI_(key);
+    if (key === "timeOfDay") renderStatsChart();
+    else if (key === "weekday") renderWeekdayChart();
+    else renderLabHistoryCharts([key]);
+    return;
+  }
   const input = e.target.closest(".chart-filter-mini-daypicker");
   if (!input) return;
   const key = input.dataset.chartKey;
@@ -3018,6 +3077,28 @@ document.querySelectorAll(".chart-filter-mini-daypicker").forEach(input => {
   input.max = todayStr();
   input.value = statsChartDay[input.dataset.chartKey] || todayStr();
 });
+// v35.2: "Libre" por gráfica — un selector de rango propio (dos fechas)
+// junto a cada mini-filtro, inyectado por JS en vez de escrito a mano 12
+// veces en el HTML (mismo criterio que injectChartCompareControls_ más
+// abajo). A diferencia de "Comparar", esto SÍ aplica a las 12 gráficas,
+// incluyendo timeOfDay/weekday.
+function chartRangePickerHTML_(key) {
+  return `<span class="chart-filter-mini-rangepicker" data-chart-key="${key}" style="display:none; align-items:center; gap:4px; margin-left:4px;">
+    <input type="date" class="range-start" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+    <span style="font-size:10.5px; color:var(--text-muted);">a</span>
+    <input type="date" class="range-end" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+  </span>`;
+}
+function injectChartRangePickers_() {
+  document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    if (!statsChartRange.hasOwnProperty(key)) return;
+    if (wrap.nextElementSibling && wrap.nextElementSibling.classList.contains("chart-filter-mini-rangepicker")) return;
+    wrap.insertAdjacentHTML("afterend", chartRangePickerHTML_(key));
+  });
+}
+injectChartRangePickers_();
+document.querySelectorAll(".chart-filter-mini-rangepicker input").forEach(input => { input.max = todayStr(); });
 syncStatsFilterButtons_();
 syncStatsAnchorPicker_();
 
@@ -3207,6 +3288,15 @@ function primaryRangeForChart_(key) {
   if (gran === "day") {
     const day = statsChartOverrides[key] ? (statsChartDay[key] || todayStr()) : (statsAnchors_.day || todayStr());
     return calendarRangeForGranularity_("day", day);
+  }
+  if (gran === "custom") {
+    // No debería llegar aquí en la práctica: "Comparar" se oculta por
+    // completo cuando el periodo efectivo es "Libre" (ver syncChartCompareUI_)
+    // porque un rango elegido a mano no tiene un "periodo anterior" claro
+    // con el que compararlo. Se deja resuelto de todas formas, por si algún
+    // día se llama desde otro lado.
+    const range = statsChartOverrides[key] ? statsChartRange[key] : statsAnchors_.custom;
+    return calendarRangeForGranularity_("custom", range);
   }
   return calendarRangeForGranularity_(gran, statsAnchors_[gran]);
 }
