@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.5"></script>
+<script src="/shared/common.js?v=35.6"></script>
 <style>
   :root {
     color-scheme: light;
@@ -50,6 +50,13 @@
   .section-share    { background:#E7F6F6; border-left:4px solid #2E9E96; }
   .section-password { background:#F2F0F7; border-left:4px solid #6B4FA0; }
   .section-ai       { background:#FBEFF5; border-left:4px solid #B0559B; }
+  /* v35.6: Concierge de Salud (antes "Asistente inteligente personal") —
+     una de las funciones más potentes de la app, así que se le da un
+     tratamiento visual propio para que resalte sobre el resto de las
+     secciones de Estadísticas, en vez de compartir el estilo genérico
+     "section-ai" de las demás cajas relacionadas con IA. */
+  .section-concierge { background: linear-gradient(135deg, #FBEFF5 0%, #F1E9FB 100%); border: 1px solid rgba(176,85,155,0.32); border-left: 4px solid #B0559B; box-shadow: 0 6px 20px rgba(107,79,160,0.16); }
+  .concierge-badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; color: #fff; background: linear-gradient(135deg, #B0559B, #6B4FA0); padding: 4px 11px; border-radius: 999px; margin-bottom: 10px; }
   .section h2 { font-size: 15px; margin: 0 0 14px 0; font-weight: 650; }
   .section h2 .muted { color: var(--text-muted); font-weight: 400; font-size: 12px; }
   .section h3 { font-size: 13px; margin: 0 0 10px 0; font-weight: 650; }
@@ -629,26 +636,30 @@
 
 <div id="tabEstadisticas" class="tab-panel" style="display:none;">
   <!-- v35.4: orden de las secciones de arriba de Estadísticas, de arriba a
-       abajo: 1) Asistente inteligente personal, 2) Interpretación con IA,
-       3) Gráficas personalizadas (antes "Generador de reportes"), 4) Filtro
-       general — justo antes de las gráficas reordenables, que es a lo que
-       aplica. -->
-  <!-- v34.4: "Pregunta libre" con IA — el paciente escribe su propia
-       pregunta sobre sus datos de salud en esta app (no un chat general).
-       Guardrails de tema en el servidor (ver AI_FREE_PROMPT_SYSTEM_ en
-       db-postgres.js): cualquier pregunta fuera de su salud/monitoreo aquí
-       se rechaza con una respuesta fija, incluyendo intentos de pedirle a
-       la IA que cambie de rol o ignore sus reglas. Sin modo "mi propia
-       IA" a propósito (siempre pasa por el servidor, para que el guardrail
-       no se pueda saltar). Función de plan "pro" (ver PLAN_FEATURES_) —
-       hoy todos los pacientes son "pro", pero freePromptGate ya deja lista
-       la validación para cuando eso cambie (ver applyPlanGating_). -->
-  <div class="section section-ai" id="freePromptSection">
+       abajo: 1) Concierge de Salud, 2) Interpretación con IA, 3) Gráficas
+       personalizadas (antes "Generador de reportes"), 4) Filtro general —
+       justo antes de las gráficas reordenables, que es a lo que aplica. -->
+  <!-- v34.4/v35.6: Concierge de Salud (antes "Pregunta libre" y luego
+       "Asistente inteligente personal") — el paciente escribe su propia
+       pregunta sobre sus datos de salud en esta app, en forma de chat (no un
+       chat de propósito general). Guardrails de tema en el servidor (ver
+       AI_FREE_PROMPT_SYSTEM_ en db-postgres.js): cualquier pregunta fuera de
+       su salud/monitoreo aquí se rechaza con una respuesta fija, incluyendo
+       intentos de pedirle a la IA que cambie de rol o ignore sus reglas. Sin
+       modo "mi propia IA" a propósito (siempre pasa por el servidor, para
+       que el guardrail no se pueda saltar). Función de plan "pro" (ver
+       PLAN_FEATURES_) — hoy todos los pacientes son "pro", pero
+       freePromptGate ya deja lista la validación para cuando eso cambie (ver
+       applyPlanGating_). v35.6: es una de las funciones más potentes de la
+       app, así que se le da un tratamiento visual propio (section-concierge
+       + badge) para que resalte sobre el resto — ver nota de CSS arriba. -->
+  <div class="section section-concierge" id="freePromptSection">
+    <span class="concierge-badge">✨ Una de las funciones más potentes de la app</span>
     <div class="toolbar">
-      <h2 style="flex:1">💬 Asistente inteligente personal</h2>
+      <h2 style="flex:1">🛎️ Concierge de Salud</h2>
       <button type="button" class="btn-secondary" id="freePromptNewChatBtn" style="display:none;" title="Borra esta conversación y empieza una nueva">🗑️ Nueva conversación</button>
     </div>
-    <p style="font-size:12px; color:var(--text-muted); margin-top:-4px;">Solo responde temas relacionados con tu salud y monitoreo en esta app — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
+    <p style="font-size:12px; color:var(--text-muted); margin-top:-4px;">Tu concierge personal de salud: pregúntale lo que quieras sobre tus datos en esta app, con memoria de la conversación. Solo responde temas de tu salud y monitoreo aquí — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
     <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
     <div id="freePromptChatWrap">
       <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 10px;">
@@ -1434,7 +1445,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.5</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.6</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1976,7 +1987,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.5");
+  showAboutOverlay_("35.6");
 });
 
 function openModal(id) {
@@ -2296,12 +2307,13 @@ document.getElementById("es_aiInterpretationSection").innerHTML = aiInterpretati
 wireAiInterpretationSection_("pa");
 wireAiInterpretationSection_("es");
 
-// ---- v34.4/v35.3: "Asistente inteligente personal" (Estadísticas) — SOLO en
-// esta pestaña (no se duplica en Presión Arterial como Interpretación con
-// IA), y sin modo "mi propia IA" a propósito: siempre llama al servidor para
-// que el guardrail de tema (ver AI_FREE_PROMPT_SYSTEM_ en db-postgres.js) se
-// aplique de verdad. Desde v35.3 es un chat multi-turno: freePromptMessages_
-// es solo el estado de PANTALLA (para redibujar las burbujas); el historial
+// ---- v34.4/v35.3/v35.6: "Concierge de Salud" (antes "Asistente inteligente
+// personal") (Estadísticas) — SOLO en esta pestaña (no se duplica en Presión
+// Arterial como Interpretación con IA), y sin modo "mi propia IA" a
+// propósito: siempre llama al servidor para que el guardrail de tema (ver
+// AI_FREE_PROMPT_SYSTEM_ en db-postgres.js) se aplique de verdad. Desde
+// v35.3 es un chat multi-turno: freePromptMessages_ es solo el estado de
+// PANTALLA (para redibujar las burbujas); el historial
 // que de verdad importa para el guardrail vive en el servidor. ----
 let freePromptMessages_ = [];
 let freePromptSending_ = false;
@@ -3030,6 +3042,16 @@ function syncStatsAnchorPicker_() {
 // gráfica) ya muestre algo útil apenas se activa, sin que el paciente tenga
 // que elegir una segunda fecha a mano primero.
 function defaultPreviousAnchor_(gran, anchor) {
+  // v35.6: "Libre" no tiene una duración fija de calendario, así que el
+  // "periodo inmediato anterior" default es: mismo número de días,
+  // terminando justo un día antes de que empiece "Ver" (A).
+  if (gran === "custom") {
+    if (!anchor || !anchor.start || !anchor.end) return anchor;
+    const spanDays = daysBetweenDateStrs_(anchor.start, anchor.end) + 1;
+    const prevEnd = new Date(anchor.start + "T00:00:00"); prevEnd.setDate(prevEnd.getDate() - 1);
+    const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate() - (spanDays - 1));
+    return { start: localDateStr_(prevStart), end: localDateStr_(prevEnd) };
+  }
   const range = calendarRangeForGranularity_(gran, anchor);
   if (gran === "day") { const d = new Date(range.start + "T00:00:00"); d.setDate(d.getDate() - 1); return localDateStr_(d); }
   if (gran === "week") { const d = new Date(range.start + "T00:00:00"); d.setDate(d.getDate() - 7); return localDateStr_(d); }
@@ -3265,6 +3287,11 @@ function chartCompareAnchorRowHTML_(chartKey, slot, labelText, titleWeek) {
       <input type="date" class="chart-compare-anchor" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="week" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;" title="${titleWeek}">
       <input type="month" class="chart-compare-anchor" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="month" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
       <select class="chart-compare-anchor chart-compare-anchor-year" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="year" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;"></select>
+      <!-- v35.6: "Libre" — dos fechas a mano en vez de un solo ancla, igual
+           que el selector de rango del mini-filtro (chartRangePickerHTML_). -->
+      <input type="date" class="chart-compare-anchor chart-compare-anchor-custom" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="custom" data-bound="start" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
+      <span class="chart-compare-anchor" data-gran="custom" style="font-size:10px; color:var(--text-muted);">a</span>
+      <input type="date" class="chart-compare-anchor chart-compare-anchor-custom" data-slot="${slot}" data-chart-key="${chartKey}" data-gran="custom" data-bound="end" style="padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:11px;">
     </div>`;
 }
 // v33.4: antes solo se podía elegir el periodo "Con" (B); ahora "Ver" (A)
@@ -3292,20 +3319,20 @@ function injectChartCompareControls_() {
 }
 function syncChartCompareUI_(key) {
   const gran = effectivePeriod_(key);
-  // v35.0: "Comparar" no tiene sentido en "Libre" (no existe un "periodo
-  // anterior" con el que comparar un rango elegido a mano) — se oculta el
-  // control por completo mientras la gráfica esté en "Libre", y se apaga si
-  // ya estaba encendido, para no dejarlo en un estado a medias.
+  // v35.6: antes "Comparar" se ocultaba por completo en "Libre" (no había
+  // forma de definir un "periodo anterior" para un rango elegido a mano).
+  // Ahora sí funciona: el paciente elige a mano el segundo rango con el que
+  // comparar (ver los inputs .chart-compare-anchor-custom más abajo), así
+  // que el control ya no se oculta ni se apaga para ningún periodo.
   const wholeWrap = document.querySelector(`.chart-compare-wrap[data-chart-key="${key}"]`);
-  if (wholeWrap) wholeWrap.style.display = gran === "custom" ? "none" : "";
-  if (gran === "custom") { chartCompareOn_[key] = false; }
+  if (wholeWrap) wholeWrap.style.display = "";
   const anchorWrap = document.querySelector(`.chart-compare-anchor-wrap[data-chart-key="${key}"]`);
   if (!anchorWrap) return;
   const toggle = document.querySelector(`.chart-compare-toggle[data-chart-key="${key}"]`);
   const on = !!chartCompareOn_[key];
   if (toggle) toggle.checked = on;
   anchorWrap.style.display = on ? "block" : "none";
-  if (!on || gran === "custom") return;
+  if (!on) return;
   anchorWrap.querySelectorAll(".chart-compare-anchor").forEach(inp => {
     inp.style.display = inp.dataset.gran === gran ? "" : "none";
   });
@@ -3318,6 +3345,22 @@ function syncChartCompareUI_(key) {
   // "Comparar" ya muestra algo útil apenas se activa.
   const anchorsB = chartCompareAnchorFor_(key);
   if (!anchorsB[gran]) anchorsB[gran] = defaultPreviousAnchor_(gran, anchorsA[gran]);
+  // v35.6: "Libre" usa DOS fechas por lado (inicio/fin), no un solo ancla —
+  // se sincroniza aparte del resto de granularidades, que sí comparten un
+  // único input por slot.
+  if (gran === "custom") {
+    const inputAStart = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="a"] .chart-compare-anchor-custom[data-bound="start"]`);
+    const inputAEnd = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="a"] .chart-compare-anchor-custom[data-bound="end"]`);
+    const inputBStart = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="b"] .chart-compare-anchor-custom[data-bound="start"]`);
+    const inputBEnd = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="b"] .chart-compare-anchor-custom[data-bound="end"]`);
+    const a = anchorsA.custom || {};
+    const b = anchorsB.custom || {};
+    if (inputAStart) { inputAStart.value = a.start || ""; inputAStart.max = todayStr(); }
+    if (inputAEnd) { inputAEnd.value = a.end || ""; inputAEnd.max = todayStr(); }
+    if (inputBStart) { inputBStart.value = b.start || ""; inputBStart.max = todayStr(); }
+    if (inputBEnd) { inputBEnd.value = b.end || ""; inputBEnd.max = todayStr(); }
+    return;
+  }
   const inputA = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="a"] .chart-compare-anchor[data-gran="${gran}"]`);
   const inputB = anchorWrap.querySelector(`.chart-compare-anchor-row[data-slot="b"] .chart-compare-anchor[data-gran="${gran}"]`);
   if (inputA) { inputA.value = anchorsA[gran]; if (gran === "day" || gran === "week") inputA.max = todayStr(); }
@@ -3389,27 +3432,28 @@ async function loadLabHistory() {
 // dentro del periodo (ver alignedSeriesForMetric_ en common.js), no por
 // fecha real, para que ambos queden uno junto al otro visualmente.
 let chartCompareOn_ = {};
-let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year } — periodo "Con" (B)
+let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year, custom } — periodo "Con" (B)
 // v33.4: antes el periodo "Ver" (A) siempre era el que ya mostraba la
 // gráfica (el filtro general/mini-filtro); ahora también se puede fijar a
 // mano por gráfica, igual que el "Con" (B) — el default sigue siendo "el
 // actual" (mismo comportamiento de antes) hasta que el paciente lo cambie.
-let chartCompareAnchorA_ = {}; // chartKey -> { day, week, month, year } — periodo "Ver" (A)
+let chartCompareAnchorA_ = {}; // chartKey -> { day, week, month, year, custom } — periodo "Ver" (A)
 function chartCompareAnchorFor_(key) {
-  if (!chartCompareAnchor_[key]) chartCompareAnchor_[key] = { day: null, week: null, month: null, year: null };
+  if (!chartCompareAnchor_[key]) chartCompareAnchor_[key] = { day: null, week: null, month: null, year: null, custom: null };
   return chartCompareAnchor_[key];
 }
 function chartCompareAnchorAFor_(key) {
-  if (!chartCompareAnchorA_[key]) chartCompareAnchorA_[key] = { day: null, week: null, month: null, year: null };
+  if (!chartCompareAnchorA_[key]) chartCompareAnchorA_[key] = { day: null, week: null, month: null, year: null, custom: null };
   return chartCompareAnchorA_[key];
 }
 // Convierte un { start, end } de calendarRangeForGranularity_ al formato de
 // anchor que espera cada input (fecha completa para día/semana, "YYYY-MM"
-// para mes, "YYYY" para año).
+// para mes, "YYYY" para año, o el mismo { start, end } para "Libre").
 function rangeStartToAnchor_(gran, range) {
   if (!range) return null;
   if (gran === "month") return range.start.slice(0, 7);
   if (gran === "year") return range.start.slice(0, 4);
+  if (gran === "custom") return { start: range.start, end: range.end };
   return range.start;
 }
 function convertLabValue_(v, key) {
@@ -3441,11 +3485,10 @@ function primaryRangeForChart_(key) {
     return calendarRangeForGranularity_("day", day);
   }
   if (gran === "custom") {
-    // No debería llegar aquí en la práctica: "Comparar" se oculta por
-    // completo cuando el periodo efectivo es "Libre" (ver syncChartCompareUI_)
-    // porque un rango elegido a mano no tiene un "periodo anterior" claro
-    // con el que compararlo. Se deja resuelto de todas formas, por si algún
-    // día se llama desde otro lado.
+    // v35.6: este rango también es el default del periodo "Ver" (A) de
+    // "Comparar" cuando el paciente no lo ha editado a mano (ver
+    // syncChartCompareUI_ + rangeStartToAnchor_) — "Comparar" ya funciona
+    // con "Libre", así que sí se llega aquí en la práctica.
     const range = statsChartOverrides[key] ? statsChartRange[key] : statsAnchors_.custom;
     return calendarRangeForGranularity_("custom", range);
   }
@@ -3462,8 +3505,13 @@ function buildCompareForChart_(key) {
   const rangeB = calendarRangeForGranularity_(gran, chartCompareAnchorFor_(key)[gran]);
   const dataA = filterByRange_(meta.data(), rangeA, meta.dateField);
   const dataB = filterByRange_(meta.data(), rangeB, meta.dateField);
-  const seriesA = alignedSeriesForMetric_(dataA, gran, meta.dateField, meta.timeField, meta.valueFn);
-  const seriesB = alignedSeriesForMetric_(dataB, gran, meta.dateField, meta.timeField, meta.valueFn);
+  // v35.6: "Libre" no tiene una duración fija, así que la cantidad de
+  // "casilleros" del eje X (spanDays) se toma de la duración del periodo
+  // "Ver" (A) — cada serie se alinea por su PROPIO día de inicio (día 1 de A
+  // junto a día 1 de B), no por fecha real.
+  const spanDays = (gran === "custom" && rangeA) ? (daysBetweenDateStrs_(rangeA.start, rangeA.end) + 1) : undefined;
+  const seriesA = alignedSeriesForMetric_(dataA, gran, meta.dateField, meta.timeField, meta.valueFn, spanDays, rangeA && rangeA.start);
+  const seriesB = alignedSeriesForMetric_(dataB, gran, meta.dateField, meta.timeField, meta.valueFn, spanDays, rangeB && rangeB.start);
   const labelA = periodRangeLabel_(gran, rangeA), labelB = periodRangeLabel_(gran, rangeB);
   // v33.3: el periodo más reciente siempre queda a la derecha (segundo en
   // el arreglo / la leyenda), sin importar cuál se eligió como "el que se
@@ -3565,12 +3613,20 @@ document.getElementById("tabEstadisticas").addEventListener("change", e => {
     return;
   }
   const anchorInput = e.target.closest(".chart-compare-anchor");
-  if (anchorInput) {
+  if (anchorInput && anchorInput.dataset.slot) {
     const key = anchorInput.dataset.chartKey;
     const gran = anchorInput.dataset.gran;
     const slot = anchorInput.dataset.slot;
     const anchors = slot === "a" ? chartCompareAnchorAFor_(key) : chartCompareAnchorFor_(key);
-    anchors[gran] = anchorInput.value || null;
+    if (gran === "custom") {
+      // v35.6: "Libre" guarda { start, end } en vez de un solo valor — cada
+      // input (inicio/fin) solo actualiza SU mitad, sin pisar la otra.
+      const bound = anchorInput.dataset.bound;
+      const current = (anchors.custom && typeof anchors.custom === "object") ? anchors.custom : { start: null, end: null };
+      anchors.custom = { ...current, [bound]: anchorInput.value || null };
+    } else {
+      anchors[gran] = anchorInput.value || null;
+    }
     renderLabHistoryCharts([key]);
   }
 });

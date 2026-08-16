@@ -41,6 +41,13 @@ function localDateStr_(d) {
   return `${y}-${m}-${day}`;
 }
 function todayStr() { return localDateStr_(new Date()); }
+// v35.6: cuántos días de calendario hay entre dos fechas YYYY-MM-DD
+// (inclusivo si se le suma 1 al resultado en quien llame) — usado para
+// alinear "Comparar" cuando el periodo es "Libre" (dos rangos de duración
+// arbitraria, no necesariamente iguales).
+function daysBetweenDateStrs_(a, b) {
+  return Math.round((new Date(b + "T00:00:00") - new Date(a + "T00:00:00")) / 86400000);
+}
 
 function calcAge(birthdate) {
   if (!birthdate) return null;
@@ -388,30 +395,46 @@ function filterByRange_(data, range, dateField) {
 // semana pasada", sin importar la fecha real de cada uno. Para "día" se usa
 // la hora (0-23h), útil sobre todo para PAM/FC que pueden tener varias
 // lecturas en un mismo día.
-function alignedLabelsForGranularity_(granularity) {
+// v35.6: "custom" (Libre) se agrega para que "Comparar" también funcione con
+// un rango elegido a mano — no hay una duración fija como en semana/mes/año,
+// así que spanDays (cuántos "casilleros" tiene el eje X) lo decide quien
+// llama, normalmente la duración del periodo "Ver" (A) — ver
+// buildCompareForChart_ en index.html.
+function alignedLabelsForGranularity_(granularity, spanDays) {
   if (granularity === "week") return ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
   if (granularity === "month") return Array.from({ length: 31 }, (_, i) => String(i + 1));
   if (granularity === "year") return MESES_ES_.map(m => m.charAt(0).toUpperCase() + m.slice(1));
   if (granularity === "day") return Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+  if (granularity === "custom") return Array.from({ length: Math.max(0, spanDays || 0) }, (_, i) => `Día ${i + 1}`);
   return [];
 }
-function alignedIndexForGranularity_(granularity, dateStr, timeStr) {
+// rangeStartStr: inicio (YYYY-MM-DD) del rango AL QUE PERTENECE dateStr — cada
+// serie (A y B) se alinea por su propio inicio, no por una fecha real
+// compartida (por eso "Comparar" puede superponer dos periodos de fechas
+// distintas en el mismo eje).
+function alignedIndexForGranularity_(granularity, dateStr, timeStr, rangeStartStr) {
   if (granularity === "week") return dateStrToWeekday_(dateStr); // lunes = 0
   if (granularity === "month") return Number(dateStr.split("-")[2]) - 1;
   if (granularity === "year") return Number(dateStr.split("-")[1]) - 1;
   if (granularity === "day") return timeStr ? Number(timeStr.split(":")[0]) : 0;
+  if (granularity === "custom") {
+    if (!rangeStartStr || !dateStr) return null;
+    return daysBetweenDateStrs_(rangeStartStr, dateStr);
+  }
   return 0;
 }
 // valueFn(row) => número o null. Si hay más de un dato en el mismo "casillero"
 // del eje (ej. dos lecturas de FC el mismo día de la semana), se promedian.
-function alignedSeriesForMetric_(data, granularity, dateField, timeField, valueFn) {
-  const labels = alignedLabelsForGranularity_(granularity);
+// spanDays/rangeStartStr solo se usan (y solo hacen falta) cuando
+// granularity === "custom" (ver notas arriba).
+function alignedSeriesForMetric_(data, granularity, dateField, timeField, valueFn, spanDays, rangeStartStr) {
+  const labels = alignedLabelsForGranularity_(granularity, spanDays);
   const sums = new Array(labels.length).fill(0);
   const counts = new Array(labels.length).fill(0);
   (data || []).forEach(r => {
     const v = valueFn(r);
     if (v == null || !r[dateField]) return;
-    const idx = alignedIndexForGranularity_(granularity, r[dateField], timeField ? r[timeField] : null);
+    const idx = alignedIndexForGranularity_(granularity, r[dateField], timeField ? r[timeField] : null, rangeStartStr);
     if (idx == null || idx < 0 || idx >= labels.length) return;
     sums[idx] += v; counts[idx] += 1;
   });
@@ -946,6 +969,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.6", changes: [
+    "\"Asistente inteligente personal\" ahora se llama Concierge de Salud, con un estilo propio que lo destaca como una de las funciones más potentes de la app.",
+    "\"Comparar dos periodos\" en cada gráfica de Estadísticas ahora también funciona con el filtro \"Libre\": se puede elegir a mano el segundo rango de fechas contra el que comparar (con un default de la misma duración, justo antes del primero), en vez de estar deshabilitado como antes.",
+  ] },
   { version: "35.5", changes: [
     "El Asistente inteligente personal ahora usa \"Todo el historial\" como periodo por default.",
     "En la gráfica de Tendencia se aclararon los textos de las leyendas (\"Lectura marcada con condición especial\" y \"Activa o desactiva líneas en la gráfica.\"), y ahora se recuerda entre sesiones qué líneas dejaste activadas o desactivadas.",
