@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.2"></script>
+<script src="/shared/common.js?v=35.3"></script>
 <style>
   :root {
     color-scheme: light;
@@ -217,6 +217,25 @@
   .modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-muted); padding: 4px; line-height: 1; }
   .modal-close:hover { color: var(--text); }
   .modal-section-title { font-size: 12px; font-weight: 650; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 18px 0 8px 0; }
+  /* v35.3: Asistente inteligente personal como chat */
+  .free-prompt-messages { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; padding: 4px 2px; scroll-behavior: smooth; }
+  .free-prompt-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 22px 10px; }
+  .free-prompt-row { display: flex; }
+  .free-prompt-row.is-user { justify-content: flex-end; }
+  .free-prompt-row.is-assistant { justify-content: flex-start; }
+  .free-prompt-bubble { max-width: 82%; padding: 10px 13px; border-radius: 14px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .free-prompt-row.is-user .free-prompt-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .free-prompt-row.is-assistant .free-prompt-bubble { background: var(--bg-page); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .free-prompt-row.is-error .free-prompt-bubble { background: #FBEAE7; border: 1px solid #E3B9B0; color: #8A3F34; }
+  .free-prompt-typing-dots { display: inline-flex; gap: 4px; padding: 2px 3px; }
+  .free-prompt-typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); display: inline-block; animation: freePromptBounce 1.2s infinite ease-in-out; }
+  .free-prompt-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+  .free-prompt-typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes freePromptBounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+  .free-prompt-inputrow { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
+  .free-prompt-inputrow textarea { flex: 1; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; font-size: 13px; font-family: inherit; resize: none; max-height: 140px; overflow-y: auto; }
+  .free-prompt-inputrow textarea:focus { outline: none; border-color: var(--accent); }
+  .free-prompt-inputrow .btn-primary { flex-shrink: 0; }
   .modal-section-title:first-child { margin-top: 0; }
   .modal-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .modal-form .full { grid-column: 1 / -1; }
@@ -730,11 +749,12 @@
   <div class="section section-ai" id="freePromptSection">
     <div class="toolbar">
       <h2 style="flex:1">💬 Asistente inteligente personal</h2>
+      <button type="button" class="btn-secondary" id="freePromptNewChatBtn" style="display:none;" title="Borra esta conversación y empieza una nueva">🗑️ Nueva conversación</button>
     </div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Escribe tu propia pregunta sobre tus datos de salud en esta app (ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"). Solo responde temas relacionados con tu salud y monitoreo aquí — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
+    <p style="font-size:12px; color:var(--text-muted); margin-top:-4px;">Solo responde temas relacionados con tu salud y monitoreo en esta app — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
     <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
-    <div id="freePromptForm">
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 4px;">
+    <div id="freePromptChatWrap">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:8px 0 10px;">
         <label for="freePromptPeriod" style="font-size:13px; font-weight:600;">Periodo</label>
         <select id="freePromptPeriod" style="padding:7px 9px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
           <option value="7d">Últimos 7 días</option>
@@ -743,13 +763,17 @@
           <option value="all">Todo el historial</option>
         </select>
       </div>
-      <textarea id="freePromptQuestion" rows="3" maxlength="500" placeholder="Ej. ¿Cómo ha estado mi presión los fines de semana comparado con entre semana?" style="width:100%; box-sizing:border-box; padding:10px; border:1px solid var(--border); border-radius:8px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
-      <div style="margin-top:8px; display:flex; align-items:center; gap:10px;">
-        <button type="button" class="btn-primary" id="freePromptBtn">Preguntar</button>
-        <span id="freePromptCharCount" style="font-size:12px; color:var(--text-muted);">0/500</span>
+      <div class="free-prompt-messages" id="freePromptMessages">
+        <div class="free-prompt-empty" id="freePromptEmpty">💬 Escribe tu primera pregunta sobre tus datos de salud en esta app.<br>Ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"</div>
       </div>
-      <div id="freePromptResult" style="display:none; margin-top:10px; padding:12px 14px; background:var(--bg-page); border:1px solid var(--border); border-radius:10px; font-size:13px; line-height:1.55; white-space:pre-wrap;"></div>
       <div id="freePromptError" style="display:none; margin-top:8px; font-size:13px; color:#B0554B;"></div>
+      <div class="free-prompt-inputrow">
+        <textarea id="freePromptQuestion" rows="1" maxlength="500" placeholder="Escribe tu pregunta… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
+        <button type="button" class="btn-primary" id="freePromptBtn">Enviar</button>
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+        <span id="freePromptCharCount" style="font-size:11px; color:var(--text-muted);">0/500</span>
+      </div>
     </div>
   </div>
 
@@ -1404,7 +1428,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.2</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.3</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1946,7 +1970,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.2");
+  showAboutOverlay_("35.3");
 });
 
 function openModal(id) {
@@ -2266,41 +2290,132 @@ document.getElementById("es_aiInterpretationSection").innerHTML = aiInterpretati
 wireAiInterpretationSection_("pa");
 wireAiInterpretationSection_("es");
 
-// ---- v34.4: "Pregunta libre" con IA (Estadísticas) — SOLO en esta pestaña
-// (no se duplica en Presión Arterial como Interpretación con IA), y sin
-// modo "mi propia IA" a propósito: siempre llama al servidor para que el
-// guardrail de tema (ver AI_FREE_PROMPT_SYSTEM_ en db-postgres.js) se
-// aplique de verdad. ----
-document.getElementById("freePromptQuestion").addEventListener("input", e => {
-  document.getElementById("freePromptCharCount").textContent = `${e.target.value.length}/500`;
-});
-document.getElementById("freePromptBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("freePromptBtn");
-  const question = document.getElementById("freePromptQuestion").value.trim();
-  const resultBox = document.getElementById("freePromptResult");
-  const errorBox = document.getElementById("freePromptError");
-  resultBox.style.display = "none";
-  errorBox.style.display = "none";
-  if (!question) {
-    errorBox.textContent = "Escribe una pregunta primero.";
-    errorBox.style.display = "";
-    return;
+// ---- v34.4/v35.3: "Asistente inteligente personal" (Estadísticas) — SOLO en
+// esta pestaña (no se duplica en Presión Arterial como Interpretación con
+// IA), y sin modo "mi propia IA" a propósito: siempre llama al servidor para
+// que el guardrail de tema (ver AI_FREE_PROMPT_SYSTEM_ en db-postgres.js) se
+// aplique de verdad. Desde v35.3 es un chat multi-turno: freePromptMessages_
+// es solo el estado de PANTALLA (para redibujar las burbujas); el historial
+// que de verdad importa para el guardrail vive en el servidor. ----
+let freePromptMessages_ = [];
+let freePromptSending_ = false;
+let freePromptHistoryLoaded_ = false;
+function freePromptBubbleHTML_(msg) {
+  const roleClass = msg.role === "user" ? "is-user" : (msg.role === "error" ? "is-error" : "is-assistant");
+  const text = msg.role === "assistant" ? aiSanitizeAiText_(msg.text) : msg.text;
+  return `<div class="free-prompt-row ${roleClass}"><div class="free-prompt-bubble">${escapeHtml_(text || "")}</div></div>`;
+}
+function scrollFreePromptToBottom_() {
+  const box = document.getElementById("freePromptMessages");
+  box.scrollTop = box.scrollHeight;
+}
+function renderFreePromptMessages_() {
+  const box = document.getElementById("freePromptMessages");
+  if (!freePromptMessages_.length) {
+    box.innerHTML = `<div class="free-prompt-empty" id="freePromptEmpty">💬 Escribe tu primera pregunta sobre tus datos de salud en esta app.<br>Ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"</div>`;
+  } else {
+    box.innerHTML = freePromptMessages_.map(freePromptBubbleHTML_).join("");
   }
-  const originalLabel = btn.textContent;
+  document.getElementById("freePromptNewChatBtn").style.display = freePromptMessages_.length ? "" : "none";
+  scrollFreePromptToBottom_();
+}
+function setFreePromptTyping_(show) {
+  let row = document.getElementById("freePromptTypingRow");
+  if (show) {
+    if (row) return;
+    row = document.createElement("div");
+    row.id = "freePromptTypingRow";
+    row.className = "free-prompt-row is-assistant";
+    row.innerHTML = `<div class="free-prompt-bubble"><span class="free-prompt-typing-dots"><span></span><span></span><span></span></span></div>`;
+    document.getElementById("freePromptMessages").appendChild(row);
+    scrollFreePromptToBottom_();
+  } else if (row) {
+    row.remove();
+  }
+}
+// Rehidrata el chat al entrar a la pestaña o recargar la página — de solo
+// lectura del lado del servidor (ver get_ai_free_prompt_conversation).
+async function loadFreePromptHistory_() {
+  try {
+    const data = await apiGet("/api/ai-free-prompt/conversation");
+    if (data && data.messages && data.messages.length) {
+      freePromptMessages_ = data.messages.map(m => ({ role: m.role, text: m.text }));
+      if (data.period) document.getElementById("freePromptPeriod").value = data.period;
+    } else {
+      freePromptMessages_ = [];
+    }
+  } catch (err) {
+    freePromptMessages_ = [];
+  }
+  renderFreePromptMessages_();
+}
+async function sendFreePromptQuestion_() {
+  if (freePromptSending_) return;
+  const textarea = document.getElementById("freePromptQuestion");
+  const btn = document.getElementById("freePromptBtn");
+  const errorBox = document.getElementById("freePromptError");
+  const question = textarea.value.trim();
+  errorBox.style.display = "none";
+  if (!question) return;
+  freePromptSending_ = true;
   btn.disabled = true;
-  btn.textContent = "Generando…";
+  textarea.disabled = true;
+  freePromptMessages_.push({ role: "user", text: question });
+  renderFreePromptMessages_();
+  textarea.value = "";
+  document.getElementById("freePromptCharCount").textContent = "0/500";
+  textarea.style.height = "auto";
+  setFreePromptTyping_(true);
   try {
     const period = document.getElementById("freePromptPeriod").value;
     const result = await apiPost("/api/ai-free-prompt", { question, period });
-    resultBox.textContent = aiSanitizeAiText_(result.response_text);
-    resultBox.style.display = "";
+    freePromptMessages_.push({ role: "assistant", text: result.response_text });
   } catch (err) {
-    errorBox.textContent = "No se pudo generar: " + err.message;
+    errorBox.textContent = "No se pudo generar la respuesta: " + err.message;
     errorBox.style.display = "";
   } finally {
+    setFreePromptTyping_(false);
+    renderFreePromptMessages_();
+    freePromptSending_ = false;
     btn.disabled = false;
-    btn.textContent = originalLabel;
+    textarea.disabled = false;
+    textarea.focus();
   }
+}
+document.getElementById("freePromptBtn").addEventListener("click", sendFreePromptQuestion_);
+document.getElementById("freePromptQuestion").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendFreePromptQuestion_();
+  }
+});
+document.getElementById("freePromptQuestion").addEventListener("input", e => {
+  document.getElementById("freePromptCharCount").textContent = `${e.target.value.length}/500`;
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, 140) + "px";
+});
+// Cambiar de periodo implica una conversación distinta (el servidor arma un
+// contexto de datos nuevo con ese periodo) — se limpia la pantalla de una
+// vez; el servidor reinicia su propio historial automáticamente en cuanto
+// llegue la siguiente pregunta con este periodo (ver getFreePromptConversation_).
+document.getElementById("freePromptPeriod").addEventListener("change", () => {
+  freePromptMessages_ = [];
+  document.getElementById("freePromptError").style.display = "none";
+  renderFreePromptMessages_();
+});
+document.getElementById("freePromptNewChatBtn").addEventListener("click", async () => {
+  const chatBtn = document.getElementById("freePromptNewChatBtn");
+  chatBtn.disabled = true;
+  try {
+    await apiDelete("/api/ai-free-prompt/conversation");
+  } catch (err) {
+    // si falla el borrado en el servidor, igual se limpia la pantalla —
+    // el servidor de todas formas reinicia solo tras el tiempo de inactividad
+  }
+  freePromptMessages_ = [];
+  document.getElementById("freePromptError").style.display = "none";
+  renderFreePromptMessages_();
+  chatBtn.disabled = false;
 });
 // v34.4: modelo SaaSificado del lado del cliente — hoy currentAccount.plan
 // siempre es "pro" (default en el servidor), así que esto no oculta nada
@@ -2309,7 +2424,7 @@ document.getElementById("freePromptBtn").addEventListener("click", async () => {
 // en el servidor, ver planHasFeature_ en db-postgres.js.
 function applyPlanGating_() {
   const isPro = !currentAccount || currentAccount.plan === "pro"; // sin cuenta cargada aún: no ocultar de más
-  document.getElementById("freePromptForm").style.display = isPro ? "" : "none";
+  document.getElementById("freePromptChatWrap").style.display = isPro ? "" : "none";
   document.getElementById("freePromptGate").style.display = isPro ? "none" : "";
 }
 
@@ -3431,7 +3546,14 @@ syncAllChartCompareUI_();
 // Estadísticas por si acaso quedó con el tamaño equivocado.
 document.querySelectorAll("[data-page-tab]").forEach(btn => {
   btn.addEventListener("click", () => {
-    if (btn.dataset.pageTab === "estadisticas") { renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts(); }
+    if (btn.dataset.pageTab === "estadisticas") {
+      renderStatsChart(); renderWeekdayChart(); renderLabHistoryCharts();
+      // v35.3: el chat del Asistente inteligente personal solo se rehidrata
+      // la primera vez que se entra a la pestaña — después el estado en
+      // pantalla (freePromptMessages_) ya manda, para no pisar una
+      // conversación que el paciente esté viendo o a medio enviar.
+      if (!freePromptHistoryLoaded_) { freePromptHistoryLoaded_ = true; loadFreePromptHistory_(); }
+    }
     // v33: se vuelve a dibujar el picker de indicadores cada vez que se
     // entra a Metas, para que "valor actual" refleje datos que hayan
     // cargado después del arranque inicial de la página (peso, lecturas,

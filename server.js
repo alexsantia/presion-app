@@ -792,13 +792,26 @@ app.post("/api/ai-export-link", requireRole("patient"), asyncRoute(async (req, r
     origin: requestOrigin_(req),
   }));
 }));
-// v34.4: "Pregunta libre" con IA (Estadísticas) — función de plan "pro",
-// validada server-side en callSheetsApi/ai_free_prompt. Sin modo "mi propia
-// IA" a propósito, ver nota en db-postgres.js.
+// v34.4/v35.3: "Asistente inteligente personal" con IA (Estadísticas) —
+// función de plan "pro", validada server-side en callSheetsApi/ai_free_prompt.
+// Sin modo "mi propia IA" a propósito, ver nota en db-postgres.js. Desde
+// v35.3 es un chat multi-turno: el historial vive en el servidor
+// (freePromptConversations_), por eso hay también una ruta para rehidratarlo
+// y otra para reiniciarlo ("Nueva conversación").
 app.post("/api/ai-free-prompt", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, {
     action: "ai_free_prompt", patient_id: req.session.patientId,
     question: req.body.question, period: req.body.period,
+  }));
+}));
+app.get("/api/ai-free-prompt/conversation", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({
+    action: "get_ai_free_prompt_conversation", patient_id: req.session.patientId,
+  }));
+}));
+app.delete("/api/ai-free-prompt/conversation", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, {
+    action: "reset_ai_free_prompt", patient_id: req.session.patientId,
   }));
 }));
 if (DB_BACKEND === "postgres") {

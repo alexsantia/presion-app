@@ -946,6 +946,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.3", changes: [
+    "El Asistente inteligente personal ahora funciona como un chat de verdad: puedes hacer preguntas de seguimiento y recuerda la conversación (por ejemplo, primero \"¿Cómo ha estado mi presión?\" y luego \"¿Y los fines de semana?\"), con indicador de \"escribiendo\", Enter para enviar y un botón para empezar una conversación nueva.",
+  ] },
   { version: "35.2", changes: [
     "El filtro de periodo \"Libre\" (elegir una fecha de inicio y una de fin) ahora existe también en cada gráfica de Estadísticas por separado, no solo en el filtro general — cada gráfica puede tener su propio rango de fechas, independiente de las demás.",
   ] },
