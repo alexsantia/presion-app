@@ -946,6 +946,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.1", changes: [
+    "\"Pregunta libre\" ahora se llama \"Asistente inteligente personal\".",
+    "Se corrigió que, con preguntas que de verdad requerían razonar (ej. cruzar una situación especial con varias lecturas), el Asistente inteligente personal podía regresar una respuesta vacía o cortada a la mitad — se le dio más espacio de respuesta y se limpió el mensaje que se muestra cuando de plano no alcanza.",
+  ] },
   { version: "35.0", changes: [
     "Nueva sección \"Métricas personalizadas\": diseña hasta 5 métricas propias (por ejemplo \"Días sin alcohol\", pasos caminados o niveles de glucosa) con un diseñador de arrastrar y soltar — número con unidad, sí/no, escala 1-10 o texto libre, cada campo marcable como obligatorio u opcional. Cada métrica tiene su propio formulario de captura, tabla de registros (editables) y gráfica.",
     "El Historial de lecturas ahora tiene 5 registros por página como opción y botones para saltar directo a la primera o la última página.",

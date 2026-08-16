@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.0"></script>
+<script src="/shared/common.js?v=35.1"></script>
 <style>
   :root {
     color-scheme: light;
@@ -729,7 +729,7 @@
        la validación para cuando eso cambie (ver applyPlanGating_). -->
   <div class="section section-ai" id="freePromptSection">
     <div class="toolbar">
-      <h2 style="flex:1">💬 Pregunta libre</h2>
+      <h2 style="flex:1">💬 Asistente inteligente personal</h2>
     </div>
     <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Escribe tu propia pregunta sobre tus datos de salud en esta app (ej. "¿Cómo ha estado mi presión los fines de semana comparado con entre semana?"). Solo responde temas relacionados con tu salud y monitoreo aquí — no es un chat de propósito general. No es un diagnóstico ni sustituye a tu médico.</p>
     <div id="freePromptGate" style="display:none; font-size:13px; color:var(--text-muted); background:var(--bg-page); border:1px solid var(--border); border-radius:10px; padding:12px 14px;">🔒 Esta función es parte del plan Pro.</div>
@@ -1392,7 +1392,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.0</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.1</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1934,7 +1934,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.0");
+  showAboutOverlay_("35.1");
 });
 
 function openModal(id) {

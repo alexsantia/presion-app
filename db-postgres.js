@@ -1017,7 +1017,14 @@ function planHasFeature_(plan, feature) {
 // app) se aplique de verdad y no se pueda saltar copiando el prompt a otra
 // IA sin esas reglas. ----
 const AI_FREE_PROMPT_MAX_QUESTION_LEN = 500;
-const AI_FREE_PROMPT_MAX_TOKENS = 600;
+// v35.1: 600 resultó insuficiente — con una pregunta que de verdad requiere
+// razonar (ej. cruzar fechas de una situación especial con varias lecturas
+// para explicar un cambio de PAM), el modelo podía agotar el límite antes
+// de alcanzar a escribir la respuesta visible, regresando texto vacío. Se
+// sube a 1500 (todavía bien por debajo del tope de Interpretación con IA
+// "profunda", que usa hasta 4096, porque aquí la respuesta debe seguir
+// siendo 1-3 párrafos según el propio system prompt).
+const AI_FREE_PROMPT_MAX_TOKENS = 1500;
 // Guardrail de tema: instrucción explícita y repetida de que el ámbito es
 // SOLO los datos de salud propios del paciente en esta app, con una
 // defensa clara contra intentos de "jailbreak" (instrucciones que vengan
@@ -1043,8 +1050,17 @@ async function callAnthropicFreePrompt_(question, payload) {
   }
   const data = await resp.json();
   let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
-  if (!text) text = "(la IA no devolvió texto)";
-  if (data.stop_reason === "max_tokens") {
+  // v35.1: antes esto podía mostrar a la vez "(la IA no devolvió texto)" Y
+  // "(La respuesta se cortó por longitud...)" — dos avisos automáticos
+  // encimados que se veían como un error roto. Ahora, si de verdad no llegó
+  // texto Y fue por quedarse sin espacio, se explica en un solo mensaje
+  // claro; los demás casos (texto parcial cortado, o vacío por otra razón)
+  // se quedan como antes.
+  if (!text && data.stop_reason === "max_tokens") {
+    text = "No se pudo generar una respuesta completa para esta pregunta (era demasiado compleja para el espacio disponible). Intenta con una pregunta más corta o más específica.";
+  } else if (!text) {
+    text = "(la IA no devolvió texto)";
+  } else if (data.stop_reason === "max_tokens") {
     text += "\n\n(La respuesta se cortó por longitud. Prueba con una pregunta más corta o más específica.)";
   }
   return text;
