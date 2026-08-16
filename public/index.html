@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=34.1"></script>
+<script src="/shared/common.js?v=34.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -60,6 +60,7 @@
   .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
   .obs { color: var(--text-muted); font-size: 12px; max-width: 300px; }
   .flag { color: var(--etapa2); font-size: 11px; font-weight: 600; margin-top: 3px; }
+  .special-badge { color: #8A6416; font-size: 11px; font-weight: 600; margin-top: 3px; background: #FBF0DA; padding: 2px 7px; border-radius: 6px; display: inline-block; }
   .doctor-note { color: var(--accent); font-size: 11px; font-weight: 500; margin-top: 3px; background: var(--accent-soft); padding: 3px 7px; border-radius: 6px; display: inline-block; }
   form.add-form { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; align-items: end; }
   form.add-form label, .field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
@@ -418,6 +419,18 @@
       <label>Observaciones (contexto, medicamento, síntomas)</label>
       <textarea id="f_obs" rows="2"></textarea>
     </div>
+    <!-- v34.2: "Situación especial" — nota libre opcional para marcar que
+         esta lectura ocurrió en un contexto fuera de lo cotidiano (ej.
+         "Viaje a la playa"), para poder identificarla luego en la gráfica y
+         en el Historial. Independiente de "Relacionar con" (liga con otro
+         registro de la app); esta es solo una nota de contexto propia. -->
+    <div class="full checkbox-field">
+      <label class="checkbox-label"><input type="checkbox" id="f_special_situation"> Situación especial (viaje, evento fuera de lo cotidiano, etc.)</label>
+    </div>
+    <div class="full" id="f_special_situation_note_wrap" style="display:none;">
+      <label>¿Cuál?</label>
+      <input type="text" id="f_special_situation_note" placeholder="Ej. Viaje a la playa" maxlength="120">
+    </div>
     <!-- v31: "Relacionar con" — liga esta lectura con un ejercicio, síntoma o
          actividad de wellness reciente; la nota se añade a Observaciones (se
          puede editar/quitar antes de guardar) y la lectura se pinta distinto
@@ -455,6 +468,7 @@
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
   <!-- v31: solo visible cuando alguna lectura mostrada está "Relacionada con" -->
   <div class="legend-hint" id="relatedChartLegend" style="display:none;"><span class="legend-hint-emoji">🟣</span> Punto morado = lectura relacionada con ejercicio, síntoma u otra actividad</div>
+  <div class="legend-hint" id="specialChartLegend" style="display:none;"><span class="legend-hint-emoji">🟠</span> Punto ámbar = lectura marcada con una situación especial</div>
   <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
@@ -1271,7 +1285,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.1</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v34.2</footer>
 
 <!-- ---- Menú hamburguesa: Cuenta ---- -->
 <div class="modal-overlay" id="accountModal" style="display:none;">
@@ -1760,7 +1774,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("34.1");
+  showAboutOverlay_("34.2");
 });
 
 function openModal(id) {
@@ -2409,7 +2423,7 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "patient", viewerId: currentAccount ? currentAccount.id : null })}</td>
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${r.special_situation ? `<div class="special-badge">🟠 Situación especial${r.special_situation_note ? ": " + escapeHtml_(r.special_situation_note) : ""}</div>` : ""}${notes.map(n => `<div class="doctor-note">Médico: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "patient", viewerId: currentAccount ? currentAccount.id : null })}</td>
       <td data-col="actions"><div class="row-actions">
         <button type="button" class="btn-mini row-edit" data-id="${r.id}">Editar</button>
         <button type="button" class="btn-mini danger row-delete" data-id="${r.id}">Eliminar</button>
@@ -2485,6 +2499,7 @@ function renderChart() {
   const sysStyles = relatedPointStyles_(grouped, "#2e6fd9");
   const diaStyles = relatedPointStyles_(grouped, "#5ba7d9");
   document.getElementById("relatedChartLegend").style.display = anyRelatedInGrouped_(grouped) ? "" : "none";
+  document.getElementById("specialChartLegend").style.display = anySpecialInGrouped_(grouped) ? "" : "none";
   chartInstance = new Chart(ctx, {
     type: "line",
     data: { labels, datasets: [
@@ -3277,6 +3292,16 @@ document.getElementById("f_related_wrap").addEventListener("click", e => {
   if (e.target.closest("#clearRelatedBtn")) clearRelated_();
 });
 
+// v34.2: "Situación especial" — muestra/oculta el campo de nota libre según
+// el checkbox, y lo limpia al desmarcar para no arrastrar una nota vieja.
+function updateSpecialSituationVisibility_() {
+  const checked = document.getElementById("f_special_situation").checked;
+  const wrap = document.getElementById("f_special_situation_note_wrap");
+  wrap.style.display = checked ? "" : "none";
+  if (!checked) document.getElementById("f_special_situation_note").value = "";
+}
+document.getElementById("f_special_situation").addEventListener("change", updateSpecialSituationVisibility_);
+
 // Al editar una lectura existente, el campo Peso muestra el peso histórico
 // que esa lectura ya tenía guardado (no el vigente en Parámetros), para no
 // sobrescribir un dato pasado con el peso de hoy.
@@ -3292,6 +3317,9 @@ function startEdit(id) {
   document.getElementById("f_weight").value = r.weight ?? "";
   document.getElementById("f_obs").value = r.obs || "";
   document.getElementById("f_medicated").checked = !!r.medicated;
+  document.getElementById("f_special_situation").checked = !!r.special_situation;
+  document.getElementById("f_special_situation_note").value = r.special_situation_note || "";
+  updateSpecialSituationVisibility_(); // solo limpia la nota si el checkbox queda desmarcado; ya la dejamos puesta arriba
   relatedType_ = r.related_type || null;
   relatedId_ = r.related_id || null;
   relatedLabel_ = r.related_label || null;
@@ -3309,6 +3337,7 @@ function cancelEdit() {
   document.getElementById("editingBanner").style.display = "none";
   relatedType_ = null; relatedId_ = null; relatedLabel_ = null;
   updateRelatedSummary_();
+  updateSpecialSituationVisibility_();
   applyDefaultMedicated();
   applyDefaultWeight();
 }
@@ -3406,6 +3435,13 @@ document.getElementById("addForm").addEventListener("submit", async e => {
     obs: document.getElementById("f_obs").value,
     medicated: document.getElementById("f_medicated").checked,
     flag: "",
+    // v34.2: "Situación especial" — la nota solo viaja si el checkbox está
+    // marcado, aunque el campo de texto haya quedado con algo escrito antes
+    // de desmarcarlo (updateSpecialSituationVisibility_ ya lo limpia, pero
+    // esto es un cinturón de seguridad extra).
+    special_situation: document.getElementById("f_special_situation").checked,
+    special_situation_note: document.getElementById("f_special_situation").checked
+      ? document.getElementById("f_special_situation_note").value.trim() : "",
   };
   // v31: "Relacionar con"
   if (relatedType_) { values.related_type = relatedType_; values.related_id = relatedId_; values.related_label = relatedLabel_; }
@@ -3420,6 +3456,7 @@ document.getElementById("addForm").addEventListener("submit", async e => {
       e.target.reset();
       relatedType_ = null; relatedId_ = null; relatedLabel_ = null;
       updateRelatedSummary_();
+      updateSpecialSituationVisibility_();
       fireHeartbeats(submitBtn); // v30.9: 3 latidos de corazón en rojo al agregar una lectura
       // Al agregar una lectura nueva, si el peso capturado aquí es distinto
       // al que tenía Parámetros, ese nuevo peso pasa a ser el vigente.

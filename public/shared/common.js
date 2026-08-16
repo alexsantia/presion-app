@@ -86,7 +86,7 @@ function aggregateReadings(data, granularity) {
   const groups = new Map();
   (data || []).forEach(r => {
     const { key, label } = periodKeyAndLabel_(r.date, granularity || "day", r.time);
-    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [], obs: [], related: [] });
+    if (!groups.has(key)) groups.set(key, { key, label, sys: [], dia: [], hr: [], weight: [], medicated: [], obs: [], related: [], special: [] });
     const g = groups.get(key);
     if (r.sys != null) g.sys.push(r.sys);
     if (r.dia != null) g.dia.push(r.dia);
@@ -95,6 +95,7 @@ function aggregateReadings(data, granularity) {
     g.medicated.push(r.medicated ? 1 : 0);
     if (r.obs && String(r.obs).trim()) g.obs.push(String(r.obs).trim());
     g.related.push(!!r.related_type);
+    g.special.push(!!r.special_situation);
   });
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return Array.from(groups.values())
@@ -102,7 +103,10 @@ function aggregateReadings(data, granularity) {
     .map(g => ({ key: g.key, label: g.label, sys: avg(g.sys), dia: avg(g.dia), hr: avg(g.hr), weight: avg(g.weight), medicated: avg(g.medicated), obs: g.obs.join(" · "), count: Math.max(g.sys.length, g.dia.length),
       // v31: true si AL MENOS una lectura de este grupo (ej. de esta hora,
       // si se agrupó por hora) está relacionada con otra sección.
-      related: g.related.some(Boolean) }));
+      related: g.related.some(Boolean),
+      // v34.2: true si AL MENOS una lectura de este grupo tiene marcada una
+      // "situación especial" (ej. viaje, evento fuera de lo cotidiano).
+      special: g.special.some(Boolean) }));
 }
 // Convierte cada lectura en un punto individual para la gráfica (sin
 // agrupar ni promediar), ordenado cronológicamente y con el eje X mostrando
@@ -121,25 +125,36 @@ function rawSeriesForChart(data) {
       // síntoma o actividad de wellness, se marca para pintarse distinto en
       // la gráfica de Tendencia (ver relatedPointStyles_ más abajo).
       related: !!r.related_type,
+      // v34.2: "Situación especial" — nota libre opcional (ej. "Viaje a la
+      // playa"), también se pinta distinto en la gráfica.
+      special: !!r.special_situation,
     }));
 }
 // ---- v31: "Relacionar con" — colorear distinto en la gráfica las lecturas
 // ligadas a un ejercicio/síntoma/actividad de wellness. ----
 const RELATED_TYPE_LABELS_ = { exercise: "Ejercicio", symptom: "Síntoma", wellness: "Wellness" };
 const RELATED_POINT_COLOR_ = "#8B5CF6"; // morado, distinto de sys/dia/hr/peso
+// v34.2: "Situación especial" — color ámbar, distinto del morado de
+// "relacionado con", para no confundir ambos resaltados en la gráfica.
+const SPECIAL_POINT_COLOR_ = "#D9A15F";
 // Arma los arreglos pointBackgroundColor/pointBorderColor/pointRadius que
 // Chart.js necesita para pintar solo ALGUNOS puntos de un dataset distinto
-// (los "related"), sin tocar el color de línea normal del resto.
+// ("related" o "special"), sin tocar el color de línea normal del resto. Si
+// una lectura tiene ambas marcas a la vez (caso raro), "special" gana —
+// tiene prioridad visual porque suele ser el contexto más inusual.
 function relatedPointStyles_(grouped, baseColor) {
   return {
-    pointBackgroundColor: grouped.map(g => g.related ? RELATED_POINT_COLOR_ : baseColor),
-    pointBorderColor: grouped.map(g => g.related ? RELATED_POINT_COLOR_ : baseColor),
-    pointRadius: grouped.map(g => g.related ? 6 : 3),
-    pointHoverRadius: grouped.map(g => g.related ? 8 : 5),
+    pointBackgroundColor: grouped.map(g => g.special ? SPECIAL_POINT_COLOR_ : (g.related ? RELATED_POINT_COLOR_ : baseColor)),
+    pointBorderColor: grouped.map(g => g.special ? SPECIAL_POINT_COLOR_ : (g.related ? RELATED_POINT_COLOR_ : baseColor)),
+    pointRadius: grouped.map(g => (g.special || g.related) ? 6 : 3),
+    pointHoverRadius: grouped.map(g => (g.special || g.related) ? 8 : 5),
   };
 }
 function anyRelatedInGrouped_(grouped) {
   return (grouped || []).some(g => g.related);
+}
+function anySpecialInGrouped_(grouped) {
+  return (grouped || []).some(g => g.special);
 }
 
 // Vista por horario del día, independiente del filtro de periodo: acota las
@@ -885,6 +900,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "34.2", changes: [
+    "Nuevo campo opcional \"Situación especial\" al agregar o editar una lectura de presión: un checkbox con nota libre (ej. \"Viaje a la playa\") para marcar que ocurrió en un contexto fuera de lo cotidiano. Esas lecturas se resaltan con un color especial (ámbar) en la gráfica de Tendencia y se indican con una etiqueta en el Historial de lecturas.",
+  ] },
   { version: "34.1", changes: [
     "El Generador de reportes de Estadísticas ahora responde con contexto concreto, no solo el número y la gráfica: clasifica el valor contra su rango de referencia saludable (categoría AHA para presión, rango normal de PAM y frecuencia cardiaca, horas de sueño recomendadas, meta de apego, IMC con tu estatura para el peso) y lo compara contra el promedio del periodo.",
   ] },

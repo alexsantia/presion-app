@@ -209,13 +209,18 @@ function readingRowToObject(row) {
     related_type: row.related_type || null,
     related_id: row.related_id || null,
     related_label: row.related_label || "",
+    // v34.2: "Situación especial" — checkbox + nota libre opcional, para
+    // resaltar la lectura en la gráfica y en el Historial cuando ocurrió en
+    // un contexto fuera de lo cotidiano.
+    special_situation: !!row.special_situation,
+    special_situation_note: row.special_situation_note || "",
   };
 }
 async function listReadings(patientId) {
   const { rows } = await pool.query(
     `SELECT id, patient_id, to_char(date, 'YYYY-MM-DD') AS date, to_char(time, 'HH24:MI') AS time,
             sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated,
-            related_type, related_id, related_label
+            related_type, related_id, related_label, special_situation, special_situation_note
      FROM lecturas WHERE patient_id = $1 ORDER BY date, time`,
     [patientId]
   );
@@ -2034,10 +2039,11 @@ async function handlePost(body) {
   if (body.action === "add") {
     const id = uuid();
     await pool.query(
-      `INSERT INTO lecturas (id, patient_id, date, time, sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated, related_type, related_id, related_label)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15)`,
+      `INSERT INTO lecturas (id, patient_id, date, time, sys, dia, hr, weight, obs, flag, created_at, updated_at, medicated, related_type, related_id, related_label, special_situation, special_situation_note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$11,$12,$13,$14,$15,$16,$17)`,
       [id, body.patient_id, body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated,
-        body.related_type || null, body.related_id || null, body.related_label || null]
+        body.related_type || null, body.related_id || null, body.related_label || null,
+        !!body.special_situation, body.special_situation_note || null]
     );
     if (body.sys != null && body.dia != null) {
       const cat = classifyReading(Number(body.sys), Number(body.dia));
@@ -2057,10 +2063,11 @@ async function handlePost(body) {
   if (body.action === "update") {
     const { rowCount } = await pool.query(
       `UPDATE lecturas SET date=$1, time=$2, sys=$3, dia=$4, hr=$5, weight=$6, obs=$7, flag=$8, updated_at=$9, medicated=$10,
-              related_type=$11, related_id=$12, related_label=$13
-       WHERE id = $14 AND patient_id = $15`,
+              related_type=$11, related_id=$12, related_label=$13, special_situation=$14, special_situation_note=$15
+       WHERE id = $16 AND patient_id = $17`,
       [body.date || null, body.time || null, num(body.sys), num(body.dia), num(body.hr), num(body.weight), body.obs || "", body.flag || "", now, !!body.medicated,
-        body.related_type || null, body.related_id || null, body.related_label || null, body.id, body.patient_id]
+        body.related_type || null, body.related_id || null, body.related_label || null,
+        !!body.special_situation, body.special_situation_note || null, body.id, body.patient_id]
     );
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "reading");

@@ -587,3 +587,14 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_date date;
 -- app, que no tiene límite.
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_count integer NOT NULL DEFAULT 0;
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS daily_ai_note_manual_window_start timestamptz;
+
+-- v34.2: "Situación especial" en una lectura de presión — checkbox + nota
+-- libre opcional para marcar que la lectura ocurrió en un contexto fuera de
+-- lo cotidiano (ej. "Viaje a la playa", "Boda de mi hermana"), para poder
+-- identificarla luego en la gráfica de Tendencia (color distinto, ver
+-- SPECIAL_POINT_COLOR_ en common.js) y en el Historial de lecturas. Es un
+-- campo independiente de "Relacionar con" (v31): ese liga con otro registro
+-- de la app (ejercicio/síntoma/wellness); este es solo una nota de contexto
+-- libre que el paciente escribe él mismo.
+ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS special_situation boolean NOT NULL DEFAULT false;
+ALTER TABLE lecturas ADD COLUMN IF NOT EXISTS special_situation_note text;

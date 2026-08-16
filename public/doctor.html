@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RBP Médico">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=34.1"></script>
+<script src="/shared/common.js?v=34.2"></script>
 <style>
   :root {
     color-scheme: light;
@@ -56,6 +56,7 @@
   .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
   .obs { color: var(--text-muted); font-size: 12px; max-width: 320px; }
   .flag { color: var(--etapa2); font-size: 11px; font-weight: 600; margin-top: 3px; }
+  .special-badge { color: #8A6416; font-size: 11px; font-weight: 600; margin-top: 3px; background: #FBF0DA; padding: 2px 7px; border-radius: 6px; display: inline-block; }
   .medicated-badge { display: inline-block; margin-top: 3px; font-size: 11px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 6px; }
   .doctor-note { color: var(--accent); font-size: 11px; font-weight: 500; margin-top: 3px; background: var(--accent-soft); padding: 3px 7px; border-radius: 6px; display: inline-block; }
   .legend { display: flex; gap: 8px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 10px; }
@@ -277,6 +278,7 @@
   </div>
   <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
   <div class="legend-hint" id="relatedChartLegend" style="display:none;"><span class="legend-hint-emoji">🟣</span> Punto morado = lectura relacionada con ejercicio, síntoma u otra actividad</div>
+  <div class="legend-hint" id="specialChartLegend" style="display:none;"><span class="legend-hint-emoji">🟠</span> Punto ámbar = lectura marcada con una situación especial</div>
   <div class="legend-hint"><span class="legend-hint-emoji">💡</span> Toca una línea para mostrarla u ocultarla en la gráfica</div>
   <div class="legend" id="chartLegend">
     <button type="button" class="legend-btn active" data-dataset="sys" title="Toca para mostrar u ocultar esta línea"><span class="dot" style="background:#2e6fd9"></span>Sistólica</button>
@@ -805,7 +807,7 @@
   </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v34.1</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v34.2</button></footer>
 
 <script>
 let chartInstance = null;
@@ -1207,7 +1209,7 @@ function renderTablePage() {
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
-      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "doctor", viewerId: currentDoctorAccount ? currentDoctorAccount.id : null })}</td>`;
+      <td data-col="obs" class="obs">${r.obs || ""}${r.flag ? `<div class="flag">⚠ ${r.flag}</div>` : ""}${r.special_situation ? `<div class="special-badge">🟠 Situación especial${r.special_situation_note ? ": " + escapeHtml_(r.special_situation_note) : ""}</div>` : ""}${notes.map(n => `<div class="doctor-note">Tu nota: ${n.text}</div>`).join("")}${renderReactionBarHTML("reading", r.id, reactionsForTarget(reactionsGrouped, "reading", r.id), { viewerRole: "doctor", viewerId: currentDoctorAccount ? currentDoctorAccount.id : null })}</td>`;
     tbody.appendChild(tr);
   });
   applyColumnVisibility();
@@ -1275,6 +1277,8 @@ function renderChart() {
   const diaStyles = relatedPointStyles_(grouped, "#5ba7d9");
   const legendEl = document.getElementById("relatedChartLegend");
   if (legendEl) legendEl.style.display = anyRelatedInGrouped_(grouped) ? "" : "none";
+  const specialLegendEl = document.getElementById("specialChartLegend");
+  if (specialLegendEl) specialLegendEl.style.display = anySpecialInGrouped_(grouped) ? "" : "none";
   chartInstance = new Chart(ctx, {
     type: "line",
     data: { labels, datasets: [
@@ -1766,7 +1770,7 @@ wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 
 wireMedAdBadge("medAdBadgeLegend");
 
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "34.1");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "34.2");
 
 loadPatient();
 loadAndRender();
