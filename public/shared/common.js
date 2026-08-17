@@ -780,9 +780,9 @@ function ensureLevelTooltipStyles_() {
   const style = document.createElement("style");
   style.id = "bp-lvl-tooltip-styles";
   style.textContent = `
-    .lvl-ladder { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
-    .lvl-badge { position:relative; border:none; cursor:pointer; width:42px; height:42px; border-radius:50%;
-      background:var(--lvl-bg); color:var(--lvl-fg); font-size:19px; display:flex; align-items:center;
+    .lvl-ladder { display:flex; gap:6px; flex-wrap:wrap; }
+    .lvl-badge { position:relative; border:none; cursor:pointer; width:30px; height:30px; border-radius:50%;
+      background:var(--lvl-bg); color:var(--lvl-fg); font-size:14px; display:flex; align-items:center;
       justify-content:center; opacity:0.45; transform:scale(0.9); transition:opacity .15s ease, transform .15s ease; padding:0; }
     .lvl-badge.achieved { opacity:0.8; }
     .lvl-badge.current { opacity:1; transform:scale(1.08); box-shadow:0 0 0 3px var(--lvl-bg), 0 2px 6px rgba(0,0,0,0.18); }
@@ -860,28 +860,32 @@ function levelLadderHTML(currentDays) {
   return `<div class="lvl-ladder">${items}</div>`;
 }
 
+// v35.9: versión compacta en una sola fila — antes esta tarjeta (racha +
+// nivel + escalera de insignias) era la primera cosa que se veía en
+// "Presión", compitiendo en tamaño con las tarjetas de resumen (Última
+// lectura, promedio del periodo, etc.), que son la información que de
+// verdad se quiere ver primero. Ahora es un listón angosto de una sola
+// línea, y en el HTML se coloca DESPUÉS de #summaryCards.
 function streakLevelHTML(streak) {
   const level = getLevel(streak.current);
+  const recordHtml = streak.longest > streak.current
+    ? ` <span style="color:var(--text-muted); font-size:10.5px;">(récord: ${streak.longest})</span>` : "";
   const levelHtml = level
-    ? `<div style="display:flex; align-items:center; gap:10px; background:${level.bg}; color:${level.fg}; border-radius:12px; padding:12px 16px;">
-         <div style="font-size:26px; line-height:1;">${level.icon}</div>
-         <div>
-           <div style="font-weight:650; font-size:14px;">${level.name}</div>
-           <div style="font-size:12px; opacity:0.85;">${level.concept}</div>
+    ? `<div style="display:flex; align-items:center; gap:7px; background:${level.bg}; color:${level.fg}; border-radius:9px; padding:5px 10px;">
+         <div style="font-size:15px; line-height:1;">${level.icon}</div>
+         <div style="min-width:0;">
+           <div style="font-weight:650; font-size:12px; white-space:nowrap;">${level.name}</div>
+           <div style="font-size:10.5px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;">${level.concept}</div>
          </div>
        </div>`
-    : `<div style="color:var(--text-muted); font-size:13px;">Registra tu primera lectura para empezar tu racha.</div>`;
+    : `<div style="color:var(--text-muted); font-size:12px;">Registra tu primera lectura para empezar tu racha.</div>`;
   return `
-    <div>
-      <div style="display:flex; gap:14px; align-items:stretch; flex-wrap:wrap;">
-        <div class="card" style="flex:0 0 auto; min-width:130px; display:flex; flex-direction:column; justify-content:center; align-items:center;">
-          <div style="font-weight:700; font-size:13px; letter-spacing:.2px;">Racha</div>
-          <div style="font-size:26px; margin-top:2px;">🔥</div>
-          <div style="font-size:13px;">de <span style="font-size:22px; font-weight:650;">${streak.current}</span> día${streak.current === 1 ? "" : "s"} seguidos</div>
-          ${streak.longest > streak.current ? `<div style="font-size:10px; color:var(--text-muted); margin-top:2px;">récord: ${streak.longest}</div>` : ""}
-        </div>
-        <div style="flex:1; min-width:220px;">${levelHtml}</div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; flex:0 0 auto;">
+        <span style="font-size:16px;">🔥</span>
+        <span>Racha: <strong style="font-size:14px;">${streak.current}</strong> día${streak.current === 1 ? "" : "s"} seguidos${recordHtml}</span>
       </div>
+      <div style="flex:0 0 auto;">${levelHtml}</div>
       ${levelLadderHTML(streak.current)}
     </div>`;
 }
@@ -969,6 +973,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.9", changes: [
+    "La tarjeta de \"Racha\" (con el nivel y la escalera de insignias) ahora es un listón compacto de una sola línea, y se movió debajo de las tarjetas de resumen (Última lectura, promedio del periodo, etc.), para darles prioridad visual a esas tarjetas.",
+  ] },
   { version: "35.8", changes: [
     "Optimización del costo de la IA: el Concierge de Salud (conversación de varios turnos) ahora reutiliza el contexto ya enviado en la misma conversación en vez de volver a pagarlo completo en cada pregunta nueva.",
     "Se agregó un registro interno de consumo de IA por función (Concierge, Interpretación, nota diaria) para poder dar seguimiento real al gasto según se use la app.",

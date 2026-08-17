@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/shared/logos/favicon-16.png">
 <link rel="apple-touch-icon" href="/shared/logos/apple-touch-icon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
-<script src="/shared/common.js?v=35.8"></script>
+<script src="/shared/common.js?v=35.9"></script>
 <style>
   :root {
     color-scheme: light;
@@ -29,7 +29,7 @@
   .card .value { font-size: 21px; font-weight: 650; }
   .card .value.small { font-size: 14px; font-weight: 500; }
   .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
-  .section-streak  { background:#FBF6E9; border-left:4px solid #D8AE5C; }
+  .section-streak  { background:#FBF6E9; border-left:4px solid #D8AE5C; padding:10px 16px; margin-bottom:14px; }
   .section-chart   { background:#F3EFFA; border-left:4px solid #9B8AC4; }
   .section-history { background:#FDF6EF; border-left:4px solid #D9A15F; }
   .section-ai      { background:#FBEFF5; border-left:4px solid #B0559B; }
@@ -179,8 +179,8 @@
 <div id="statusBanner"></div>
 <div id="broadcastBanner"></div>
 <div id="familyReactionAlert" class="family-reaction-alert" style="display:none;"></div>
-<div class="section section-streak" id="streakSection"></div>
 <div class="grid" id="summaryCards"></div>
+<div class="section section-streak" id="streakSection"></div>
 
 <div class="section section-chart">
   <div class="toolbar">
@@ -554,7 +554,7 @@
 </div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v35.8</button></footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · <button type="button" id="aboutFooterBtn" style="background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; cursor:pointer;">v35.9</button></footer>
 
 <script>
 const token = window.location.pathname.split("/").filter(Boolean).pop();
@@ -1229,7 +1229,7 @@ wireAiDeepLinks({ chatGptBtnId: "aiChatGptBtn", geminiBtnId: "aiGeminiBtn", outp
 
 wireRecommendLink("recommendLink", "Reigning Blood Pressure App");
 wireMedAdBadge("medAdBadgeLegend");
-wireAboutTrigger(document.getElementById("aboutFooterBtn"), "35.8");
+wireAboutTrigger(document.getElementById("aboutFooterBtn"), "35.9");
 
 // ---- Catálogo de médicos (v30.3) — página pública, sin sesión ----
 (async () => {
