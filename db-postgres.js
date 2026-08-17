@@ -921,6 +921,21 @@ const AI_PERIOD_LABELS_ = { "7d": "últimos 7 días", "30d": "últimos 30 días"
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const AI_MODEL = process.env.AI_MODEL || "claude-sonnet-5";
 const aiEnabled = !!ANTHROPIC_API_KEY;
+// v35.8: registro ligero de consumo de tokens por llamada a Anthropic, en los
+// logs del servidor (Render) — antes no había forma de saber, desde la
+// consola de facturación de Anthropic (que solo muestra el total), cuál de
+// las tres funciones de IA (nota diaria, Interpretación, Concierge de Salud)
+// pesaba más en el gasto. cache_read/cache_creation solo aparecen cuando el
+// prompt caching de la llamada sí se usó (ver callAnthropicFreePrompt_).
+function logAiUsage_(feature, data) {
+  const u = data && data.usage;
+  if (!u) return;
+  const parts = [`input=${u.input_tokens ?? 0}`];
+  if (u.cache_read_input_tokens) parts.push(`cache_read=${u.cache_read_input_tokens}`);
+  if (u.cache_creation_input_tokens) parts.push(`cache_write=${u.cache_creation_input_tokens}`);
+  parts.push(`output=${u.output_tokens ?? 0}`);
+  console.log(`[ai-usage] ${feature}: ${parts.join(" ")}`);
+}
 // v32.2: "rápida" vs "profunda" — solo cambia qué tanto detalle se le pide a
 // la IA (y cuántos tokens se le dan en la llamada automática), el periodo de
 // datos lo sigue eligiendo el usuario aparte igual que antes. "Rápida" existe
@@ -1065,12 +1080,24 @@ const AI_FREE_PROMPT_SYSTEM_ = "Eres el asistente de salud de Reigning Blood Pre
 // usuario; ahora recibe el arreglo COMPLETO de turnos ya armados (cada uno
 // con su "content" listo para Anthropic) para poder mandar la conversación
 // entera y que el modelo tenga memoria real de los turnos anteriores.
+// v35.8: cache_control top-level activa el "automatic caching" de Anthropic
+// — como esta conversación crece turno a turno reenviando siempre todo el
+// historial anterior (incluyendo el payload JSON de datos de salud del
+// primer turno, que puede ser grande con "Todo el historial"), es EXACTAMENTE
+// el patrón que Anthropic recomienda cachear: cada llamada nueva solo paga
+// precio completo por la pregunta nueva, y reutiliza a ~10% del precio todo
+// lo que ya se había mandado antes en esa misma conversación (vigente ~5
+// min). No se agrega este mismo cache_control en Interpretación con IA ni en
+// la nota diaria porque esas SÍ suelen ser una sola llamada suelta — cachear
+// algo que no se va a reutilizar solo encarece esa llamada un 25% extra sin
+// ningún ahorro después.
 async function callAnthropicFreePrompt_(messages) {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model: AI_MODEL, max_tokens: AI_FREE_PROMPT_MAX_TOKENS,
+      cache_control: { type: "ephemeral" },
       system: `${AI_FREE_PROMPT_SYSTEM_}\n\n${AI_NO_MARKDOWN_INSTRUCTIONS_}\n\n${AI_SPECIAL_SITUATION_INSTRUCTIONS_}`,
       messages: messages.map(m => ({ role: m.role, content: m.content })),
     }),
@@ -1080,6 +1107,7 @@ async function callAnthropicFreePrompt_(messages) {
     throw new Error(`Anthropic API ${resp.status}: ${errText.slice(0, 300)}`);
   }
   const data = await resp.json();
+  logAiUsage_("concierge", data);
   let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   // v35.1: antes esto podía mostrar a la vez "(la IA no devolvió texto)" Y
   // "(La respuesta se cortó por longitud...)" — dos avisos automáticos
@@ -1241,6 +1269,7 @@ async function callAnthropicInterpretation_(payload, exportUrl, period, audience
     throw new Error(`Anthropic API ${resp.status}: ${errText.slice(0, 300)}`);
   }
   const data = await resp.json();
+  logAiUsage_("interpretacion", data);
   let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim();
   if (!text) text = "(la IA no devolvió texto)";
   // v32.1: si aun con 4096 tokens el modelo se quedó corto (stop_reason
@@ -1454,6 +1483,7 @@ async function callAnthropicDailyNote_(summary, quoteHistory) {
   });
   if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
   const data = await resp.json();
+  logAiUsage_("nota_diaria", data);
   return (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
 }
 // v35.4: genera el texto de la nota diaria evitando repetir una frase célebre

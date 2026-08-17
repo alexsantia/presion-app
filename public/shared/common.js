@@ -969,6 +969,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.8", changes: [
+    "Optimización del costo de la IA: el Concierge de Salud (conversación de varios turnos) ahora reutiliza el contexto ya enviado en la misma conversación en vez de volver a pagarlo completo en cada pregunta nueva.",
+    "Se agregó un registro interno de consumo de IA por función (Concierge, Interpretación, nota diaria) para poder dar seguimiento real al gasto según se use la app.",
+  ] },
   { version: "35.7", changes: [
     "Se corrigió que, al activar \"Comparar dos periodos\" con el filtro en \"Libre\", se veían 6 campos de fecha en vez de 4 — el selector de rango suelto del mini-filtro (que ya no hacía falta, duplicaba el mismo rango que \"Ver\") ahora se oculta mientras \"Comparar\" está activo.",
   ] },
