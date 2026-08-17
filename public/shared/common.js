@@ -860,33 +860,42 @@ function levelLadderHTML(currentDays) {
   return `<div class="lvl-ladder">${items}</div>`;
 }
 
-// v35.9: versión compacta en una sola fila — antes esta tarjeta (racha +
-// nivel + escalera de insignias) era la primera cosa que se veía en
-// "Presión", compitiendo en tamaño con las tarjetas de resumen (Última
-// lectura, promedio del periodo, etc.), que son la información que de
-// verdad se quiere ver primero. Ahora es un listón angosto de una sola
-// línea, y en el HTML se coloca DESPUÉS de #summaryCards.
+// v35.9: versión compacta — antes esta tarjeta (racha + nivel + escalera de
+// insignias) era la primera cosa que se veía en "Presión", compitiendo en
+// tamaño con las tarjetas de resumen (Última lectura, promedio del periodo,
+// etc.), que son la información que de verdad se quiere ver primero. Ahora
+// es un bloque angosto de dos líneas, y en el HTML se coloca DESPUÉS de
+// #summaryCards.
+// v35.10: la primera versión compacta forzaba la descripción del nivel a una
+// sola línea con elipsis (max-width:180px), así que se cortaba a media
+// palabra ("Ha…") y quedaba ilegible. Ahora la insignia del nivel actual
+// vive en su propia fila, a lo ancho, con texto que se puede envolver en
+// varias líneas — sigue siendo mucho más chica que la tarjeta original (sin
+// el ícono gigante de 26px ni el padding de tarjeta completa), pero ya no
+// esconde información.
 function streakLevelHTML(streak) {
   const level = getLevel(streak.current);
   const recordHtml = streak.longest > streak.current
     ? ` <span style="color:var(--text-muted); font-size:10.5px;">(récord: ${streak.longest})</span>` : "";
   const levelHtml = level
-    ? `<div style="display:flex; align-items:center; gap:7px; background:${level.bg}; color:${level.fg}; border-radius:9px; padding:5px 10px;">
-         <div style="font-size:15px; line-height:1;">${level.icon}</div>
+    ? `<div style="display:flex; align-items:center; gap:10px; background:linear-gradient(135deg, ${level.bg}, ${level.bg}CC); color:${level.fg}; border-radius:12px; padding:8px 14px; box-shadow:0 1px 4px rgba(0,0,0,0.10);">
+         <div style="font-size:22px; line-height:1; flex:0 0 auto;">${level.icon}</div>
          <div style="min-width:0;">
-           <div style="font-weight:650; font-size:12px; white-space:nowrap;">${level.name}</div>
-           <div style="font-size:10.5px; opacity:0.85; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px;">${level.concept}</div>
+           <div style="font-weight:700; font-size:13px;">${level.name}</div>
+           <div style="font-size:11.5px; opacity:0.92; line-height:1.3;">${level.concept}</div>
          </div>
        </div>`
     : `<div style="color:var(--text-muted); font-size:12px;">Registra tu primera lectura para empezar tu racha.</div>`;
   return `
-    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-      <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; flex:0 0 auto;">
-        <span style="font-size:16px;">🔥</span>
-        <span>Racha: <strong style="font-size:14px;">${streak.current}</strong> día${streak.current === 1 ? "" : "s"} seguidos${recordHtml}</span>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap;">
+          <span style="font-size:17px;">🔥</span>
+          <span>Racha: <strong style="font-size:14px;">${streak.current}</strong> día${streak.current === 1 ? "" : "s"} seguidos${recordHtml}</span>
+        </div>
+        ${levelLadderHTML(streak.current)}
       </div>
-      <div style="flex:0 0 auto;">${levelHtml}</div>
-      ${levelLadderHTML(streak.current)}
+      ${levelHtml}
     </div>`;
 }
 
@@ -973,6 +982,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.10", changes: [
+    "La insignia de nivel dentro de \"Racha\" ya no corta la descripción del nivel a media palabra: ahora vive en su propia línea, a lo ancho, con un diseño más vistoso (degradado sutil).",
+  ] },
   { version: "35.9", changes: [
     "La tarjeta de \"Racha\" (con el nivel y la escalera de insignias) ahora es un listón compacto de una sola línea, y se movió debajo de las tarjetas de resumen (Última lectura, promedio del periodo, etc.), para darles prioridad visual a esas tarjetas.",
   ] },

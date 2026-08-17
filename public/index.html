@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.9"></script>
+<script src="/shared/common.js?v=35.10"></script>
 <style>
   :root {
     color-scheme: light;
@@ -40,7 +40,7 @@
   .card .value { font-size: 21px; font-weight: 650; }
   .card .value.small { font-size: 14px; font-weight: 500; }
   .section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(60,90,80,0.04); }
-  .section-streak   { background:#FBF6E9; border-left:4px solid #D8AE5C; padding:10px 16px; margin-bottom:14px; }
+  .section-streak   { background:#FBF6E9; border-left:4px solid #D8AE5C; padding:12px 16px; margin-bottom:14px; }
   .section-profile  { background:#EEF3F7; border-left:4px solid #3E6FA0; }
   .section-alerts   { background:#FBF0EE; border-left:4px solid #C97064; }
   .section-comments { background:#E8F0EC; border-left:4px solid #4F7A6F; }
@@ -1445,7 +1445,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.9</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.10</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1987,7 +1987,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.9");
+  showAboutOverlay_("35.10");
 });
 
 function openModal(id) {
