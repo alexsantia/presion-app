@@ -11,6 +11,48 @@ function classify(sys, dia) {
   return { label: "Normal", key: "normal" };
 }
 const categoryColors = { normal: "#6FA98C", elevada: "#D8AE5C", etapa1: "#D98E5F", etapa2: "#C97064", crisis: "#A6534B" };
+const CATEGORY_ORDER_ = ["normal", "elevada", "etapa1", "etapa2", "crisis"];
+const CATEGORY_LABELS_ = { normal: "Normal", elevada: "Elevada", etapa1: "Hipertensión etapa 1", etapa2: "Hipertensión etapa 2", crisis: "Crisis hipertensiva" };
+
+// v35.12: mini-gráficas SVG para las tarjetas de resumen (Última lectura,
+// Promedio del período, Peso, Distribución de categorías) — estilo
+// "dashboard SaaS" que pidió el usuario (número grande + una gráfica
+// pequeña debajo, en vez de solo texto). Se dibujan a mano con SVG en vez
+// de Chart.js porque son demasiado chicas para justificar un canvas/eje
+// completo, y así no compiten en tamaño con las gráficas reales de
+// Estadísticas.
+function sparklineSVG_(values, opts) {
+  opts = opts || {};
+  const w = opts.width || 110, h = opts.height || 28, color = opts.color || "#4F7A6F", strokeWidth = opts.strokeWidth || 1.8;
+  const nums = (values || []).filter(v => typeof v === "number" && !Number.isNaN(v));
+  if (nums.length < 2) return "";
+  const min = Math.min(...nums), max = Math.max(...nums);
+  const range = (max - min) || 1;
+  const padY = 3;
+  const stepX = w / (nums.length - 1);
+  const pts = nums.map((v, i) => [Math.round(i * stepX * 10) / 10, Math.round((h - padY - ((v - min) / range) * (h - padY * 2)) * 10) / 10]);
+  const line = pts.map(p => p.join(",")).join(" ");
+  const areaPath = `M0,${h} L${pts.map(p => p.join(",")).join(" L")} L${w},${h} Z`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;" role="img" aria-label="Tendencia">
+    <path d="${areaPath}" fill="${color}" opacity="0.14"></path>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"></polyline>
+  </svg>`;
+}
+function miniBarChartSVG_(items, opts) {
+  opts = opts || {};
+  const w = opts.width || 130, h = opts.height || 34, gap = 5;
+  const list = (items || []).filter(it => it && it.value > 0);
+  if (!list.length) return "";
+  const max = Math.max(...list.map(it => it.value)) || 1;
+  const barW = Math.max(4, (w - gap * (list.length - 1)) / list.length);
+  const bars = list.map((it, i) => {
+    const barH = Math.max(3, Math.round((it.value / max) * (h - 8)));
+    const x = Math.round(i * (barW + gap) * 10) / 10;
+    const y = h - barH;
+    return `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="2" fill="${it.color}"><title>${it.label}: ${it.value}</title></rect>`;
+  }).join("");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;" role="img" aria-label="Distribución">${bars}</svg>`;
+}
 
 // ---- Nombre del antihipertensivo (marca + mg capturados en Parámetros),
 // usado en el checkbox, la tabla y la leyenda de la gráfica. Si el paciente
@@ -1000,6 +1042,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.12", changes: [
+    "Las tarjetas de resumen de \"Presión\" ahora incluyen mini-gráficas estilo dashboard: \"Última lectura\" grafica las últimas 5 lecturas, \"Promedio del período\" grafica la PAM de los últimos 5 días, \"Peso\" grafica los últimos 5 cambios registrados, y \"Distribución de categorías\" se ve también como una gráfica de barras.",
+  ] },
   { version: "35.11", changes: [
     "Rediseño de \"Racha\": las insignias de nivel ahora tienen un aro de color con un contador del umbral de días (estilo insignia de videojuego), y la tarjeta de racha/nivel pasó de un fondo sólido de color a un estilo de tarjeta de dashboard — blanco, esquinas redondeadas, sombra suave e íconos de color.",
   ] },

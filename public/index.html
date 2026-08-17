@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.11"></script>
+<script src="/shared/common.js?v=35.12"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1445,7 +1445,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.11</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.12</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1987,7 +1987,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.11");
+  showAboutOverlay_("35.12");
 });
 
 function openModal(id) {
@@ -3789,11 +3789,28 @@ function render() {
   data.filter(r => r.date >= monthRange.start && r.date <= monthRange.end)
     .forEach(r => { const k = classify(r.sys, r.dia).key; monthCounts[k] = (monthCounts[k] || 0) + 1; });
 
+  // v35.12: mini-gráficas estilo dashboard para las 4 tarjetas de resumen —
+  // referencia visual que trajo el usuario (número grande + gráfica chica
+  // debajo). "Última lectura" usa las últimas 5 lecturas (sistólica);
+  // "Promedio del período" usa la PAM de los últimos 5 DÍAS con datos (no
+  // las últimas 5 lecturas sueltas, para no repetir varias del mismo día);
+  // "Peso" usa los últimos 5 cambios de peso registrados; "Distribución de
+  // categorías" se resume en una gráfica de barras simple, una barra por
+  // categoría presente ese mes.
+  const last5SysSpark = sparklineSVG_(data.slice(-5).map(r => r.sys), { color: categoryColors[lastCat.key] });
+  const pamByDate_ = {};
+  data.forEach(r => { (pamByDate_[r.date] = pamByDate_[r.date] || []).push((r.sys + 2 * r.dia) / 3); });
+  const last5PamDates_ = Object.keys(pamByDate_).sort().slice(-5);
+  const last5PamVals_ = last5PamDates_.map(d => avg(pamByDate_[d]));
+  const last5PamSpark = sparklineSVG_(last5PamVals_, { color: "#4F7A6F" });
+  const last5WeightSpark = sparklineSVG_(weightVals.slice(-5), { color: "#9B8AC4" });
+  const categoryBars = miniBarChartSVG_(CATEGORY_ORDER_.filter(k => monthCounts[k]).map(k => ({ label: CATEGORY_LABELS_[k], value: monthCounts[k], color: categoryColors[k] })));
+
   document.getElementById("summaryCards").innerHTML = `
-    <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${lastWhen}</div></div>
-    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div></div>
-    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "Promedio del período: " + avg(weightVals) + " kg" : "sin registrar"}</div>${weightVals.length ? `<div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>` : ""}</div>
-    <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(monthCounts).length ? Object.entries(monthCounts).map(([k,v]) => `${v} ${k}`).join(" · ") : "sin lecturas este mes"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${monthLabel}</div></div>
+    <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${lastWhen}</div>${last5SysSpark ? `<div style="margin-top:6px;">${last5SysSpark}</div>` : ""}</div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>${last5PamSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">PAM, últimos ${last5PamVals_.length} días</div><div>${last5PamSpark}</div>` : ""}</div>
+    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "Promedio del período: " + avg(weightVals) + " kg" : "sin registrar"}</div>${weightVals.length ? `<div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>` : ""}${last5WeightSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">Últimos ${Math.min(5, weightVals.length)} cambios</div><div>${last5WeightSpark}</div>` : ""}</div>
+    <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(monthCounts).length ? Object.entries(monthCounts).map(([k,v]) => `${v} ${k}`).join(" · ") : "sin lecturas este mes"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${monthLabel}</div>${categoryBars ? `<div style="margin-top:6px;">${categoryBars}</div>` : ""}</div>
   `;
 
   // v33.3: la nota diaria de IA (loadDailyNote_) reemplaza este contenido en
