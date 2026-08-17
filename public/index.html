@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.6"></script>
+<script src="/shared/common.js?v=35.7"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1445,7 +1445,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.6</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.7</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1987,7 +1987,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.6");
+  showAboutOverlay_("35.7");
 });
 
 function openModal(id) {
@@ -3332,6 +3332,16 @@ function syncChartCompareUI_(key) {
   const on = !!chartCompareOn_[key];
   if (toggle) toggle.checked = on;
   anchorWrap.style.display = on ? "block" : "none";
+  // v35.7: mientras "Comparar" está activo en Libre, el rango "Ver" de este
+  // panel ya cumple el mismo rol que el selector de rango suelto del
+  // mini-filtro (chart-filter-mini-rangepicker) — mostrar los dos a la vez
+  // duplicaba los mismos 2 campos de fecha (se veían 6 en vez de 4). Se
+  // oculta ese selector suelto mientras "Comparar" esté encendido, y se
+  // restaura al apagarlo (mismo criterio de siempre: visible solo en Libre).
+  const loneRangePicker = document.querySelector(`.chart-filter-mini-rangepicker[data-chart-key="${key}"]`);
+  if (loneRangePicker) {
+    loneRangePicker.style.display = (on && gran === "custom") ? "none" : (gran === "custom" ? "inline-flex" : "none");
+  }
   if (!on) return;
   anchorWrap.querySelectorAll(".chart-compare-anchor").forEach(inp => {
     inp.style.display = inp.dataset.gran === gran ? "" : "none";

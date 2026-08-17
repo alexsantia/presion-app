@@ -969,6 +969,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.7", changes: [
+    "Se corrigió que, al activar \"Comparar dos periodos\" con el filtro en \"Libre\", se veían 6 campos de fecha en vez de 4 — el selector de rango suelto del mini-filtro (que ya no hacía falta, duplicaba el mismo rango que \"Ver\") ahora se oculta mientras \"Comparar\" está activo.",
+  ] },
   { version: "35.6", changes: [
     "\"Asistente inteligente personal\" ahora se llama Concierge de Salud, con un estilo propio que lo destaca como una de las funciones más potentes de la app.",
     "\"Comparar dos periodos\" en cada gráfica de Estadísticas ahora también funciona con el filtro \"Libre\": se puede elegir a mano el segundo rango de fechas contra el que comparar (con un default de la misma duración, justo antes del primero), en vez de estar deshabilitado como antes.",
