@@ -780,13 +780,19 @@ function ensureLevelTooltipStyles_() {
   const style = document.createElement("style");
   style.id = "bp-lvl-tooltip-styles";
   style.textContent = `
-    .lvl-ladder { display:flex; gap:6px; flex-wrap:wrap; }
-    .lvl-badge { position:relative; border:none; cursor:pointer; width:30px; height:30px; border-radius:50%;
-      background:var(--lvl-bg); color:var(--lvl-fg); font-size:14px; display:flex; align-items:center;
-      justify-content:center; opacity:0.45; transform:scale(0.9); transition:opacity .15s ease, transform .15s ease; padding:0; }
-    .lvl-badge.achieved { opacity:0.8; }
-    .lvl-badge.current { opacity:1; transform:scale(1.08); box-shadow:0 0 0 3px var(--lvl-bg), 0 2px 6px rgba(0,0,0,0.18); }
-    .lvl-badge:hover, .lvl-badge:focus-visible { opacity:1; outline:none; }
+    .lvl-ladder { display:flex; gap:10px; flex-wrap:wrap; }
+    .lvl-badge { position:relative; border:2.5px solid var(--lvl-bg); cursor:pointer; width:32px; height:32px; border-radius:50%;
+      background:#fff; color:var(--lvl-fg); font-size:14px; display:flex; align-items:center;
+      justify-content:center; opacity:0.4; filter:grayscale(55%); transform:scale(0.9);
+      transition:opacity .15s ease, transform .15s ease, filter .15s ease, background .15s ease; padding:0;
+      box-shadow:0 1px 3px rgba(0,0,0,0.10); }
+    .lvl-badge.achieved { opacity:0.9; filter:none; }
+    .lvl-badge.current { opacity:1; filter:none; transform:scale(1.15); background:var(--lvl-bg);
+      box-shadow:0 0 0 3px color-mix(in srgb, var(--lvl-bg) 22%, transparent), 0 2px 8px rgba(0,0,0,0.2); }
+    .lvl-badge:hover, .lvl-badge:focus-visible { opacity:1; filter:none; outline:none; }
+    .lvl-badge .lvl-count { position:absolute; bottom:-5px; right:-5px; background:var(--lvl-bg); color:var(--lvl-fg);
+      font-size:8px; font-weight:700; min-width:15px; height:15px; line-height:15px; text-align:center;
+      border-radius:8px; padding:0 3px; border:1.5px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,0.2); }
     .lvl-badge .lvl-tooltip { visibility:hidden; opacity:0; position:absolute; bottom:calc(100% + 10px); left:50%;
       transform:translateX(-50%) translateY(4px); background:#2B3532; color:#fff; padding:10px 12px; border-radius:10px;
       font-size:12px; line-height:1.45; width:210px; text-align:left; box-shadow:0 4px 14px rgba(0,0,0,0.2);
@@ -843,6 +849,10 @@ function wireLevelTooltips_() {
     keepTooltipInViewport_(badge.querySelector(".lvl-tooltip"), "translateY(0)");
   });
 }
+// v35.11: cada insignia ahora trae, en la esquina, un contador con el umbral
+// de días para desbloquearla (estilo "medalla de logro" tipo videojuego —
+// referencia que pidió el usuario), en vez de solo mostrarlo dentro del
+// tooltip.
 function levelLadderHTML(currentDays) {
   ensureLevelTooltipStyles_();
   const items = LEVELS.map(l => {
@@ -850,6 +860,7 @@ function levelLadderHTML(currentDays) {
     return `<button type="button" class="lvl-badge ${state}" style="--lvl-bg:${l.bg}; --lvl-fg:${l.fg};"
         aria-label="${l.name}, ${levelRangeLabel_(l)}" aria-expanded="false">
       <span class="lvl-icon" aria-hidden="true">${l.icon}</span>
+      <span class="lvl-count" aria-hidden="true">${l.min}</span>
       <span class="lvl-tooltip" role="tooltip">
         <strong>${l.icon} ${l.name}</strong>
         <span class="lvl-range">${levelRangeLabel_(l)}</span>
@@ -864,35 +875,42 @@ function levelLadderHTML(currentDays) {
 // insignias) era la primera cosa que se veía en "Presión", compitiendo en
 // tamaño con las tarjetas de resumen (Última lectura, promedio del periodo,
 // etc.), que son la información que de verdad se quiere ver primero. Ahora
-// es un bloque angosto de dos líneas, y en el HTML se coloca DESPUÉS de
-// #summaryCards.
+// es un bloque angosto, y en el HTML se coloca DESPUÉS de #summaryCards.
 // v35.10: la primera versión compacta forzaba la descripción del nivel a una
 // sola línea con elipsis (max-width:180px), así que se cortaba a media
-// palabra ("Ha…") y quedaba ilegible. Ahora la insignia del nivel actual
-// vive en su propia fila, a lo ancho, con texto que se puede envolver en
-// varias líneas — sigue siendo mucho más chica que la tarjeta original (sin
-// el ícono gigante de 26px ni el padding de tarjeta completa), pero ya no
-// esconde información.
+// palabra ("Ha…") y quedaba ilegible.
+// v35.11: rediseño con dos referencias visuales que trajo el usuario — (a)
+// insignias tipo videojuego (aro de color + contador de umbral en la
+// esquina, en vez de círculos rellenos sin más) para la escalera de niveles,
+// y (b) el look de tarjetas de dashboard SaaS moderno (blanco, esquinas
+// redondeadas, sombra suave, ícono de color en vez de fondo sólido de
+// color) para la tarjeta de racha/nivel — reemplaza el bloque con fondo
+// degradado de color sólido de v35.10.
 function streakLevelHTML(streak) {
   const level = getLevel(streak.current);
   const recordHtml = streak.longest > streak.current
-    ? ` <span style="color:var(--text-muted); font-size:10.5px;">(récord: ${streak.longest})</span>` : "";
+    ? ` <span style="color:var(--text-muted, #7C8A85); font-size:10.5px;">(récord: ${streak.longest})</span>` : "";
   const levelHtml = level
-    ? `<div style="display:flex; align-items:center; gap:10px; background:linear-gradient(135deg, ${level.bg}, ${level.bg}CC); color:${level.fg}; border-radius:12px; padding:8px 14px; box-shadow:0 1px 4px rgba(0,0,0,0.10);">
-         <div style="font-size:22px; line-height:1; flex:0 0 auto;">${level.icon}</div>
+    ? `<div style="display:flex; align-items:center; gap:10px; background:var(--bg-card, #fff); border:1px solid var(--border, #E1E9E4); border-radius:12px; padding:8px 12px; box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+         <div style="width:32px; height:32px; border-radius:9px; background:${level.bg}; color:${level.fg}; display:flex; align-items:center; justify-content:center; font-size:16px; flex:0 0 auto;">${level.icon}</div>
          <div style="min-width:0;">
-           <div style="font-weight:700; font-size:13px;">${level.name}</div>
-           <div style="font-size:11.5px; opacity:0.92; line-height:1.3;">${level.concept}</div>
+           <div style="font-weight:700; font-size:12.5px; color:var(--text, #33403D);">${level.name}</div>
+           <div style="font-size:11px; color:var(--text-muted, #7C8A85); line-height:1.3;">${level.concept}</div>
          </div>
        </div>`
-    : `<div style="color:var(--text-muted); font-size:12px;">Registra tu primera lectura para empezar tu racha.</div>`;
+    : `<div style="color:var(--text-muted, #7C8A85); font-size:12px;">Registra tu primera lectura para empezar tu racha.</div>`;
+  const streakChip = `
+    <div style="display:flex; align-items:center; gap:9px;">
+      <div style="width:32px; height:32px; border-radius:9px; background:#FBEFD8; color:#B8863E; display:flex; align-items:center; justify-content:center; font-size:16px; flex:0 0 auto;">🔥</div>
+      <div style="min-width:0;">
+        <div style="font-size:10px; color:var(--text-muted, #7C8A85); text-transform:uppercase; letter-spacing:.3px;">Racha</div>
+        <div style="font-size:14.5px; font-weight:700; color:var(--text, #33403D); white-space:nowrap;">${streak.current} día${streak.current === 1 ? "" : "s"} seguidos${recordHtml}</div>
+      </div>
+    </div>`;
   return `
-    <div style="display:flex; flex-direction:column; gap:8px;">
+    <div style="display:flex; flex-direction:column; gap:10px;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-        <div style="display:flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap;">
-          <span style="font-size:17px;">🔥</span>
-          <span>Racha: <strong style="font-size:14px;">${streak.current}</strong> día${streak.current === 1 ? "" : "s"} seguidos${recordHtml}</span>
-        </div>
+        ${streakChip}
         ${levelLadderHTML(streak.current)}
       </div>
       ${levelHtml}
@@ -982,6 +1000,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.11", changes: [
+    "Rediseño de \"Racha\": las insignias de nivel ahora tienen un aro de color con un contador del umbral de días (estilo insignia de videojuego), y la tarjeta de racha/nivel pasó de un fondo sólido de color a un estilo de tarjeta de dashboard — blanco, esquinas redondeadas, sombra suave e íconos de color.",
+  ] },
   { version: "35.10", changes: [
     "La insignia de nivel dentro de \"Racha\" ya no corta la descripción del nivel a media palabra: ahora vive en su propia línea, a lo ancho, con un diseño más vistoso (degradado sutil).",
   ] },
