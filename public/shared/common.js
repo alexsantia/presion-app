@@ -21,9 +21,15 @@ const CATEGORY_LABELS_ = { normal: "Normal", elevada: "Elevada", etapa1: "Hipert
 // de Chart.js porque son demasiado chicas para justificar un canvas/eje
 // completo, y así no compiten en tamaño con las gráficas reales de
 // Estadísticas.
+// v35.13: la primera versión ponía un ancho fijo en px (110/130) en el
+// propio <svg>, así que en tarjetas más anchas la gráfica se quedaba corta
+// a la mitad del espacio disponible ("se ve cortado"). Ahora el <svg> mide
+// width="100%" (se estira a lo ancho de la tarjeta) y el viewBox +
+// preserveAspectRatio="none" reescalan las coordenadas internas para que
+// llenen ese ancho real sin distorsionar el alto (que sigue fijo en px).
 function sparklineSVG_(values, opts) {
   opts = opts || {};
-  const w = opts.width || 110, h = opts.height || 28, color = opts.color || "#4F7A6F", strokeWidth = opts.strokeWidth || 1.8;
+  const w = opts.width || 200, h = opts.height || 28, color = opts.color || "#4F7A6F", strokeWidth = opts.strokeWidth || 1.8;
   const nums = (values || []).filter(v => typeof v === "number" && !Number.isNaN(v));
   if (nums.length < 2) return "";
   const min = Math.min(...nums), max = Math.max(...nums);
@@ -33,14 +39,14 @@ function sparklineSVG_(values, opts) {
   const pts = nums.map((v, i) => [Math.round(i * stepX * 10) / 10, Math.round((h - padY - ((v - min) / range) * (h - padY * 2)) * 10) / 10]);
   const line = pts.map(p => p.join(",")).join(" ");
   const areaPath = `M0,${h} L${pts.map(p => p.join(",")).join(" L")} L${w},${h} Z`;
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;" role="img" aria-label="Tendencia">
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;" role="img" aria-label="Tendencia">
     <path d="${areaPath}" fill="${color}" opacity="0.14"></path>
-    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    <polyline points="${line}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"></polyline>
   </svg>`;
 }
 function miniBarChartSVG_(items, opts) {
   opts = opts || {};
-  const w = opts.width || 130, h = opts.height || 34, gap = 5;
+  const w = opts.width || 200, h = opts.height || 34, gap = 8;
   const list = (items || []).filter(it => it && it.value > 0);
   if (!list.length) return "";
   const max = Math.max(...list.map(it => it.value)) || 1;
@@ -51,7 +57,7 @@ function miniBarChartSVG_(items, opts) {
     const y = h - barH;
     return `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="2" fill="${it.color}"><title>${it.label}: ${it.value}</title></rect>`;
   }).join("");
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;" role="img" aria-label="Distribución">${bars}</svg>`;
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="display:block;" role="img" aria-label="Distribución">${bars}</svg>`;
 }
 
 // ---- Nombre del antihipertensivo (marca + mg capturados en Parámetros),
@@ -1042,6 +1048,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.13", changes: [
+    "Las mini-gráficas de las tarjetas de resumen ahora llenan todo el ancho de la tarjeta (antes se veían cortadas, a la mitad del espacio). \"Promedio del período\" ahora muestra el valor de la PAM promedio (no solo la gráfica), y \"Peso\" muestra el promedio del mes actual en vez del promedio de todo el período.",
+  ] },
   { version: "35.12", changes: [
     "Las tarjetas de resumen de \"Presión\" ahora incluyen mini-gráficas estilo dashboard: \"Última lectura\" grafica las últimas 5 lecturas, \"Promedio del período\" grafica la PAM de los últimos 5 días, \"Peso\" grafica los últimos 5 cambios registrados, y \"Distribución de categorías\" se ve también como una gráfica de barras.",
   ] },

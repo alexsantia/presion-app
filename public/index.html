@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.12"></script>
+<script src="/shared/common.js?v=35.13"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1445,7 +1445,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.12</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.13</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1987,7 +1987,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.12");
+  showAboutOverlay_("35.13");
 });
 
 function openModal(id) {
@@ -3802,14 +3802,22 @@ function render() {
   data.forEach(r => { (pamByDate_[r.date] = pamByDate_[r.date] || []).push((r.sys + 2 * r.dia) / 3); });
   const last5PamDates_ = Object.keys(pamByDate_).sort().slice(-5);
   const last5PamVals_ = last5PamDates_.map(d => avg(pamByDate_[d]));
+  const avgPam5_ = last5PamVals_.length ? avg(last5PamVals_) : null;
   const last5PamSpark = sparklineSVG_(last5PamVals_, { color: "#4F7A6F" });
   const last5WeightSpark = sparklineSVG_(weightVals.slice(-5), { color: "#9B8AC4" });
+  // v35.13: "Peso" ahora muestra el promedio del MES ACTUAL (igual que
+  // "Distribución de categorías"), no el promedio de todo el período
+  // cargado — es el número que de verdad responde "¿cómo voy este mes?".
+  const monthWeightVals = data.filter(r => r.date >= monthRange.start && r.date <= monthRange.end && r.weight != null).map(r => r.weight);
+  const weightAvgLabel = monthWeightVals.length
+    ? `Promedio de ${monthLabel}: ${avg(monthWeightVals)} kg`
+    : (weightVals.length ? `Promedio del período: ${avg(weightVals)} kg` : "sin registrar");
   const categoryBars = miniBarChartSVG_(CATEGORY_ORDER_.filter(k => monthCounts[k]).map(k => ({ label: CATEGORY_LABELS_[k], value: monthCounts[k], color: categoryColors[k] })));
 
   document.getElementById("summaryCards").innerHTML = `
     <div class="card"><div class="label">Última lectura</div><div class="value">${last.sys}/${last.dia}</div><div class="value small" style="color:${categoryColors[lastCat.key]}">${lastCat.label}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${lastWhen}</div>${last5SysSpark ? `<div style="margin-top:6px;">${last5SysSpark}</div>` : ""}</div>
-    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>${last5PamSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">PAM, últimos ${last5PamVals_.length} días</div><div>${last5PamSpark}</div>` : ""}</div>
-    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightVals.length ? "Promedio del período: " + avg(weightVals) + " kg" : "sin registrar"}</div>${weightVals.length ? `<div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>` : ""}${last5WeightSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">Últimos ${Math.min(5, weightVals.length)} cambios</div><div>${last5WeightSpark}</div>` : ""}</div>
+    <div class="card"><div class="label">Promedio del período</div><div class="value">${avg(sysVals)}/${avg(diaVals)}</div><div class="value small">${hrVals.length ? avg(hrVals) + " FC prom." : "sin FC"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>${last5PamSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">PAM promedio (últimos ${last5PamVals_.length} días): <strong>${avgPam5_}</strong></div><div>${last5PamSpark}</div>` : ""}</div>
+    <div class="card"><div class="label">Peso</div><div class="value">${weightVals.length ? last.weight + " kg" : "—"}</div><div class="value small">${weightAvgLabel}</div>${weightVals.length ? `<div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabel}</div>` : ""}${last5WeightSpark ? `<div style="font-size:9.5px; color:var(--text-muted); margin-top:5px;">Últimos ${Math.min(5, weightVals.length)} cambios</div><div>${last5WeightSpark}</div>` : ""}</div>
     <div class="card"><div class="label">Distribución de categorías</div><div class="value small">${Object.entries(monthCounts).length ? Object.entries(monthCounts).map(([k,v]) => `${v} ${k}`).join(" · ") : "sin lecturas este mes"}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${monthLabel}</div>${categoryBars ? `<div style="margin-top:6px;">${categoryBars}</div>` : ""}</div>
   `;
 
