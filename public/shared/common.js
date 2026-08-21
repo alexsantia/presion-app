@@ -1048,6 +1048,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.14", changes: [
+    "Se corrigió que el % de apego a medicamentos de HOY se calculaba contra todas las tomas programadas del día completo, aunque la hora de alguna todavía no llegara (ej. mostraba 90% a media mañana, cuando en realidad era 100% de lo que ya tocaba) — ahora solo cuenta las tomas cuya hora ya pasó.",
+    "La nota diaria de \"Alertas y notas\" ahora toma en cuenta género, edad y cintura del perfil (cuando están capturados) para dar consejos de peso/IMC/cintura más ajustados — la cintura se reporta con su categoría de riesgo cardiovascular, que la OMS define distinta entre hombres y mujeres.",
+  ] },
   { version: "35.13", changes: [
     "Las mini-gráficas de las tarjetas de resumen ahora llenan todo el ancho de la tarjeta (antes se veían cortadas, a la mitad del espacio). \"Promedio del período\" ahora muestra el valor de la PAM promedio (no solo la gráfica), y \"Peso\" muestra el promedio del mes actual en vez del promedio de todo el período.",
   ] },

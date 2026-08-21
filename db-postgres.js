@@ -806,7 +806,7 @@ async function listMedicationAdherence(patientId) {
     [patientId]
   );
   if (!meds.length) return [];
-  const { dateStr: today } = nowInAppTz_();
+  const { dateStr: today, minutesOfDay } = nowInAppTz_();
   let minStart = today;
   for (const m of meds) { if (m.start_date && m.start_date < minStart) minStart = m.start_date; }
   const oneYearAgo = addDaysToDateStr_(today, -365);
@@ -819,13 +819,21 @@ async function listMedicationAdherence(patientId) {
   );
   const takenSet = new Set(doseRows.map(r => `${r.medication_id}_${r.dose_date}_${r.dose_time}`));
 
+  // v35.14: el % de apego de HOY se calculaba contra TODAS las tomas del
+  // día completo, aunque todavía no llegara la hora de alguna de ellas (ej.
+  // la toma de la noche, a media mañana) — eso lo penalizaba de entrada,
+  // antes de que el paciente siquiera tuviera oportunidad de tomarla. Ahora,
+  // solo para el día de hoy, se descartan las tomas cuya hora todavía no
+  // llega; los días anteriores (que ya terminaron) siguen contando todas sus
+  // tomas programadas como antes.
   const results = [];
   const totalDays = daysBetweenDateStrs_(minStart, today);
   for (let i = 0; i <= totalDays; i++) {
     const d = addDaysToDateStr_(minStart, i);
     let scheduled = 0, taken = 0;
     for (const m of meds) {
-      const times = computeDoseTimesForDate_(m, d);
+      let times = computeDoseTimesForDate_(m, d);
+      if (d === today) times = times.filter(t => timeStrToMinutes_(t) <= minutesOfDay);
       scheduled += times.length;
       for (const t of times) if (takenSet.has(`${m.id}_${d}_${t}`)) taken++;
     }
@@ -1307,7 +1315,7 @@ const AI_DAILY_NOTE_MAX_TOKENS = 320;
 // decir con criterio si conviene bajar, subir o mantener, no solo reportar
 // que no hay cambios. La misma idea aplica a presión (ya viene categorizada
 // por classifyReading), sueño (contra las 7-9h recomendadas), etc.
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si te dan \"Situaciones especiales marcadas en el rango\" (ej. un viaje o un evento fuera de lo cotidiano), tómalas en cuenta como posible explicación de una lectura atípica en esa fecha, en vez de señalarla como algo preocupante sin causa aparente. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Si te dan un \"Perfil del paciente\" (género y/o edad) y una categoría de riesgo de cintura, tómalos en cuenta al comentar peso/IMC/cintura — la categoría de cintura que te dan ya viene ajustada por género (los umbrales de riesgo cardiovascular por circunferencia de cintura son distintos entre hombres y mujeres), así que repórtala tal cual te la den, sin recalcularla ni asumir un género si no te lo dieron; la edad puede matizar el tono o la urgencia de un consejo, pero nunca la uses para inventar un rango de referencia que no te hayan dado. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si te dan \"Situaciones especiales marcadas en el rango\" (ej. un viaje o un evento fuera de lo cotidiano), tómalas en cuenta como posible explicación de una lectura atípica en esa fecha, en vez de señalarla como algo preocupante sin causa aparente. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 function dailyNotePam_(sys, dia) {
   if (sys == null || dia == null) return null;
   return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
@@ -1322,6 +1330,19 @@ function bmiCategory_(bmi) {
   if (bmi < 30) return "sobrepeso";
   return "obesidad";
 }
+// v35.14: categoría de riesgo cardiovascular por circunferencia de cintura
+// (OMS) — los umbrales son distintos entre hombres y mujeres, así que sin el
+// género no se puede categorizar con criterio (por eso regresa null si no
+// hay género capturado, en vez de asumir uno). Se calcula aquí, igual que
+// bmiCategory_, para que el modelo reciba una categoría ya lista en vez de
+// tener que recordar los umbrales correctos él mismo.
+function waistRiskCategory_(waistCm, gender) {
+  if (waistCm == null || (gender !== "masculino" && gender !== "femenino")) return null;
+  const isFemale = gender === "femenino";
+  if (waistCm >= (isFemale ? 88 : 102)) return "riesgo cardiovascular sustancialmente elevado";
+  if (waistCm >= (isFemale ? 80 : 94)) return "riesgo cardiovascular elevado";
+  return "riesgo cardiovascular bajo";
+}
 async function buildDailyNoteSummary_(patientId, today) {
   const readings = await listReadings(patientId); // orden ascendente
   const cutoff = addDaysToDateStr_(today, -6);
@@ -1330,6 +1351,22 @@ async function buildDailyNoteSummary_(patientId, today) {
   if (!recent.length) return null; // sin lecturas recientes: no hay nada que resumir
   const fmtFecha = d => d.split("-").reverse().join("/");
   const avg = arr => (arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null);
+
+  // v35.14: perfil del paciente (género, edad, estatura, cintura) — antes
+  // solo se usaba la estatura (para el IMC); género y edad nunca se le
+  // pasaban a la IA, así que no podía dar consejos de peso/cintura ajustados
+  // por sexo (los umbrales de riesgo de cintura de la OMS son distintos
+  // entre hombres y mujeres) ni matizar nada por edad. Se obtiene una sola
+  // vez aquí y se reutiliza tanto en la línea de perfil como en la de peso.
+  const patient = await findPatientById(patientId);
+  const genderLabel = patient && (patient.gender === "masculino" || patient.gender === "femenino") ? patient.gender : null;
+  const age = patient ? ageFromBirthdate_(patient.birthdate) : null;
+  const heightCm = patient ? num(patient.height) : null;
+  const waistCm = patient ? num(patient.waist) : null;
+  const profileParts = [];
+  if (genderLabel) profileParts.push(`género ${genderLabel}`);
+  if (age != null) profileParts.push(`${age} años`);
+  const profileLine = profileParts.length ? `Perfil del paciente: ${profileParts.join(", ")}.` : "";
 
   // ---- Presión arterial: desglose día por día (no solo el promedio de la
   // semana), para que la IA pueda decidir ella misma si lo que importa es
@@ -1367,14 +1404,20 @@ async function buildDailyNoteSummary_(patientId, today) {
     weightLine = priorW && priorW.date !== lastW.date
       ? `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (${lastW.weight - priorW.weight >= 0 ? "+" : ""}${Math.round((lastW.weight - priorW.weight) * 10) / 10} kg desde el ${fmtFecha(priorW.date)}, ${priorW.weight} kg).`
       : `Peso: ${lastW.weight} kg el ${fmtFecha(lastW.date)} (sin dato de referencia de hace una semana).`;
-    const patient = await findPatientById(patientId);
-    const heightCm = patient ? num(patient.height) : null;
     if (heightCm) {
       const heightM = heightCm / 100;
       const bmi = Math.round((lastW.weight / (heightM * heightM)) * 10) / 10;
       weightLine += ` IMC: ${bmi} (${bmiCategory_(bmi)}), con estatura ${heightCm} cm.`;
     }
   }
+  // v35.14: cintura, con categoría de riesgo ya ajustada por género (ver
+  // waistRiskCategory_) — es un dato del PERFIL (no de una lectura del día),
+  // así que se reporta en su propia línea, independiente de si hay o no una
+  // lectura de peso reciente esta semana (antes vivía adentro del bloque de
+  // peso, así que si el paciente no había registrado peso en los últimos 7
+  // días, la cintura tampoco se mandaba a la IA aunque sí estuviera
+  // capturada en su perfil).
+  const waistLine = waistCm ? `Cintura: ${waistCm} cm${waistRiskCategory_(waistCm, genderLabel) ? ` (${waistRiskCategory_(waistCm, genderLabel)})` : ""}.` : "";
 
   // ---- Sueño: última noche vs. promedio de los últimos 7 días ----
   const sleep = await listSleep(patientId); // orden descendente, más reciente primero
@@ -1423,12 +1466,14 @@ async function buildDailyNoteSummary_(patientId, today) {
 
   const lines = [
     `Rango de datos disponible: del ${fmtFecha(cutoff)} al ${fmtFecha(today)}.`,
+    profileLine,
     `Presión arterial por día: ${dailyBpLines.join("; ")}.`,
     dayOverDayLine,
     sysVals.length ? `Promedio del rango: ${avg(sysVals)}/${avg(diaVals)} mmHg, PAM promedio ${avg(pamVals)} mmHg.` : "",
     highest ? `Lectura más alta del rango: ${fmtFecha(highest.date)} — ${highest.sys}/${highest.dia} mmHg, PAM ${dailyNotePam_(highest.sys, highest.dia)} mmHg (${classifyReading(highest.sys, highest.dia).label}).` : "",
     specialSituationLine,
     weightLine,
+    waistLine,
     sleepLine,
     symptomsLine,
     goalsLine,
