@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.14"></script>
+<script src="/shared/common.js?v=35.15"></script>
 <style>
   :root {
     color-scheme: light;
@@ -123,6 +123,10 @@
   .btn-mini:hover { background: var(--accent-soft); }
   .btn-mini.danger { color: var(--crisis); border-color: #EFD3CF; }
   .btn-mini.danger:hover { background: #FBF0EE; }
+  /* v35.15: fila input[type=time] + botón "Ahora" (ver autoWireNowTimeButtons_ en common.js) */
+  .time-with-now { display: flex; gap: 6px; align-items: center; }
+  .time-with-now input[type="time"] { flex: 1; min-width: 0; }
+  .time-now-btn { flex-shrink: 0; white-space: nowrap; }
   #cancelEditBtn { background: white; color: var(--text); border: 1px solid var(--border); }
   .editing-banner { grid-column: 1 / -1; font-size: 12px; color: var(--elevada); font-weight: 600; margin-bottom: -2px; }
   .status-banner { font-size: 12px; padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; }
@@ -1445,7 +1449,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.14</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.15</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1987,7 +1991,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.14");
+  showAboutOverlay_("35.15");
 });
 
 function openModal(id) {
@@ -6096,6 +6100,11 @@ document.querySelectorAll(".report-quick-btn").forEach(btn => {
     if (builders[kind]) renderReportOutput_(builders[kind]());
   });
 });
+// v35.15: botón "Ahora" en todos los campos de hora (ver autoWireNowTimeButtons_
+// en common.js) — se llama una sola vez, al final, cuando todo el HTML
+// estático de la página (incluidos los formularios que viven dentro de
+// pestañas/tabs no visibles por defecto) ya existe en el DOM.
+autoWireNowTimeButtons_();
 </script>
 </body>
 </html>

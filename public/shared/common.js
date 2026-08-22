@@ -89,6 +89,45 @@ function localDateStr_(d) {
   return `${y}-${m}-${day}`;
 }
 function todayStr() { return localDateStr_(new Date()); }
+// Hora actual en formato HH:MM (hora LOCAL del dispositivo), para el botón
+// "Ahora" de los campos <input type="time"> (ver autoWireNowTimeButtons_).
+function nowTimeStr() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+// v35.15: en Safari de macOS/iOS el selector nativo de <input type="time">
+// (columnas tipo "wheel" de hora/minuto/am-pm) no trae ningún atajo para
+// poner la hora actual, a diferencia de otros navegadores — así que el
+// paciente tenía que girar las ruedas a mano cada vez que quería registrar
+// "ahora mismo". Como el picker nativo no se puede personalizar por dentro,
+// se agrega un botón "Ahora" junto a cada campo de hora que llena el input
+// directamente y dispara un evento "change" (por si algún listener depende
+// de él). Se llama una sola vez al cargar la página: envuelve cada
+// input[type=time] presente en el HTML estático en un <span> junto con su
+// botón, sin tocar el resto del layout (label arriba, fila input+botón
+// abajo). Usa un data-attribute para no duplicar el botón si se llegara a
+// invocar más de una vez.
+function autoWireNowTimeButtons_() {
+  if (typeof document === "undefined") return;
+  document.querySelectorAll('input[type="time"]').forEach(input => {
+    if (input.dataset.nowWired) return;
+    input.dataset.nowWired = "1";
+    const wrap = document.createElement("span");
+    wrap.className = "time-with-now";
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-mini time-now-btn";
+    btn.textContent = "Ahora";
+    btn.title = "Poner la hora actual";
+    btn.addEventListener("click", () => {
+      input.value = nowTimeStr();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    wrap.appendChild(btn);
+  });
+}
 // v35.6: cuántos días de calendario hay entre dos fechas YYYY-MM-DD
 // (inclusivo si se le suma 1 al resultado en quien llame) — usado para
 // alinear "Comparar" cuando el periodo es "Libre" (dos rangos de duración
@@ -1048,6 +1087,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.15", changes: [
+    "La nota diaria ahora menciona siempre el IMC cuando hay datos suficientes para calcularlo (antes se omitía si estaba en rango saludable); si falta la estatura en el perfil, la nota lo indica y sugiere capturarla en Parámetros.",
+    "Se reforzó el sistema que evita repetir la frase célebre de cierre en la nota diaria: se corrigió un caso donde nombres de autor con abreviaturas no se detectaban, y se subieron los reintentos ante una frase repetida.",
+    "Se agregó un botón \"Ahora\" junto a los campos de hora en los formularios, para poner la hora actual con un clic — útil en Safari de Mac/iPhone, donde el selector nativo de hora no trae ese atajo.",
+  ] },
   { version: "35.14", changes: [
     "Se corrigió que el % de apego a medicamentos de HOY se calculaba contra todas las tomas programadas del día completo, aunque la hora de alguna todavía no llegara (ej. mostraba 90% a media mañana, cuando en realidad era 100% de lo que ya tocaba) — ahora solo cuenta las tomas cuya hora ya pasó.",
     "La nota diaria de \"Alertas y notas\" ahora toma en cuenta género, edad y cintura del perfil (cuando están capturados) para dar consejos de peso/IMC/cintura más ajustados — la cintura se reporta con su categoría de riesgo cardiovascular, que la OMS define distinta entre hombres y mujeres.",

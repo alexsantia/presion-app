@@ -1315,7 +1315,7 @@ const AI_DAILY_NOTE_MAX_TOKENS = 320;
 // decir con criterio si conviene bajar, subir o mantener, no solo reportar
 // que no hay cambios. La misma idea aplica a presión (ya viene categorizada
 // por classifyReading), sueño (contra las 7-9h recomendadas), etc.
-const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Si te dan un \"Perfil del paciente\" (género y/o edad) y una categoría de riesgo de cintura, tómalos en cuenta al comentar peso/IMC/cintura — la categoría de cintura que te dan ya viene ajustada por género (los umbrales de riesgo cardiovascular por circunferencia de cintura son distintos entre hombres y mujeres), así que repórtala tal cual te la den, sin recalcularla ni asumir un género si no te lo dieron; la edad puede matizar el tono o la urgencia de un consejo, pero nunca la uses para inventar un rango de referencia que no te hayan dado. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si te dan \"Situaciones especiales marcadas en el rango\" (ej. un viaje o un evento fuera de lo cotidiano), tómalas en cuenta como posible explicación de una lectura atípica en esa fecha, en vez de señalarla como algo preocupante sin causa aparente. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
+const AI_DAILY_NOTE_SYSTEM_ = "Eres el asistente de salud de una app de monitoreo de presión arterial en casa. Con los datos que te dan (nunca inventes datos, fechas ni cifras que no estén ahí), escribe UNA nota breve para el paciente, sin saludo ni despedida. Sé conciso: usa solo las frases que realmente hagan falta según lo que encuentres en los datos — puede ser una sola frase corta si todo está estable, o hasta 5 si de verdad hay varios insights que valen la pena; no alargues la nota solo por alcanzar un máximo. Sé inteligente sobre qué periodo comentar: si lo más relevante es un cambio puntual de hoy contra ayer, coméntalo solo así; si el patrón es de los últimos 2-3 días, enfócate en eso; menciona la semana completa solo si el patrón de verdad abarca todos esos días. IMPORTANTE: para cada medición, evalúa el valor contra su rango de referencia saludable (el que te den en los datos, ej. la categoría del IMC o de la presión arterial), no solo si se mantuvo estable o cambió poco — que un valor no cambie no significa que esté en un rango sano: si el IMC indica sobrepeso u obesidad, dilo con claridad y sugiere que conviene bajar de peso (o subir, si indica bajo peso), aunque el peso lleve varios días sin moverse; lo mismo aplica a presión arterial, sueño (rango recomendado 7-9h) y cualquier otra medición: el insight relevante es si está dentro de lo saludable, no solo si tuvo cambios. Si te dan el IMC del paciente (valor y categoría), menciónalo SIEMPRE como parte del comentario sobre el peso, sin excepción — incluso si la categoría es \"peso saludable\" y no hay nada más que agregar, dilo en una frase corta (ej. \"tu IMC de X está en un rango saludable\"); no lo omitas por criterio de \"no aporta nada nuevo\", ese criterio de omisión aplica a las demás secciones pero no al IMC. Si en cambio te dicen que no se pudo calcular el IMC por falta de estatura en el perfil, menciónalo brevemente y sugiere capturarla en Parámetros para poder darle ese análisis en próximas notas. Si te dan un \"Perfil del paciente\" (género y/o edad) y una categoría de riesgo de cintura, tómalos en cuenta al comentar peso/IMC/cintura — la categoría de cintura que te dan ya viene ajustada por género (los umbrales de riesgo cardiovascular por circunferencia de cintura son distintos entre hombres y mujeres), así que repórtala tal cual te la den, sin recalcularla ni asumir un género si no te lo dieron; la edad puede matizar el tono o la urgencia de un consejo, pero nunca la uses para inventar un rango de referencia que no te hayan dado. Revisa TODAS las secciones que te den (presión arterial, peso/IMC, sueño, apego a medicamento, malestares registrados, avance en metas) y elige el o los datos más útiles para el paciente hoy — sin sentir que debes mencionar todas las secciones si no aportan nada nuevo. Cuando comentes presión arterial de forma concreta, cita la fecha exacta y la PAM (presión arterial media) del dato que menciones. Si te dan \"Situaciones especiales marcadas en el rango\" (ej. un viaje o un evento fuera de lo cotidiano), tómalas en cuenta como posible explicación de una lectura atípica en esa fecha, en vez de señalarla como algo preocupante sin causa aparente. Si todo está genuinamente dentro de rangos saludables y sin nada que destacar, dilo en una sola frase corta, sin alarmar. Si algo amerita atención (por estar fuera de rango o por su gravedad), sé claro aunque signifique usar más frases. Tono cercano y directo, como una nota rápida de seguimiento, no un reporte clínico ni una indicación médica definitiva, pero preciso con los números y fechas que te dieron. Cierra siempre con una frase célebre breve — intelectual o poética, relacionada de alguna forma con los resultados o el mensaje de la nota — citando entre comillas y con el nombre del autor real al final (ej.: «...» — Nombre Autor). Usa solo frases genuinas de autores identificables y verificables; si no la sabes con certeza, usa otra frase que sí conozcas bien en vez de inventar una cita o un autor. No uses markdown ni emojis. Responde en español.";
 function dailyNotePam_(sys, dia) {
   if (sys == null || dia == null) return null;
   return Math.round(((sys + 2 * dia) / 3) * 10) / 10;
@@ -1408,6 +1408,14 @@ async function buildDailyNoteSummary_(patientId, today) {
       const heightM = heightCm / 100;
       const bmi = Math.round((lastW.weight / (heightM * heightM)) * 10) / 10;
       weightLine += ` IMC: ${bmi} (${bmiCategory_(bmi)}), con estatura ${heightCm} cm.`;
+    } else {
+      // v35.15: si hay peso pero no estatura capturada en el perfil, antes el
+      // IMC simplemente no se mencionaba nunca, sin explicar por qué (el
+      // paciente veía una nota que hablaba de peso pero jamás de IMC, sin
+      // pista de que le faltaba un dato en su perfil para poder calcularlo).
+      // Ahora se le avisa a la IA explícitamente, para que pueda sugerirle
+      // una vez capturar su estatura en Parámetros.
+      weightLine += ` Estatura no capturada en el perfil, así que no se puede calcular el IMC.`;
     }
   }
   // v35.14: cintura, con categoría de riesgo ya ajustada por género (ver
@@ -1494,9 +1502,15 @@ const AI_DAILY_NOTE_QUOTE_HISTORY_MAX_ = 60;
 // modelo no siguió el formato exacto; si de plano no se puede aislar, regresa
 // null y esa vez simplemente no se agrega nada al historial (no rompe la
 // nota, solo no se puede llevar registro de esa frase en particular).
+// v35.15: el grupo del autor excluía puntos ([^.\n]), así que cualquier autor
+// con abreviaturas o iniciales (ej. "J.R.R. Tolkien") simplemente no hacía
+// match y la cita nunca se guardaba en el historial — quedando libre para
+// repetirse sin límite. Ahora el grupo del autor sí permite puntos (solo
+// excluye saltos de línea) y el punto final, si lo hay, se consume aparte
+// con \.? antes del ancla de fin de cadena.
 function extractDailyNoteQuote_(text) {
   if (!text) return null;
-  const m = text.match(/[«"“]([^»"”]{3,300})[»"”]\s*[-—–]\s*([^.\n]{2,80})[.\s]*$/);
+  const m = text.match(/[«"“]([^»"”]{3,300})[»"”]\s*[-—–]\s*([^\n]{2,80}?)\.?\s*$/);
   if (!m) return null;
   const quote = m[1].trim();
   const author = m[2].trim().replace(/[.\s]+$/, "");
@@ -1533,17 +1547,25 @@ async function callAnthropicDailyNote_(summary, quoteHistory) {
 }
 // v35.4: genera el texto de la nota diaria evitando repetir una frase célebre
 // ya usada con este paciente. Si el modelo de todas formas repite una (puede
-// pasar, un LLM no sigue instrucciones con garantía dura), se reintenta UNA
-// vez con el mismo resumen; si aun así repite, se acepta esa segunda
-// respuesta tal cual (mejor una nota con una frase repetida que ninguna
-// nota) — no se reintenta en bucle. Regresa el texto final y el historial ya
+// pasar, un LLM no sigue instrucciones con garantía dura), se reintenta con
+// el mismo resumen; si aun después de agotar los reintentos sigue repitiendo,
+// se acepta la última respuesta tal cual (mejor una nota con una frase
+// repetida que ninguna nota). Regresa el texto final y el historial ya
 // actualizado (sin mutar el arreglo que se recibió), listo para guardarse.
+// v35.15: antes solo se reintentaba UNA vez (2 intentos en total). Frases muy
+// "obvias" para el tema de la app (ej. la definición de salud de la OMS) le
+// resultan igual de tentadoras al modelo económico cada vez, así que con solo
+// un reintento seguían repitiéndose seguido. Sube a hasta 2 reintentos (3
+// intentos en total) antes de rendirse.
+const AI_DAILY_NOTE_MAX_ATTEMPTS_ = 3;
 async function generateDailyNoteText_(summary, quoteHistory) {
   const history = quoteHistory || [];
   const historyKeys = new Set(history.map(dailyNoteQuoteKey_));
   let text = await callAnthropicDailyNote_(summary, history);
   let extracted = extractDailyNoteQuote_(text);
-  if (extracted && historyKeys.has(dailyNoteQuoteKey_(extracted))) {
+  let attempts = 1;
+  while (extracted && historyKeys.has(dailyNoteQuoteKey_(extracted)) && attempts < AI_DAILY_NOTE_MAX_ATTEMPTS_) {
+    attempts++;
     try {
       const retryText = await callAnthropicDailyNote_(summary, history);
       if (retryText) {
@@ -1551,7 +1573,8 @@ async function generateDailyNoteText_(summary, quoteHistory) {
         extracted = extractDailyNoteQuote_(text);
       }
     } catch (err) {
-      console.error("[daily-note] reintento por frase repetida falló, se conserva la primera respuesta:", err.message);
+      console.error("[daily-note] reintento por frase repetida falló, se conserva la última respuesta:", err.message);
+      break;
     }
   }
   let updatedHistory = history;
