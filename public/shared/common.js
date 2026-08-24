@@ -1182,6 +1182,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.22", changes: [
+    "Se corrigió un error al guardar Parámetros cuando algún campo numérico (peso, estatura, perímetro abdominal, colesterol, triglicéridos o dosis del medicamento) se dejaba en blanco — antes podía mostrar \"invalid input syntax for type numeric\" en vez de guardar.",
+  ] },
   { version: "35.21", changes: [
     "En las gráficas de Estadísticas, cuando una lectura es a la vez \"situación especial\" y de fin de semana, ahora se marca con un círculo bicolor (mitad y mitad) en vez de que un color tape al otro.",
     "El emoji del checkbox \"Marcar fin de semana\" cambió a 🕶️.",

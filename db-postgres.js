@@ -3261,15 +3261,25 @@ async function handlePost(body) {
          updated_at    = $19
        WHERE id = $20`,
       [
+        // v35.22: los campos numéricos usaban "?? null", que NO convierte un
+        // string vacío ("") a null (a diferencia de "|| null" o num()) — si
+        // el paciente dejaba, por ejemplo, "Perímetro abdominal" en blanco,
+        // ese "" se mandaba tal cual como parámetro $16::numeric y Postgres
+        // tronaba con "invalid input syntax for type numeric: \"\"", AUNQUE
+        // el CASE de esa misma columna no fuera a usar ese valor (Postgres
+        // valida/castea el parámetro igual, sin importar qué rama del CASE
+        // se ejecute en runtime). Se usa num() (ya existía, mismo criterio
+        // que el resto del archivo) para normalizar "" a null antes de
+        // castear.
         hasValue(body.last_lab_date), body.last_lab_date || null,
-        hasValue(body.cholesterol), body.cholesterol ?? null,
-        hasValue(body.triglycerides), body.triglycerides ?? null,
+        hasValue(body.cholesterol), num(body.cholesterol),
+        hasValue(body.triglycerides), num(body.triglycerides),
         hasValue(body.med_brand), body.med_brand || null,
-        hasValue(body.med_mg), body.med_mg ?? null,
+        hasValue(body.med_mg), num(body.med_mg),
         hasValue(body.gender), body.gender || null,
-        hasValue(body.weight), body.weight ?? null,
-        hasValue(body.waist), body.waist ?? null,
-        hasValue(body.height), body.height ?? null,
+        hasValue(body.weight), num(body.weight),
+        hasValue(body.waist), num(body.waist),
+        hasValue(body.height), num(body.height),
         now, body.id,
       ]
     );
@@ -3605,8 +3615,10 @@ async function handlePost(body) {
            med_brand = $4, med_mg = $5::numeric, gender = $6, weight = $7::numeric, waist = $8::numeric,
            updated_at = $9
          WHERE id = $10`,
-        [bp.last_lab_date || null, bp.cholesterol ?? null, bp.triglycerides ?? null, bp.med_brand || null,
-          bp.med_mg ?? null, bp.gender || null, bp.weight ?? null, bp.waist ?? null, now, body.patient_id]
+        // v35.22: mismo fix que en update_patient_params — num() en vez de
+        // "?? null" para que un "" en el backup no truene al castear a numeric.
+        [bp.last_lab_date || null, num(bp.cholesterol), num(bp.triglycerides), bp.med_brand || null,
+          num(bp.med_mg), bp.gender || null, num(bp.weight), num(bp.waist), now, body.patient_id]
       );
       await client.query("COMMIT");
     } catch (err) {
