@@ -1106,6 +1106,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.17", changes: [
+    "El popup que compara tu lectura nueva con la anterior ahora también dice hace cuánto fue esa lectura anterior (ej. \"Hace 1 hora y 23 minutos\").",
+    "Las tarjetas de \"Tu sueño\" ahora se ven como dashboard (igual que las de Presión arterial), con mini-gráficas y evaluando los últimos 8 días: última noche, duración promedio, calidad promedio y noches registradas.",
+  ] },
   { version: "35.16", changes: [
     "El botón \"Ahora\" de los campos de hora ahora también llena la fecha con la de hoy (antes solo llenaba la hora).",
     "Nueva sección \"Patrón de sueño\" en la pestaña Sueño: una gráfica muestra la hora de dormir y despertar de cada noche para ver tu ritmo circadiano, más tarjetas con tu horario promedio, variación, punto medio de sueño y qué tan consistentes son tus horarios.",

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.16"></script>
+<script src="/shared/common.js?v=35.17"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1470,7 +1470,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.16</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.17</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2012,7 +2012,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.16");
+  showAboutOverlay_("35.17");
 });
 
 function openModal(id) {
@@ -4012,6 +4012,34 @@ function readingCompareDiffLabel_(curr, prev) {
   if (diff === 0) return "sin cambio";
   return diff > 0 ? `+${diff}` : `${diff}`;
 }
+// v35.17: "hace cuánto" fue la lectura anterior respecto a la que se acaba
+// de capturar — a diferencia de fmtRelativeShort (common.js), que solo
+// muestra UNA unidad ("hace 2 h"), aquí se pide el desglose completo en
+// días/horas/minutos (ej. "Hace 2 días, 3 horas y 20 minutos"), así que es
+// un formateador propio en vez de reusar aquel. Las lecturas usan campos
+// separados date/time (no un solo ISO), por eso se combinan con "T" antes
+// de restar — mismo patrón que ya usa el resto del archivo (ej. el sort de
+// loadAndRender).
+function elapsedSincePrevReadingLabel_(prevReading, newValues) {
+  if (!prevReading || !prevReading.date || !newValues || !newValues.date) return "";
+  const prevDate = new Date(prevReading.date + "T" + (prevReading.time || "00:00"));
+  const newDate = new Date(newValues.date + "T" + (newValues.time || "00:00"));
+  if (isNaN(prevDate) || isNaN(newDate)) return "";
+  const totalMin = Math.round((newDate - prevDate) / 60000);
+  if (totalMin < 0) return ""; // lectura anterior "en el futuro" respecto a la nueva (fechas capturadas a mano) — no mostrar nada raro
+  if (totalMin < 1) return "Hace menos de 1 minuto";
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const minutes = totalMin % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} día${days === 1 ? "" : "s"}`);
+  if (hours > 0) parts.push(`${hours} hora${hours === 1 ? "" : "s"}`);
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} minuto${minutes === 1 ? "" : "s"}`);
+  const joined = parts.length === 1 ? parts[0]
+    : parts.length === 2 ? parts.join(" y ")
+    : `${parts[0]}, ${parts[1]} y ${parts[2]}`;
+  return `Hace ${joined}`;
+}
 function showReadingCompareModal_(prevReading, newValues) {
   if (!prevReading) return; // primera lectura registrada, no hay con qué comparar
   const prevPam = pamValue_(prevReading.sys, prevReading.dia);
@@ -4040,13 +4068,15 @@ function showReadingCompareModal_(prevReading, newValues) {
   const prevWhenLabel = prevDateLabel
     ? `Comparando con tu lectura del ${prevDateLabel}${prevReading.time ? ` a las ${prevReading.time}` : ""}`
     : "Comparando con tu lectura anterior";
+  const elapsedLabel = elapsedSincePrevReadingLabel_(prevReading, newValues);
   ensureAboutStyles_(); // reusa .bp-about-overlay/.bp-about-card
   const overlay = document.createElement("div");
   overlay.className = "bp-about-overlay";
   overlay.innerHTML = `
     <div class="bp-about-card" style="max-width:360px;">
       <h2 style="margin-top:0;">Comparación con tu lectura anterior</h2>
-      <p style="font-size:12.5px; color:var(--text-muted); margin-top:-8px;">${prevWhenLabel}</p>
+      <p style="font-size:12.5px; color:var(--text-muted); margin-top:-8px; margin-bottom:${elapsedLabel ? "0" : "10px"};">${prevWhenLabel}</p>
+      ${elapsedLabel ? `<p style="font-size:12.5px; color:var(--text-muted); margin-top:2px; margin-bottom:10px;">${elapsedLabel}</p>` : ""}
       <div>${rowsHtml}</div>
       <button type="button" class="btn-secondary" id="bp-reading-compare-close" style="width:100%; margin-top:14px;">Cerrar</button>
     </div>`;
@@ -5059,9 +5089,87 @@ async function loadSleep() {
   ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
   ensureSymptomStyles_(); // reutiliza .symptom-intensity-wrap/.symptom-scale-chip
   try { currentSleep = await apiGet("/api/sleep"); } catch (err) { currentSleep = []; }
-  document.getElementById("sleepTotalsWrap").innerHTML = sleepTotalsHTML_(currentSleep);
+  renderSleepSummaryCards_();
   document.getElementById("sleepListWrap").innerHTML = renderSleepListHTML(currentSleep);
   renderSleepCircadianDashboard_();
+}
+
+// ---- v35.17: tarjetas de "Tu sueño" con el mismo estilo dashboard que las
+// de Presión arterial (#summaryCards: label + valor grande + valores chicos
+// + mini-gráfica), en vez del texto plano de una sola línea que mostraba
+// sleepTotalsHTML_ (que además promediaba TODO el historial, sin indicar
+// ningún periodo). Reemplaza el contenido de #sleepTotalsWrap directamente
+// desde index.html en vez de tocar sleepTotalsHTML_ (common.js), porque esa
+// función también la usan doctor.html y familia.html con su formato simple
+// de una línea — mismo criterio que summaryCards, que tampoco se compartió
+// con esas vistas cuando se le agregaron las mini-gráficas (v35.12).
+function sleepCardsPeriodLabel_(startStr, endStr) {
+  const fmt = s => s.split("-").reverse().join("/");
+  return `Últimos 8 días (${startStr === endStr ? fmt(startStr) : `${fmt(startStr)} – ${fmt(endStr)}`})`;
+}
+function renderSleepSummaryCards_() {
+  const wrap = document.getElementById("sleepTotalsWrap");
+  if (!wrap) return;
+  if (!currentSleep.length) { wrap.innerHTML = ""; return; }
+
+  const today = todayStr();
+  const cutoff = reportAddDays_(today, -7); // últimos 8 días = hoy + 7 anteriores
+  const sorted = currentSleep.slice().sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const periodEntries = sorted.filter(s => s.fecha >= cutoff);
+  const periodLabelTxt = sleepCardsPeriodLabel_(cutoff, today);
+
+  // Última noche: siempre la más reciente de TODO el historial (no solo del
+  // periodo), para que la tarjeta tenga sentido incluso si el paciente no
+  // registró nada en los últimos 8 días.
+  const last = sorted[sorted.length - 1];
+  const lastDurLabel = last.duracion_min != null ? sleepDurationLabel_(last.duracion_min) : "—";
+  const lastQualityLabel = last.calidad != null ? `Calidad ${last.calidad}/10` : "sin calidad registrada";
+  const lastWhen = last.fecha.split("-").reverse().join("/");
+  const last5DurSpark = sparklineSVG_(sorted.slice(-5).filter(s => s.duracion_min != null).map(s => Math.round((s.duracion_min / 60) * 100) / 100), { color: "#6E8FB0" });
+
+  const periodDur = periodEntries.filter(s => s.duracion_min != null);
+  const avgDurMin = periodDur.length ? periodDur.reduce((a, s) => a + s.duracion_min, 0) / periodDur.length : null;
+  const periodDurSpark = sparklineSVG_(periodDur.map(s => Math.round((s.duracion_min / 60) * 100) / 100), { color: "#6E8FB0" });
+
+  const periodQual = periodEntries.filter(s => s.calidad != null);
+  const avgQual = periodQual.length ? Math.round((periodQual.reduce((a, s) => a + s.calidad, 0) / periodQual.length) * 10) / 10 : null;
+  const periodQualSpark = sparklineSVG_(periodQual.map(s => s.calidad), { color: "#9B8AC4" });
+
+  const nightsBars = miniBarChartSVG_(
+    periodDur.map(s => ({ label: s.fecha.split("-").reverse().join("/"), value: Math.round((s.duracion_min / 60) * 10) / 10, color: "#6E8FB0" }))
+  );
+
+  wrap.innerHTML = `
+    <div class="grid" style="margin-bottom:14px;">
+      <div class="card">
+        <div class="label">Última noche</div>
+        <div class="value">${lastDurLabel}</div>
+        <div class="value small">${lastQualityLabel}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${lastWhen}</div>
+        ${last5DurSpark ? `<div style="margin-top:6px;">${last5DurSpark}</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="label">Duración promedio</div>
+        <div class="value">${avgDurMin != null ? sleepDurationLabel_(avgDurMin) : "—"}</div>
+        <div class="value small">${periodDur.length ? `${periodDur.length} noche${periodDur.length === 1 ? "" : "s"} con duración` : "sin registros en el periodo"}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabelTxt}</div>
+        ${periodDurSpark ? `<div style="margin-top:6px;">${periodDurSpark}</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="label">Calidad promedio</div>
+        <div class="value">${avgQual != null ? avgQual + "/10" : "—"}</div>
+        <div class="value small">${periodQual.length ? `${periodQual.length} noche${periodQual.length === 1 ? "" : "s"} con calidad` : "sin calidad registrada"}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabelTxt}</div>
+        ${periodQualSpark ? `<div style="margin-top:6px;">${periodQualSpark}</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="label">Noches registradas</div>
+        <div class="value">${periodEntries.length}/8</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabelTxt}</div>
+        ${nightsBars ? `<div style="margin-top:6px;">${nightsBars}</div>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 // ---- v35.16: dashboard de ritmo circadiano ----
