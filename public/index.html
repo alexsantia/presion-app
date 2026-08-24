@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.20"></script>
+<script src="/shared/common.js?v=35.21"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1477,7 +1477,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.20</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.21</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2019,7 +2019,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.20");
+  showAboutOverlay_("35.21");
 });
 
 function openModal(id) {
@@ -3358,7 +3358,7 @@ function injectChartCompareControls_() {
 function chartWeekendShadeHTML_(chartKey) {
   const checked = chartWeekendShade_[chartKey] ? " checked" : "";
   return `<label class="chart-weekend-wrap" data-chart-key="${chartKey}" style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; color:var(--text-muted); cursor:pointer;">
-    <input type="checkbox" class="chart-weekend-toggle" data-chart-key="${chartKey}"${checked}> 🩷 Marcar fin de semana
+    <input type="checkbox" class="chart-weekend-toggle" data-chart-key="${chartKey}"${checked}> 🕶️ Marcar fin de semana
   </label>`;
 }
 function injectChartWeekendShadeControls_() {

@@ -265,6 +265,46 @@ const RELATED_POINT_COLOR_ = "#8B5CF6"; // morado, distinto de sys/dia/hr/peso
 // v34.2: "Situación especial" — color ámbar, distinto del morado de
 // "relacionado con", para no confundir ambos resaltados en la gráfica.
 const SPECIAL_POINT_COLOR_ = "#D9A15F";
+// v35.21: cuando un mismo punto es a la vez "situación especial" Y "fin de
+// semana" (con el checkbox de fin de semana prendido, ver renderMetricTrendChart
+// más abajo), pintarlo de un solo color tapaba la otra señal. En vez de
+// elegir cuál gana, se pinta un círculo bicolor mitad y mitad (una mitad de
+// cada color) — Chart.js acepta un HTMLCanvasElement como pointStyle, un
+// valor más en el mismo arreglo por-punto que ya se usa para
+// pointBackgroundColor/pointRadius/etc. Se memoiza por par de colores para
+// no crear un canvas nuevo en cada render.
+const bicolorPointCanvasCache_ = {};
+function bicolorPointCanvas_(colorLeft, colorRight) {
+  const key = colorLeft + "|" + colorRight;
+  if (bicolorPointCanvasCache_[key]) return bicolorPointCanvasCache_[key];
+  const size = 24;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext && canvas.getContext("2d");
+  // Entornos sin canvas 2d real (ej. jsdom en las pruebas automatizadas, sin
+  // el paquete npm "canvas") -> no se puede dibujar; el llamador cae de
+  // vuelta a un color sólido en vez de tronar.
+  if (!ctx) return null;
+  const r = size / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(r, r, r, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.fillStyle = colorRight;
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = colorLeft;
+  ctx.fillRect(0, 0, r, size);
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(r, r, r - 1, 0, Math.PI * 2);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.stroke();
+  bicolorPointCanvasCache_[key] = canvas;
+  return canvas;
+}
 // Arma los arreglos pointBackgroundColor/pointBorderColor/pointRadius que
 // Chart.js necesita para pintar solo ALGUNOS puntos de un dataset distinto
 // ("related" o "special"), sin tocar el color de línea normal del resto. Si
@@ -697,16 +737,23 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   // v35.19: si además el checkbox "Fin de semana" de esta gráfica está
   // prendido (opts.markWeekends) y la serie trae "weekend" (todas la traen
   // ya, ver los *SeriesFor*_/*SeriesForKey_ en este archivo), los puntos de
-  // viernes/sábado/domingo se pintan de WEEKEND_POINT_COLOR_ — a menos que
-  // ese mismo punto YA sea "special", que tiene prioridad visual (es la
-  // señal más importante de las dos).
+  // viernes/sábado/domingo se pintan de WEEKEND_POINT_COLOR_.
+  // v35.21: cuando un punto es "special" Y "weekend" a la vez, antes
+  // "special" tapaba por completo el color de fin de semana (se perdía esa
+  // señal). Ahora ese punto se pinta con un círculo bicolor (mitad y mitad,
+  // ver bicolorPointCanvas_ más arriba) para que ninguna de las dos se
+  // pierda.
   const markWeekends = !!opts.markWeekends && !!series.weekend;
+  const isSpecialAt_ = i => !!(series.special && series.special[i]);
+  const isWeekendAt_ = i => !!(markWeekends && series.weekend[i]);
+  const isBothAt_ = i => isSpecialAt_(i) && isWeekendAt_(i);
   const pointStyleOverrides = (series.special || markWeekends)
     ? {
-        pointBackgroundColor: series.values.map((_, i) => series.special && series.special[i] ? SPECIAL_POINT_COLOR_ : (markWeekends && series.weekend[i] ? WEEKEND_POINT_COLOR_ : opts.color)),
-        pointBorderColor: series.values.map((_, i) => series.special && series.special[i] ? SPECIAL_POINT_COLOR_ : (markWeekends && series.weekend[i] ? WEEKEND_POINT_COLOR_ : opts.color)),
-        pointRadius: series.values.map((_, i) => series.special && series.special[i] ? 6 : (markWeekends && series.weekend[i] ? 5 : 3)),
-        pointHoverRadius: series.values.map((_, i) => series.special && series.special[i] ? 8 : (markWeekends && series.weekend[i] ? 7 : 5)),
+        pointBackgroundColor: series.values.map((_, i) => isSpecialAt_(i) ? SPECIAL_POINT_COLOR_ : (isWeekendAt_(i) ? WEEKEND_POINT_COLOR_ : opts.color)),
+        pointBorderColor: series.values.map((_, i) => isSpecialAt_(i) ? SPECIAL_POINT_COLOR_ : (isWeekendAt_(i) ? WEEKEND_POINT_COLOR_ : opts.color)),
+        pointRadius: series.values.map((_, i) => (isSpecialAt_(i) || isWeekendAt_(i)) ? 6 : 3),
+        pointHoverRadius: series.values.map((_, i) => (isSpecialAt_(i) || isWeekendAt_(i)) ? 8 : 5),
+        pointStyle: series.values.map((_, i) => isBothAt_(i) ? (bicolorPointCanvas_(SPECIAL_POINT_COLOR_, WEEKEND_POINT_COLOR_) || "circle") : "circle"),
       }
     : { pointRadius: 3 };
   return new Chart(ctx, {
@@ -1135,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.21", changes: [
+    "En las gráficas de Estadísticas, cuando una lectura es a la vez \"situación especial\" y de fin de semana, ahora se marca con un círculo bicolor (mitad y mitad) en vez de que un color tape al otro.",
+    "El emoji del checkbox \"Marcar fin de semana\" cambió a 🕶️.",
+  ] },
   { version: "35.20", changes: [
     "El color que marca los fines de semana en las gráficas (Patrón de sueño y las 10 gráficas de Estadísticas) ahora es rosa en vez de ámbar, para no confundirse con el color de \"situación especial\".",
   ] },
