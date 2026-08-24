@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.18"></script>
+<script src="/shared/common.js?v=35.19"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1395,8 +1395,11 @@
         <button type="button" class="chart-filter-btn" data-circadian-period="quarter">3 meses</button>
         <button type="button" class="chart-filter-btn" data-circadian-period="all">Todo</button>
       </div>
+      <label style="display:flex; align-items:center; gap:4px; margin-left:8px; font-size:11px; color:var(--text-muted); cursor:pointer; white-space:nowrap;">
+        <input type="checkbox" id="sleepCircadianWeekendToggle" checked style="margin:0;"> Marcar fin de semana
+      </label>
     </div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Cada barra va de la hora en que te dormiste a la hora en que despertaste esa noche — te ayuda a ver patrones y qué tan consistente es tu ritmo circadiano. Los fines de semana (viernes a domingo) se marcan en otro color, para ver si tu horario cambia esos días.</p>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Cada barra va de la hora en que te dormiste a la hora en que despertaste esa noche, con la duración de esa noche — te ayuda a ver patrones y qué tan consistente es tu ritmo circadiano.</p>
     <div class="chart-wrap" id="sleepCircadianChartWrap" style="height:280px;"><canvas id="sleepCircadianChart"></canvas></div>
     <div id="sleepCircadianLegend" style="display:none; gap:16px; margin-top:8px; font-size:11.5px; color:var(--text-muted);">
       <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#6E8FB0; margin-right:5px;"></span>Entre semana</span>
@@ -1474,7 +1477,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.18</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.19</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2016,7 +2019,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.18");
+  showAboutOverlay_("35.19");
 });
 
 function openModal(id) {
@@ -3346,6 +3349,31 @@ function injectChartCompareControls_() {
     wrap.insertAdjacentHTML("afterend", chartCompareControlsHTML_(key));
   });
 }
+// v35.19: checkbox "Fin de semana" por gráfica — mismo criterio de inyección
+// que "Comparar" (mismas 10 gráficas de CHART_COMPARE_META_, quedan fuera
+// franja horaria/día de la semana y las de reportes/métricas propias, que no
+// pasan por renderTrendOrCompare_). Default apagado (a diferencia de la
+// gráfica de Patrón de sueño, que ya traía el color de fin de semana
+// encendido desde v35.18 y aquí solo se le sumó el checkbox para apagarlo).
+function chartWeekendShadeHTML_(chartKey) {
+  const checked = chartWeekendShade_[chartKey] ? " checked" : "";
+  return `<label class="chart-weekend-wrap" data-chart-key="${chartKey}" style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; color:var(--text-muted); cursor:pointer;">
+    <input type="checkbox" class="chart-weekend-toggle" data-chart-key="${chartKey}"${checked}> 🟠 Marcar fin de semana
+  </label>`;
+}
+function injectChartWeekendShadeControls_() {
+  document.querySelectorAll(".chart-filter-mini").forEach(wrap => {
+    const key = wrap.dataset.chartKey;
+    if (!CHART_COMPARE_META_[key]) return;
+    if (document.querySelector(`.chart-weekend-wrap[data-chart-key="${key}"]`)) return;
+    // Se inserta junto al bloque de "Comparar" de esta misma gráfica (si ya
+    // existe) para que quede agrupado con los demás controles por gráfica,
+    // en vez de pegado justo al mini-filtro.
+    const compareWrap = document.querySelector(`.chart-compare-wrap[data-chart-key="${key}"]`);
+    const anchor = compareWrap || wrap;
+    anchor.insertAdjacentHTML("afterend", chartWeekendShadeHTML_(key));
+  });
+}
 function syncChartCompareUI_(key) {
   const gran = effectivePeriod_(key);
   // v35.6: antes "Comparar" se ocultaba por completo en "Libre" (no había
@@ -3447,7 +3475,7 @@ function labHistorySeriesConverted_(key, history) {
   const series = labHistorySeriesForKey_(history, key);
   if (key === "waist" || getUnitPref() !== "mmoll") return series;
   const factor = key === "cholesterol" ? CHOL_MGDL_PER_MMOLL : TRI_MGDL_PER_MMOLL;
-  return { labels: series.labels, values: series.values.map(v => Math.round((v / factor) * 100) / 100), obs: series.obs };
+  return { labels: series.labels, values: series.values.map(v => Math.round((v / factor) * 100) / 100), obs: series.obs, weekend: series.weekend };
 }
 async function loadLabHistory() {
   try { currentLabHistory = await apiGet("/api/lab-history"); } catch (err) { currentLabHistory = []; }
@@ -3471,6 +3499,29 @@ async function loadLabHistory() {
 // dentro del periodo (ver alignedSeriesForMetric_ en common.js), no por
 // fecha real, para que ambos queden uno junto al otro visualmente.
 let chartCompareOn_ = {};
+// v35.19: si cada gráfica de Estadísticas marca o no sus puntos de fin de
+// semana (viernes-domingo) en otro color — un checkbox por gráfica, junto a
+// su mini-filtro (mismo criterio que "Comparar"/"Libre"), persistido para
+// que la preferencia sobreviva a recargar la página. Se guarda solo la
+// lista de claves "prendidas" (default: todas apagadas), mismo patrón que
+// CHART_HIDDEN_DATASETS_KEY_ (guardar únicamente lo que se desvía del
+// default, no el objeto completo).
+const CHART_WEEKEND_SHADE_KEY_ = "bp_chart_weekend_shade_v1";
+function loadChartWeekendShade_() {
+  const state = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem(CHART_WEEKEND_SHADE_KEY_) || "[]");
+    if (Array.isArray(saved)) saved.forEach(k => { state[k] = true; });
+  } catch (err) { /* ignorar preferencia corrupta, default: todas apagadas */ }
+  return state;
+}
+function saveChartWeekendShade_() {
+  try {
+    const onKeys = Object.keys(chartWeekendShade_).filter(k => chartWeekendShade_[k]);
+    localStorage.setItem(CHART_WEEKEND_SHADE_KEY_, JSON.stringify(onKeys));
+  } catch (err) { /* ignorar cuota llena */ }
+}
+let chartWeekendShade_ = loadChartWeekendShade_();
 let chartCompareAnchor_ = {}; // chartKey -> { day, week, month, year, custom } — periodo "Con" (B)
 // v33.4: antes el periodo "Ver" (A) siempre era el que ya mostraba la
 // gráfica (el filtro general/mini-filtro); ahora también se puede fijar a
@@ -3571,7 +3622,10 @@ function renderTrendOrCompare_(key, instanceGetter, instanceSetter, canvasId, em
       labelA: cmp.labelA, labelB: cmp.labelB, color: opts.color, unit,
     }));
   } else {
-    instanceSetter(renderMetricTrendChart(instanceGetter(), canvasEl, emptyEl, trendSeries(), { label: opts.label, color: opts.color, unit, idealRange: opts.idealRange }));
+    // v35.19: markWeekends se inyecta aquí (un solo lugar) para las 10
+    // gráficas que pasan por renderTrendOrCompare_, en vez de tener que
+    // agregarlo a mano en cada uno de los ~10 call sites.
+    instanceSetter(renderMetricTrendChart(instanceGetter(), canvasEl, emptyEl, trendSeries(), { label: opts.label, color: opts.color, unit, idealRange: opts.idealRange, markWeekends: !!chartWeekendShade_[key] }));
   }
 }
 function renderLabHistoryCharts(onlyKeys) {
@@ -3642,12 +3696,23 @@ loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])
 // v33.2: recién aquí CHART_COMPARE_META_ ya está declarado (ver nota más
 // arriba, junto a syncAllChartCompareUI_).
 injectChartCompareControls_();
+injectChartWeekendShadeControls_();
 document.getElementById("tabEstadisticas").addEventListener("change", e => {
   const toggle = e.target.closest(".chart-compare-toggle");
   if (toggle) {
     const key = toggle.dataset.chartKey;
     chartCompareOn_[key] = toggle.checked;
     syncChartCompareUI_(key);
+    renderLabHistoryCharts([key]);
+    return;
+  }
+  // v35.19: checkbox "Fin de semana" — marcar/desmarcar solo re-renderiza ESA
+  // gráfica (renderTrendOrCompare_ ya lee chartWeekendShade_[key] cada vez).
+  const weekendToggle = e.target.closest(".chart-weekend-toggle");
+  if (weekendToggle) {
+    const key = weekendToggle.dataset.chartKey;
+    chartWeekendShade_[key] = weekendToggle.checked;
+    saveChartWeekendShade_();
     renderLabHistoryCharts([key]);
     return;
   }
@@ -5206,14 +5271,6 @@ function circadianStdDevMin_(hoursArr) {
   const variance = hoursArr.reduce((a, b) => a + (b - avg) * (b - avg), 0) / hoursArr.length;
   return Math.round(Math.sqrt(variance) * 60);
 }
-// v35.18: "fin de semana" para el patrón de sueño = viernes, sábado y
-// domingo (no solo sáb/dom) — es la noche de viernes (y no solo la de
-// sábado) la que suele mostrar el desvelo/desfase típico de fin de semana.
-// getDay(): 0=domingo, 5=viernes, 6=sábado.
-function isWeekendFriToSun_(dateStr) {
-  const day = new Date(dateStr + "T00:00:00").getDay();
-  return day === 5 || day === 6 || day === 0;
-}
 function circadianFilteredSleep_(period) {
   if (period === "all") return currentSleep.slice();
   const days = { week: 6, month: 29, quarter: 89 }[period];
@@ -5224,6 +5281,11 @@ function circadianFilteredSleep_(period) {
 }
 let sleepCircadianChartInstance_ = null;
 let sleepCircadianPeriod_ = "month";
+// v35.19: si marcar fines de semana en la gráfica está prendido o no —
+// antes era siempre fijo (v35.18); ahora el paciente lo controla con el
+// checkbox #sleepCircadianWeekendToggle. Empieza prendido (mismo
+// comportamiento visible que ya tenía la gráfica) hasta que lo apague.
+let sleepCircadianMarkWeekends_ = true;
 function renderSleepCircadianDashboard_() {
   const canvas = document.getElementById("sleepCircadianChart");
   if (!canvas) return; // v32/v35.16: solo existe una vez que se montó la sección Sueño
@@ -5235,7 +5297,14 @@ function renderSleepCircadianDashboard_() {
     const bed = circadianNormalizedHour_(s.hora_inicio);
     let wake = circadianNormalizedHour_(s.hora_fin);
     if (wake <= bed) wake += 24; // cruzó otra medianoche más (raro, pero no debe romper la barra)
-    return { fecha: s.fecha, bed, wake, mid: (bed + wake) / 2 };
+    // v35.19: la duración se toma de duracion_min (el dato que ya usa el
+    // resto de la app — tarjetas, gráfica de Estadísticas, etc., y que el
+    // paciente puede editar a mano), no de wake-bed, para no mostrar un
+    // número distinto al que ve en el resto de la app si alguna vez
+    // difieren (ver investigación previa: duracion_min puede ser editado
+    // independiente de hora_inicio/hora_fin).
+    const durMin = s.duracion_min != null ? s.duracion_min : Math.round((wake - bed) * 60);
+    return { fecha: s.fecha, bed, wake, mid: (bed + wake) / 2, durMin };
   }).filter(p => p.bed != null && p.wake != null);
 
   const emptyEl = document.getElementById("sleepCircadianEmpty");
@@ -5250,7 +5319,7 @@ function renderSleepCircadianDashboard_() {
     return;
   }
   document.getElementById("sleepCircadianChartWrap").style.display = "";
-  if (legendEl) legendEl.style.display = "flex";
+  if (legendEl) legendEl.style.display = sleepCircadianMarkWeekends_ ? "flex" : "none";
   emptyEl.style.display = "none";
 
   const bedVals = pairs.map(p => p.bed), wakeVals = pairs.map(p => p.wake), midVals = pairs.map(p => p.mid);
@@ -5261,11 +5330,14 @@ function renderSleepCircadianDashboard_() {
   sleepCircadianChartInstance_ = new Chart(canvas.getContext("2d"), {
     type: "bar",
     data: {
-      labels: pairs.map(p => fmtDate(p.fecha)),
+      // v35.19: la etiqueta de cada barra ahora incluye la duración de esa
+      // noche (ej. "21/08 · 7 h 30 min"), no solo la fecha — así se ve sin
+      // pasar el mouse, no solo en el tooltip.
+      labels: pairs.map(p => `${fmtDate(p.fecha)} · ${sleepDurationLabel_(p.durMin)}`),
       datasets: [{
         label: "Sueño",
         data: pairs.map(p => [p.bed, p.wake]),
-        backgroundColor: pairs.map(p => isWeekendFriToSun_(p.fecha) ? "#D8AE5C" : "#6E8FB0"),
+        backgroundColor: pairs.map(p => (sleepCircadianMarkWeekends_ && isWeekendFriToSun_(p.fecha)) ? WEEKEND_POINT_COLOR_ : "#6E8FB0"),
         borderRadius: 4,
         barThickness: pairs.length > 25 ? 6 : 14,
       }],
@@ -5280,7 +5352,7 @@ function renderSleepCircadianDashboard_() {
       },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => `${circadianFmtHour_(ctx.raw[0])} → ${circadianFmtHour_(ctx.raw[1])}` } },
+        tooltip: { callbacks: { label: ctx => `${circadianFmtHour_(ctx.raw[0])} → ${circadianFmtHour_(ctx.raw[1])} (${sleepDurationLabel_(pairs[ctx.dataIndex].durMin)})` } },
       },
     },
   });
@@ -5315,6 +5387,10 @@ document.getElementById("sleepCircadianFilter").addEventListener("click", e => {
   if (!btn) return;
   document.querySelectorAll("#sleepCircadianFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   sleepCircadianPeriod_ = btn.dataset.circadianPeriod;
+  renderSleepCircadianDashboard_();
+});
+document.getElementById("sleepCircadianWeekendToggle").addEventListener("change", e => {
+  sleepCircadianMarkWeekends_ = e.target.checked;
   renderSleepCircadianDashboard_();
 });
 function resetSleepForm_() {

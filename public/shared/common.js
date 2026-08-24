@@ -14,6 +14,17 @@ const categoryColors = { normal: "#6FA98C", elevada: "#D8AE5C", etapa1: "#D98E5F
 const CATEGORY_ORDER_ = ["normal", "elevada", "etapa1", "etapa2", "crisis"];
 const CATEGORY_LABELS_ = { normal: "Normal", elevada: "Elevada", etapa1: "Hipertensión etapa 1", etapa2: "Hipertensión etapa 2", crisis: "Crisis hipertensiva" };
 
+// v35.18: "fin de semana" = viernes, sábado y domingo (no solo sáb/dom) — es
+// la noche de viernes (y no solo la de sábado) la que suele mostrar el
+// desvelo/desfase típico de fin de semana. getDay(): 0=domingo, 5=viernes,
+// 6=sábado. v35.19: se mueve de index.html a common.js (antes solo la usaba
+// la gráfica de Patrón de sueño; ahora también las gráficas de Estadísticas).
+const WEEKEND_POINT_COLOR_ = "#D8AE5C";
+function isWeekendFriToSun_(dateStr) {
+  const day = new Date(dateStr + "T00:00:00").getDay();
+  return day === 5 || day === 6 || day === 0;
+}
+
 // v35.12: mini-gráficas SVG para las tarjetas de resumen (Última lectura,
 // Promedio del período, Peso, Distribución de categorías) — estilo
 // "dashboard SaaS" que pidió el usuario (número grande + una gráfica
@@ -591,11 +602,17 @@ function readingsSeriesForKey_(data, key) {
     labels: filtered.map(r => fmtDate(r.date) + (r.time ? " " + r.time : "")),
     values: filtered.map(r => r[key]),
     obs: filtered.map(r => r.obs || ""),
+    weekend: filtered.map(r => isWeekendFriToSun_(r.date)), // v35.19: marcar fin de semana (checkbox por gráfica)
   };
 }
 function labHistorySeriesForKey_(history, key) {
   const filtered = (history || []).filter(h => h[key] != null);
-  return { labels: filtered.map(h => fmtDate(h.fecha)), values: filtered.map(h => h[key]), obs: filtered.map(() => "") };
+  return {
+    labels: filtered.map(h => fmtDate(h.fecha)),
+    values: filtered.map(h => h[key]),
+    obs: filtered.map(() => ""),
+    weekend: filtered.map(h => isWeekendFriToSun_(h.fecha)), // v35.19
+  };
 }
 
 // ---- Presión Arterial Media / PAM (v30.16) ----
@@ -620,6 +637,7 @@ function pamSeriesForReadings_(data) {
     // lecturas marcadas con "situación especial" se resaltan distinto — ver
     // renderMetricTrendChart más abajo.
     special: filtered.map(r => !!r.special_situation),
+    weekend: filtered.map(r => isWeekendFriToSun_(r.date)), // v35.19
   };
 }
 // v30.17: rango "óptimo" de PAM citado por referencias clínicas generales
@@ -672,12 +690,19 @@ function renderMetricTrendChart(prevInstance, canvasEl, emptyEl, series, opts) {
   // manda, ver pamSeriesForReadings_), las lecturas marcadas con "situación
   // especial" se pintan distinto — mismo color/tamaño que ya se usa en la
   // gráfica de Tendencia de la pestaña principal (ver SPECIAL_POINT_COLOR_).
-  const pointStyleOverrides = series.special
+  // v35.19: si además el checkbox "Fin de semana" de esta gráfica está
+  // prendido (opts.markWeekends) y la serie trae "weekend" (todas la traen
+  // ya, ver los *SeriesFor*_/*SeriesForKey_ en este archivo), los puntos de
+  // viernes/sábado/domingo se pintan de WEEKEND_POINT_COLOR_ — a menos que
+  // ese mismo punto YA sea "special", que tiene prioridad visual (es la
+  // señal más importante de las dos).
+  const markWeekends = !!opts.markWeekends && !!series.weekend;
+  const pointStyleOverrides = (series.special || markWeekends)
     ? {
-        pointBackgroundColor: series.values.map((_, i) => series.special[i] ? SPECIAL_POINT_COLOR_ : opts.color),
-        pointBorderColor: series.values.map((_, i) => series.special[i] ? SPECIAL_POINT_COLOR_ : opts.color),
-        pointRadius: series.values.map((_, i) => series.special[i] ? 6 : 3),
-        pointHoverRadius: series.values.map((_, i) => series.special[i] ? 8 : 5),
+        pointBackgroundColor: series.values.map((_, i) => series.special && series.special[i] ? SPECIAL_POINT_COLOR_ : (markWeekends && series.weekend[i] ? WEEKEND_POINT_COLOR_ : opts.color)),
+        pointBorderColor: series.values.map((_, i) => series.special && series.special[i] ? SPECIAL_POINT_COLOR_ : (markWeekends && series.weekend[i] ? WEEKEND_POINT_COLOR_ : opts.color)),
+        pointRadius: series.values.map((_, i) => series.special && series.special[i] ? 6 : (markWeekends && series.weekend[i] ? 5 : 3)),
+        pointHoverRadius: series.values.map((_, i) => series.special && series.special[i] ? 8 : (markWeekends && series.weekend[i] ? 7 : 5)),
       }
     : { pointRadius: 3 };
   return new Chart(ctx, {
@@ -1106,6 +1131,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.19", changes: [
+    "La gráfica de \"Patrón de sueño\" ahora muestra también la duración de cada noche (ej. \"21/08 · 7 h 30 min\").",
+    "Nuevo checkbox \"Marcar fin de semana\" en la gráfica de Patrón de sueño y en las 10 gráficas de la pestaña Estadísticas: prende o apaga a tu gusto el color especial de los puntos/barras de viernes, sábado y domingo.",
+  ] },
   { version: "35.18", changes: [
     "En la gráfica de \"Patrón de sueño\" (pestaña Sueño), las barras de viernes, sábado y domingo ahora se pintan en otro color para distinguir tus horarios de fin de semana.",
   ] },
@@ -2117,6 +2146,7 @@ function sleepDurationSeriesForChart_(entries) {
     labels: filtered.map(e => fmtDate(e.fecha)),
     values: filtered.map(e => Math.round((Number(e.duracion_min) / 60) * 100) / 100),
     obs: filtered.map(e => e.notas || ""),
+    weekend: filtered.map(e => isWeekendFriToSun_(e.fecha)), // v35.19
   };
 }
 function sleepQualitySeriesForChart_(entries) {
@@ -2125,6 +2155,7 @@ function sleepQualitySeriesForChart_(entries) {
     labels: filtered.map(e => fmtDate(e.fecha)),
     values: filtered.map(e => Number(e.calidad)),
     obs: filtered.map(e => e.notas || ""),
+    weekend: filtered.map(e => isWeekendFriToSun_(e.fecha)), // v35.19
   };
 }
 
