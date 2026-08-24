@@ -19,7 +19,11 @@ const CATEGORY_LABELS_ = { normal: "Normal", elevada: "Elevada", etapa1: "Hipert
 // desvelo/desfase típico de fin de semana. getDay(): 0=domingo, 5=viernes,
 // 6=sábado. v35.19: se mueve de index.html a common.js (antes solo la usaba
 // la gráfica de Patrón de sueño; ahora también las gráficas de Estadísticas).
-const WEEKEND_POINT_COLOR_ = "#D8AE5C";
+// v35.20: el color original (#D8AE5C, ámbar) se confundía a simple vista con
+// SPECIAL_POINT_COLOR_ (#D9A15F, también ámbar) — se cambia a rosa, bien
+// distinto del resto de la paleta (ámbar de "situación especial", morado de
+// "relacionado", verde/naranja de las categorías de presión).
+const WEEKEND_POINT_COLOR_ = "#D9739E";
 function isWeekendFriToSun_(dateStr) {
   const day = new Date(dateStr + "T00:00:00").getDay();
   return day === 5 || day === 6 || day === 0;
@@ -1131,6 +1135,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.20", changes: [
+    "El color que marca los fines de semana en las gráficas (Patrón de sueño y las 10 gráficas de Estadísticas) ahora es rosa en vez de ámbar, para no confundirse con el color de \"situación especial\".",
+  ] },
   { version: "35.19", changes: [
     "La gráfica de \"Patrón de sueño\" ahora muestra también la duración de cada noche (ej. \"21/08 · 7 h 30 min\").",
     "Nuevo checkbox \"Marcar fin de semana\" en la gráfica de Patrón de sueño y en las 10 gráficas de la pestaña Estadísticas: prende o apaga a tu gusto el color especial de los puntos/barras de viernes, sábado y domingo.",

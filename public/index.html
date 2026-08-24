@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.19"></script>
+<script src="/shared/common.js?v=35.20"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1403,7 +1403,7 @@
     <div class="chart-wrap" id="sleepCircadianChartWrap" style="height:280px;"><canvas id="sleepCircadianChart"></canvas></div>
     <div id="sleepCircadianLegend" style="display:none; gap:16px; margin-top:8px; font-size:11.5px; color:var(--text-muted);">
       <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#6E8FB0; margin-right:5px;"></span>Entre semana</span>
-      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#D8AE5C; margin-right:5px;"></span>Fin de semana (vie–dom)</span>
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#D9739E; margin-right:5px;"></span>Fin de semana (vie–dom)</span>
     </div>
     <div id="sleepCircadianEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Registra la hora de inicio y fin de al menos 2 noches en este periodo para ver tu patrón.</div>
     <div id="sleepCircadianStats" class="grid" style="margin-top:12px;"></div>
@@ -1477,7 +1477,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.19</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.20</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2019,7 +2019,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.19");
+  showAboutOverlay_("35.20");
 });
 
 function openModal(id) {
@@ -3358,7 +3358,7 @@ function injectChartCompareControls_() {
 function chartWeekendShadeHTML_(chartKey) {
   const checked = chartWeekendShade_[chartKey] ? " checked" : "";
   return `<label class="chart-weekend-wrap" data-chart-key="${chartKey}" style="display:flex; align-items:center; gap:4px; margin-top:4px; font-size:11px; color:var(--text-muted); cursor:pointer;">
-    <input type="checkbox" class="chart-weekend-toggle" data-chart-key="${chartKey}"${checked}> 🟠 Marcar fin de semana
+    <input type="checkbox" class="chart-weekend-toggle" data-chart-key="${chartKey}"${checked}> 🩷 Marcar fin de semana
   </label>`;
 }
 function injectChartWeekendShadeControls_() {
