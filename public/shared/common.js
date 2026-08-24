@@ -107,11 +107,23 @@ function nowTimeStr() {
 // botón, sin tocar el resto del layout (label arriba, fila input+botón
 // abajo). Usa un data-attribute para no duplicar el botón si se llegara a
 // invocar más de una vez.
+// v35.16: el botón también llena la fecha, no solo la hora — el paciente
+// pedía registrar "ahora mismo" y tenía que tocar el selector de fecha por
+// separado aunque fuera obviamente hoy. El campo de fecha que le toca a cada
+// input de hora se declara en el HTML vía data-date-pair="idDelInputFecha"
+// (ej. data-date-pair="f_date" en #f_time) — se deja explícito en vez de
+// inferirlo por cercanía en el DOM porque algunos formularios tienen más de
+// un campo de fecha con significados distintos (ej. el de Medicamentos tiene
+// "fecha de inicio del tratamiento", que NO debe tocarse al registrar la
+// hora de la primera toma). Si un input de hora no trae data-date-pair,
+// simplemente no se toca ningún campo de fecha (comportamiento igual que
+// antes de v35.16).
 function autoWireNowTimeButtons_() {
   if (typeof document === "undefined") return;
   document.querySelectorAll('input[type="time"]').forEach(input => {
     if (input.dataset.nowWired) return;
     input.dataset.nowWired = "1";
+    const datePairId = input.dataset.datePair || "";
     const wrap = document.createElement("span");
     wrap.className = "time-with-now";
     input.parentNode.insertBefore(wrap, input);
@@ -120,10 +132,17 @@ function autoWireNowTimeButtons_() {
     btn.type = "button";
     btn.className = "btn-mini time-now-btn";
     btn.textContent = "Ahora";
-    btn.title = "Poner la hora actual";
+    btn.title = datePairId ? "Poner la fecha y hora actuales" : "Poner la hora actual";
     btn.addEventListener("click", () => {
       input.value = nowTimeStr();
       input.dispatchEvent(new Event("change", { bubbles: true }));
+      if (datePairId) {
+        const dateInput = document.getElementById(datePairId);
+        if (dateInput) {
+          dateInput.value = todayStr();
+          dateInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
     });
     wrap.appendChild(btn);
   });
@@ -1087,6 +1106,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.16", changes: [
+    "El botón \"Ahora\" de los campos de hora ahora también llena la fecha con la de hoy (antes solo llenaba la hora).",
+    "Nueva sección \"Patrón de sueño\" en la pestaña Sueño: una gráfica muestra la hora de dormir y despertar de cada noche para ver tu ritmo circadiano, más tarjetas con tu horario promedio, variación, punto medio de sueño y qué tan consistentes son tus horarios.",
+  ] },
   { version: "35.15", changes: [
     "La nota diaria ahora menciona siempre el IMC cuando hay datos suficientes para calcularlo (antes se omitía si estaba en rango saludable); si falta la estatura en el perfil, la nota lo indica y sugiere capturarla en Parámetros.",
     "Se reforzó el sistema que evita repetir la frase célebre de cierre en la nota diaria: se corrigió un caso donde nombres de autor con abreviaturas no se detectaban, y se subieron los reintentos ante una frase repetida.",

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.15"></script>
+<script src="/shared/common.js?v=35.16"></script>
 <style>
   :root {
     color-scheme: light;
@@ -466,7 +466,7 @@
   <form class="add-form" id="addForm">
     <div class="editing-banner" id="editingBanner" style="display:none;">Editando lectura existente</div>
     <div><label>Fecha</label><input type="date" id="f_date" required></div>
-    <div><label>Hora</label><input type="time" id="f_time" required></div>
+    <div><label>Hora</label><input type="time" id="f_time" required data-date-pair="f_date"></div>
     <div><label>Sistólica</label><input type="number" id="f_sys" required min="50" max="260"></div>
     <div><label>Diastólica</label><input type="number" id="f_dia" required min="30" max="180"></div>
     <div><label title="Frecuencia cardíaca (pulsaciones por minuto)">FC</label><input type="number" id="f_hr" min="30" max="220"></div>
@@ -1075,7 +1075,7 @@
         <input type="text" id="sy_otro" placeholder="Ej. Entumecimiento en el brazo">
       </div>
       <div><label>Fecha</label><input type="date" id="sy_fecha" required></div>
-      <div><label>Hora</label><input type="time" id="sy_hora"></div>
+      <div><label>Hora</label><input type="time" id="sy_hora" data-date-pair="sy_fecha"></div>
       <div class="full" id="sy_intensity_wrap">
         <label>Intensidad</label>
         <div class="symptom-intensity-wrap">
@@ -1131,7 +1131,7 @@
       <div style="grid-column: span 2;"><label>Medicamento</label><input type="text" id="ev_nombre" required placeholder="Ej. Paracetamol"></div>
       <div><label>Dosis</label><input type="text" id="ev_dosis" placeholder="Ej. 500 mg"></div>
       <div><label>Fecha</label><input type="date" id="ev_fecha" required></div>
-      <div><label>Hora</label><input type="time" id="ev_hora"></div>
+      <div><label>Hora</label><input type="time" id="ev_hora" data-date-pair="ev_fecha"></div>
       <div class="full">
         <label>Notas</label>
         <textarea id="ev_notas" rows="2" placeholder="Motivo, quién lo indicó, etc. (opcional)"></textarea>
@@ -1259,8 +1259,8 @@
       <!-- v31: hora de inicio/fin calculan la duración solas; el campo de
            duración se puede seguir editando a mano (ej. si el paciente
            olvidó marcar la hora de fin y prefiere teclear el total). -->
-      <div><label>Hora de inicio</label><input type="time" id="ex_hora"></div>
-      <div><label>Hora de fin</label><input type="time" id="ex_hora_fin"></div>
+      <div><label>Hora de inicio</label><input type="time" id="ex_hora" data-date-pair="ex_fecha"></div>
+      <div><label>Hora de fin</label><input type="time" id="ex_hora_fin" data-date-pair="ex_fecha"></div>
       <div><label>Duración (minutos)</label><input type="number" id="ex_duracion_min" min="1" max="600" step="1" required></div>
       <div><label>Fecha</label><input type="date" id="ex_fecha" required></div>
       <!-- v31: métricas especializadas — solo se muestran las que aplican al
@@ -1289,7 +1289,7 @@
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Para lecturas tomadas mientras haces ejercicio (no en reposo). Se guardan y grafican por separado de tu Presión Arterial habitual.</p>
     <form class="add-form" id="exerciseReadingForm">
       <div><label>Fecha</label><input type="date" id="exr_date" required></div>
-      <div><label>Hora</label><input type="time" id="exr_time" required></div>
+      <div><label>Hora</label><input type="time" id="exr_time" required data-date-pair="exr_date"></div>
       <div><label>Sistólica</label><input type="number" id="exr_sys" required min="50" max="260"></div>
       <div><label>Diastólica</label><input type="number" id="exr_dia" required min="30" max="180"></div>
       <div><label title="Frecuencia cardíaca (pulsaciones por minuto)">FC</label><input type="number" id="exr_hr" min="30" max="220"></div>
@@ -1327,7 +1327,7 @@
       </div>
       <div><label>Duración (minutos, opcional)</label><input type="number" id="well_duracion_min" min="1" max="600" step="1"></div>
       <div><label>Fecha</label><input type="date" id="well_fecha" required></div>
-      <div><label>Hora (opcional)</label><input type="time" id="well_hora"></div>
+      <div><label>Hora (opcional)</label><input type="time" id="well_hora" data-date-pair="well_fecha"></div>
       <div class="full"><label>Notas (opcional)</label><input type="text" id="well_notas" placeholder="Ej. sesión guiada, 10 minutos de respiración"></div>
       <div class="row-actions">
         <button type="submit" class="btn-primary" id="wellFormSubmitBtn">Registrar</button>
@@ -1351,8 +1351,8 @@
     <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">La duración se calcula sola a partir de la hora de inicio y fin; puedes editarla a mano si lo prefieres.</p>
     <form class="add-form" id="sleepForm">
       <div><label>Fecha</label><input type="date" id="sl_fecha" required></div>
-      <div><label>Hora de inicio</label><input type="time" id="sl_hora_inicio"></div>
-      <div><label>Hora de fin</label><input type="time" id="sl_hora_fin"></div>
+      <div><label>Hora de inicio</label><input type="time" id="sl_hora_inicio" data-date-pair="sl_fecha"></div>
+      <div><label>Hora de fin</label><input type="time" id="sl_hora_fin" data-date-pair="sl_fecha"></div>
       <div><label>Duración (horas)</label><input type="number" id="sl_duracion_horas" min="0.1" max="24" step="0.1" required></div>
       <div class="full checkbox-field">
         <label class="checkbox-label"><input type="checkbox" id="sl_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
@@ -1379,6 +1379,27 @@
         <button type="button" class="btn-secondary" id="slFormCancelBtn" style="display:none;">Cancelar edición</button>
       </div>
     </form>
+  </div>
+  <!-- v35.16: dashboard de ritmo circadiano — muestra cada noche como una
+       barra de "hora de dormir" a "hora de despertar" (en vez de solo la
+       duración en horas, que ya se ve en Estadísticas) para poder ver de un
+       vistazo qué tan consistentes son los horarios, más el punto medio de
+       sueño (el marcador de cronotipo que usa la cronobiología: el punto
+       medio entre dormir y despertar). -->
+  <div class="section" id="sleepCircadianSection">
+    <div class="toolbar">
+      <h2 style="flex:1">🌙⏰ Patrón de sueño</h2>
+      <div class="chart-filter-mini" id="sleepCircadianFilter" role="group" aria-label="Periodo del patrón de sueño">
+        <button type="button" class="chart-filter-btn" data-circadian-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn active" data-circadian-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-circadian-period="quarter">3 meses</button>
+        <button type="button" class="chart-filter-btn" data-circadian-period="all">Todo</button>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Cada barra va de la hora en que te dormiste a la hora en que despertaste esa noche — te ayuda a ver patrones y qué tan consistente es tu ritmo circadiano.</p>
+    <div class="chart-wrap" id="sleepCircadianChartWrap" style="height:280px;"><canvas id="sleepCircadianChart"></canvas></div>
+    <div id="sleepCircadianEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Registra la hora de inicio y fin de al menos 2 noches en este periodo para ver tu patrón.</div>
+    <div id="sleepCircadianStats" class="grid" style="margin-top:12px;"></div>
   </div>
   <div class="section">
     <h2>Tu sueño</h2>
@@ -1449,7 +1470,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.15</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.16</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1991,7 +2012,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.15");
+  showAboutOverlay_("35.16");
 });
 
 function openModal(id) {
@@ -5040,7 +5061,139 @@ async function loadSleep() {
   try { currentSleep = await apiGet("/api/sleep"); } catch (err) { currentSleep = []; }
   document.getElementById("sleepTotalsWrap").innerHTML = sleepTotalsHTML_(currentSleep);
   document.getElementById("sleepListWrap").innerHTML = renderSleepListHTML(currentSleep);
+  renderSleepCircadianDashboard_();
 }
+
+// ---- v35.16: dashboard de ritmo circadiano ----
+// Convención de "día de sueño" mediodía-a-mediodía (la que usa la
+// cronobiología para no partir una noche en dos): cualquier hora antes de
+// las 12:00 se trata como si fuera "del día siguiente" sumándole 24, así
+// dormir a las 23:00 y despertar a las 07:00 se representa como 23 -> 31 en
+// vez de 23 -> 7 (que rompería la barra). Con eso el eje X queda continuo,
+// sin que la medianoche parta la barra en dos.
+function circadianNormalizedHour_(timeStr) {
+  const [h, m] = timeStr.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  let hours = h + m / 60;
+  if (hours < 12) hours += 24;
+  return hours;
+}
+// Convierte de vuelta un valor normalizado (puede pasar de 24) a "HH:MM" de
+// reloj (0-23h), para las etiquetas del eje y los tooltips.
+function circadianFmtHour_(hoursNormalized) {
+  let h = hoursNormalized % 24;
+  if (h < 0) h += 24;
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  const carry = mm === 60 ? 1 : 0;
+  return `${String((hh + carry) % 24).padStart(2, "0")}:${String(carry ? 0 : mm).padStart(2, "0")}`;
+}
+function circadianStdDevMin_(hoursArr) {
+  if (hoursArr.length < 2) return 0;
+  const avg = hoursArr.reduce((a, b) => a + b, 0) / hoursArr.length;
+  const variance = hoursArr.reduce((a, b) => a + (b - avg) * (b - avg), 0) / hoursArr.length;
+  return Math.round(Math.sqrt(variance) * 60);
+}
+function circadianFilteredSleep_(period) {
+  if (period === "all") return currentSleep.slice();
+  const days = { week: 6, month: 29, quarter: 89 }[period];
+  const cutoff = reportAddDays_ ? reportAddDays_(todayStr(), -days) : (() => {
+    const d = new Date(todayStr() + "T00:00:00"); d.setDate(d.getDate() - days); return localDateStr_(d);
+  })();
+  return currentSleep.filter(s => s.fecha >= cutoff);
+}
+let sleepCircadianChartInstance_ = null;
+let sleepCircadianPeriod_ = "month";
+function renderSleepCircadianDashboard_() {
+  const canvas = document.getElementById("sleepCircadianChart");
+  if (!canvas) return; // v32/v35.16: solo existe una vez que se montó la sección Sueño
+  const entries = circadianFilteredSleep_(sleepCircadianPeriod_)
+    .filter(s => s.hora_inicio && s.hora_fin)
+    .slice()
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const pairs = entries.map(s => {
+    const bed = circadianNormalizedHour_(s.hora_inicio);
+    let wake = circadianNormalizedHour_(s.hora_fin);
+    if (wake <= bed) wake += 24; // cruzó otra medianoche más (raro, pero no debe romper la barra)
+    return { fecha: s.fecha, bed, wake, mid: (bed + wake) / 2 };
+  }).filter(p => p.bed != null && p.wake != null);
+
+  const emptyEl = document.getElementById("sleepCircadianEmpty");
+  const statsEl = document.getElementById("sleepCircadianStats");
+  if (pairs.length < 2) {
+    document.getElementById("sleepCircadianChartWrap").style.display = "none";
+    emptyEl.style.display = "";
+    statsEl.innerHTML = "";
+    if (sleepCircadianChartInstance_) { sleepCircadianChartInstance_.destroy(); sleepCircadianChartInstance_ = null; }
+    return;
+  }
+  document.getElementById("sleepCircadianChartWrap").style.display = "";
+  emptyEl.style.display = "none";
+
+  const bedVals = pairs.map(p => p.bed), wakeVals = pairs.map(p => p.wake), midVals = pairs.map(p => p.mid);
+  const axisMin = Math.floor(Math.min(...bedVals)) - 1;
+  const axisMax = Math.ceil(Math.max(...wakeVals)) + 1;
+
+  if (sleepCircadianChartInstance_) sleepCircadianChartInstance_.destroy();
+  sleepCircadianChartInstance_ = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: pairs.map(p => fmtDate(p.fecha)),
+      datasets: [{
+        label: "Sueño",
+        data: pairs.map(p => [p.bed, p.wake]),
+        backgroundColor: "#6E8FB0",
+        borderRadius: 4,
+        barThickness: pairs.length > 25 ? 6 : 14,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { min: axisMin, max: axisMax, ticks: { callback: v => circadianFmtHour_(v) }, title: { display: true, text: "Hora del día" } },
+        y: { ticks: { autoSkip: true, maxTicksLimit: 16 } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => `${circadianFmtHour_(ctx.raw[0])} → ${circadianFmtHour_(ctx.raw[1])}` } },
+      },
+    },
+  });
+
+  const avgBed = bedVals.reduce((a, b) => a + b, 0) / bedVals.length;
+  const avgWake = wakeVals.reduce((a, b) => a + b, 0) / wakeVals.length;
+  const avgMid = midVals.reduce((a, b) => a + b, 0) / midVals.length;
+  const bedStdMin = circadianStdDevMin_(bedVals);
+  const wakeStdMin = circadianStdDevMin_(wakeVals);
+  const worstStdMin = Math.max(bedStdMin, wakeStdMin);
+  const consistency = worstStdMin <= 30
+    ? { label: "Alta", detail: "tus horarios varían poco de un día a otro" }
+    : worstStdMin <= 60
+      ? { label: "Moderada", detail: "hay variación, pero dentro de un rango razonable" }
+      : { label: "Baja", detail: "tus horarios cambian bastante de un día a otro" };
+  // Punto medio de sueño (mid-sleep time): el marcador de cronotipo que usa
+  // la cronobiología (ej. Cuestionario de Cronotipo de Múnich) — entre más
+  // temprano, más "madrugador" tiende a ser el ritmo; entre más tarde, más
+  // "nocturno". Son rangos orientativos, no un diagnóstico.
+  const midClock = avgMid % 24;
+  const chronotype = midClock < 3.5 ? "tipo madrugador" : midClock < 5 ? "tipo intermedio" : "tipo nocturno";
+
+  statsEl.innerHTML = `
+    <div class="card"><div class="label">Hora de dormir promedio</div><div class="value">${circadianFmtHour_(avgBed)}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">variación ±${bedStdMin} min</div></div>
+    <div class="card"><div class="label">Hora de despertar promedio</div><div class="value">${circadianFmtHour_(avgWake)}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">variación ±${wakeStdMin} min</div></div>
+    <div class="card"><div class="label">Punto medio de sueño</div><div class="value">${circadianFmtHour_(avgMid)}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${chronotype}</div></div>
+    <div class="card"><div class="label">Consistencia</div><div class="value">${consistency.label}</div><div class="value small" style="color:var(--text-muted); font-size:12px;">${consistency.detail}</div></div>
+  `;
+}
+document.getElementById("sleepCircadianFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  document.querySelectorAll("#sleepCircadianFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  sleepCircadianPeriod_ = btn.dataset.circadianPeriod;
+  renderSleepCircadianDashboard_();
+});
 function resetSleepForm_() {
   editingSleepId = null;
   slDurationManuallyEdited_ = false;
