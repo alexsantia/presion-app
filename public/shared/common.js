@@ -1106,6 +1106,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.18", changes: [
+    "En la gráfica de \"Patrón de sueño\" (pestaña Sueño), las barras de viernes, sábado y domingo ahora se pintan en otro color para distinguir tus horarios de fin de semana.",
+  ] },
   { version: "35.17", changes: [
     "El popup que compara tu lectura nueva con la anterior ahora también dice hace cuánto fue esa lectura anterior (ej. \"Hace 1 hora y 23 minutos\").",
     "Las tarjetas de \"Tu sueño\" ahora se ven como dashboard (igual que las de Presión arterial), con mini-gráficas y evaluando los últimos 8 días: última noche, duración promedio, calidad promedio y noches registradas.",

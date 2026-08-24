@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.17"></script>
+<script src="/shared/common.js?v=35.18"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1396,8 +1396,12 @@
         <button type="button" class="chart-filter-btn" data-circadian-period="all">Todo</button>
       </div>
     </div>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Cada barra va de la hora en que te dormiste a la hora en que despertaste esa noche — te ayuda a ver patrones y qué tan consistente es tu ritmo circadiano.</p>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Cada barra va de la hora en que te dormiste a la hora en que despertaste esa noche — te ayuda a ver patrones y qué tan consistente es tu ritmo circadiano. Los fines de semana (viernes a domingo) se marcan en otro color, para ver si tu horario cambia esos días.</p>
     <div class="chart-wrap" id="sleepCircadianChartWrap" style="height:280px;"><canvas id="sleepCircadianChart"></canvas></div>
+    <div id="sleepCircadianLegend" style="display:none; gap:16px; margin-top:8px; font-size:11.5px; color:var(--text-muted);">
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#6E8FB0; margin-right:5px;"></span>Entre semana</span>
+      <span><span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:#D8AE5C; margin-right:5px;"></span>Fin de semana (vie–dom)</span>
+    </div>
     <div id="sleepCircadianEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Registra la hora de inicio y fin de al menos 2 noches en este periodo para ver tu patrón.</div>
     <div id="sleepCircadianStats" class="grid" style="margin-top:12px;"></div>
   </div>
@@ -1470,7 +1474,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.17</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.18</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2012,7 +2016,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.17");
+  showAboutOverlay_("35.18");
 });
 
 function openModal(id) {
@@ -5202,6 +5206,14 @@ function circadianStdDevMin_(hoursArr) {
   const variance = hoursArr.reduce((a, b) => a + (b - avg) * (b - avg), 0) / hoursArr.length;
   return Math.round(Math.sqrt(variance) * 60);
 }
+// v35.18: "fin de semana" para el patrón de sueño = viernes, sábado y
+// domingo (no solo sáb/dom) — es la noche de viernes (y no solo la de
+// sábado) la que suele mostrar el desvelo/desfase típico de fin de semana.
+// getDay(): 0=domingo, 5=viernes, 6=sábado.
+function isWeekendFriToSun_(dateStr) {
+  const day = new Date(dateStr + "T00:00:00").getDay();
+  return day === 5 || day === 6 || day === 0;
+}
 function circadianFilteredSleep_(period) {
   if (period === "all") return currentSleep.slice();
   const days = { week: 6, month: 29, quarter: 89 }[period];
@@ -5228,14 +5240,17 @@ function renderSleepCircadianDashboard_() {
 
   const emptyEl = document.getElementById("sleepCircadianEmpty");
   const statsEl = document.getElementById("sleepCircadianStats");
+  const legendEl = document.getElementById("sleepCircadianLegend");
   if (pairs.length < 2) {
     document.getElementById("sleepCircadianChartWrap").style.display = "none";
+    if (legendEl) legendEl.style.display = "none";
     emptyEl.style.display = "";
     statsEl.innerHTML = "";
     if (sleepCircadianChartInstance_) { sleepCircadianChartInstance_.destroy(); sleepCircadianChartInstance_ = null; }
     return;
   }
   document.getElementById("sleepCircadianChartWrap").style.display = "";
+  if (legendEl) legendEl.style.display = "flex";
   emptyEl.style.display = "none";
 
   const bedVals = pairs.map(p => p.bed), wakeVals = pairs.map(p => p.wake), midVals = pairs.map(p => p.mid);
@@ -5250,7 +5265,7 @@ function renderSleepCircadianDashboard_() {
       datasets: [{
         label: "Sueño",
         data: pairs.map(p => [p.bed, p.wake]),
-        backgroundColor: "#6E8FB0",
+        backgroundColor: pairs.map(p => isWeekendFriToSun_(p.fecha) ? "#D8AE5C" : "#6E8FB0"),
         borderRadius: 4,
         barThickness: pairs.length > 25 ? 6 : 14,
       }],
