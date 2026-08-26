@@ -702,6 +702,27 @@ app.delete("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res)
   res.json(await callSheetsApi(null, { action: "delete_sleep", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
+// ---- v35.23: Ayuno intermitente (última comida / hora en que se rompió el
+// ayuno / con qué / meta de horas). ----
+app.get("/api/ayuno", requireAnyRole, asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi({ action: "list_ayunos", patient_id: req.session.patientId }));
+}));
+app.post("/api/ayuno", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "start_ayuno", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/ayuno/:id/romper", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "break_ayuno", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.put("/api/ayuno/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_ayuno", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
+}));
+app.delete("/api/ayuno/:id", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "delete_ayuno", patient_id: req.session.patientId, id: req.params.id }));
+}));
+app.put("/api/ayuno-meta", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_ayuno_meta", id: req.session.patientId, ...req.body }));
+}));
+
 // ---- v33: Metas — objetivos con fecha límite, opcionalmente ligados a un
 // evento, que dan seguimiento a uno o varios indicadores (peso, cintura,
 // presión, FC, colesterol, triglicéridos, sueño, apego a medicamentos).

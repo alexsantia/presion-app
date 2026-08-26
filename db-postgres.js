@@ -612,6 +612,20 @@ function computeExerciseDurationMinutes_(horaInicio, horaFin) {
 function computeSleepDurationMinutes_(horaInicio, horaFin) {
   return computeExerciseDurationMinutes_(horaInicio, horaFin);
 }
+// v35.23: duración de un ayuno, en horas. A diferencia de sleep/ejercicio
+// (computeExerciseDurationMinutes_), aquí NO se puede asumir que fin es
+// "el mismo día o el siguiente" — un ayuno prolongado puede cruzar varios
+// días — así que se arma la fecha+hora completa de cada lado y se resta,
+// en vez de solo comparar minutos dentro de un ciclo de 24h.
+function computeAyunoDurationHoras_(fechaInicio, horaInicio, fechaFin, horaFin) {
+  if (!fechaInicio || !horaInicio || !fechaFin || !horaFin) return null;
+  const start = new Date(`${fechaInicio}T${horaInicio}:00Z`);
+  const end = new Date(`${fechaFin}T${horaFin}:00Z`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs <= 0) return null; // fin antes o igual que inicio: dato inválido, se rechaza en el caller
+  return Math.round((diffMs / 3600000) * 100) / 100;
+}
 function ageFromBirthdate_(birthdate) {
   if (!birthdate) return null;
   const b = new Date(birthdate);
@@ -745,6 +759,41 @@ async function listSleep(patientId) {
     [patientId]
   );
   return rows.map(sleepRowToObject_);
+}
+
+// ---- Ayuno intermitente (v35.23) ----
+function ayunoRowToObject_(row) {
+  return {
+    id: row.id,
+    patient_id: row.patient_id,
+    fecha_inicio: row.fecha_inicio || "",
+    hora_inicio: row.hora_inicio || "",
+    fecha_fin: row.fecha_fin || "",
+    hora_fin: row.hora_fin || "",
+    duracion_horas: row.duracion_horas != null ? Number(row.duracion_horas) : null,
+    rompio_con: row.rompio_con || "",
+    notas: row.notas || "",
+    abierto: !row.fecha_fin,
+    created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
+  };
+}
+async function listAyunos(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, to_char(fecha_inicio, 'YYYY-MM-DD') AS fecha_inicio,
+            to_char(hora_inicio, 'HH24:MI') AS hora_inicio,
+            to_char(fecha_fin, 'YYYY-MM-DD') AS fecha_fin, to_char(hora_fin, 'HH24:MI') AS hora_fin,
+            duracion_horas, rompio_con, notas, created_at
+     FROM ayunos WHERE patient_id = $1 ORDER BY fecha_inicio DESC, hora_inicio DESC, created_at DESC`,
+    [patientId]
+  );
+  return rows.map(ayunoRowToObject_);
+}
+async function findOpenAyuno_(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id FROM ayunos WHERE patient_id = $1 AND fecha_fin IS NULL LIMIT 1`,
+    [patientId]
+  );
+  return rows[0] || null;
 }
 
 // ---- Consultas médicas (v30.12) ----
@@ -1707,6 +1756,9 @@ function patientRaw(row) {
     // v34.4: modelo SaaSificado — ver nota en schema.sql y
     // PLAN_FEATURES_/planHasFeature_ más abajo.
     plan: row.plan || "pro",
+    // v35.23: meta de horas de ayuno intermitente (ej. 16 para un esquema
+    // 16:8) — ver sección Ayuno en schema.sql.
+    ayuno_meta_horas: num(row.ayuno_meta_horas),
   };
 }
 function patientPublic(row) {
@@ -1719,7 +1771,8 @@ function patientPublic(row) {
 // ninguna acción lo necesita. Se sirve aparte por /api/avatar/:type/:id.
 const PATIENT_SELECT = `SELECT id, name, email, password_hash, to_char(birthdate, 'YYYY-MM-DD') AS birthdate,
   share_token, created_at, updated_at, to_char(last_lab_date, 'YYYY-MM-DD') AS last_lab_date,
-  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height, avatar_mime, suspended, plan FROM pacientes`;
+  cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height, avatar_mime, suspended, plan,
+  ayuno_meta_horas FROM pacientes`;
 
 async function findPatientByEmail(email) {
   const { rows } = await pool.query(`${PATIENT_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
@@ -2398,6 +2451,9 @@ async function handleGet(params) {
   if (action === "list_sleep") {
     return { ok: true, data: await listSleep(params.patient_id) };
   }
+  if (action === "list_ayunos") {
+    return { ok: true, data: await listAyunos(params.patient_id) };
+  }
   if (action === "list_goals") {
     return { ok: true, data: await listGoals(params.patient_id) };
   }
@@ -2831,6 +2887,112 @@ async function handlePost(body) {
     if (!rowCount) return { ok: false, error: "no encontrado" };
     emitChange(body.patient_id, "sleep");
     return { ok: true };
+  }
+
+  // ---- v35.23: Ayuno intermitente ----
+  // start_ayuno: registra la hora de la última comida (abre un ayuno). Solo
+  // puede haber UNO abierto por paciente a la vez — si ya hay uno, se
+  // rechaza en vez de dejar dos corriendo a la vez (que no tendría sentido:
+  // ¿cuál de los dos se está "rompiendo" después?).
+  if (body.action === "start_ayuno") {
+    if (!body.fecha_inicio || !body.hora_inicio) {
+      return { ok: false, error: "faltan datos (fecha y hora de la última comida son obligatorias)" };
+    }
+    const open = await findOpenAyuno_(body.patient_id);
+    if (open) return { ok: false, error: "ya tienes un ayuno en curso — rómpelo antes de registrar uno nuevo" };
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO ayunos (id, patient_id, fecha_inicio, hora_inicio, notas, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+      [id, body.patient_id, body.fecha_inicio, body.hora_inicio, body.notas || "", now]
+    );
+    emitChange(body.patient_id, "ayuno");
+    return { ok: true, id };
+  }
+  // break_ayuno: cierra un ayuno abierto (fecha_fin/hora_fin + con qué se
+  // rompió) y calcula la duración total. Se valida que fin sea después de
+  // inicio (computeAyunoDurationHoras_ regresa null si no) para no guardar
+  // una duración negativa o cero por un dato mal capturado.
+  if (body.action === "break_ayuno") {
+    if (!body.fecha_fin || !body.hora_fin) {
+      return { ok: false, error: "faltan datos (fecha y hora en que rompiste el ayuno son obligatorias)" };
+    }
+    const existing = (await pool.query(
+      `SELECT to_char(fecha_inicio,'YYYY-MM-DD') AS fecha_inicio, to_char(hora_inicio,'HH24:MI') AS hora_inicio
+       FROM ayunos WHERE id = $1 AND patient_id = $2`,
+      [body.id, body.patient_id]
+    )).rows[0];
+    if (!existing) return { ok: false, error: "no encontrado" };
+    const duracionHoras = computeAyunoDurationHoras_(existing.fecha_inicio, existing.hora_inicio, body.fecha_fin, body.hora_fin);
+    if (duracionHoras == null) {
+      return { ok: false, error: "la hora en que rompiste el ayuno debe ser después de tu última comida" };
+    }
+    await pool.query(
+      `UPDATE ayunos SET fecha_fin = $1, hora_fin = $2, duracion_horas = $3, rompio_con = $4, notas = $5, updated_at = $6
+       WHERE id = $7 AND patient_id = $8`,
+      [body.fecha_fin, body.hora_fin, duracionHoras, body.rompio_con || "", hasValue(body.notas) ? body.notas : "", now, body.id, body.patient_id]
+    );
+    emitChange(body.patient_id, "ayuno");
+    return { ok: true, duracion_horas: duracionHoras };
+  }
+  // update_ayuno: corregir a mano cualquier campo de un ayuno ya existente
+  // (abierto o cerrado) — por ejemplo si el paciente registró la hora mal.
+  // Si el registro queda con fecha_fin/hora_fin, se recalcula la duración;
+  // si se le quita fecha_fin (lo "reabre"), duracion_horas vuelve a null.
+  if (body.action === "update_ayuno") {
+    const current = (await pool.query(
+      `SELECT to_char(fecha_inicio,'YYYY-MM-DD') AS fecha_inicio, to_char(hora_inicio,'HH24:MI') AS hora_inicio,
+              to_char(fecha_fin,'YYYY-MM-DD') AS fecha_fin, to_char(hora_fin,'HH24:MI') AS hora_fin,
+              rompio_con, notas
+       FROM ayunos WHERE id = $1 AND patient_id = $2`,
+      [body.id, body.patient_id]
+    )).rows[0];
+    if (!current) return { ok: false, error: "no encontrado" };
+    const fechaInicio = hasValue(body.fecha_inicio) ? body.fecha_inicio : current.fecha_inicio;
+    const horaInicio = hasValue(body.hora_inicio) ? body.hora_inicio : current.hora_inicio;
+    // fecha_fin/hora_fin: distinguir "no lo mandó" (se conserva) de "lo
+    // mandó vacío a propósito" (se limpia, reabre el ayuno) — igual que el
+    // criterio ya usado en update_patient_params.
+    const fechaFin = body.fecha_fin !== undefined ? (body.fecha_fin || null) : current.fecha_fin;
+    const horaFin = body.hora_fin !== undefined ? (body.hora_fin || null) : current.hora_fin;
+    if (!fechaInicio || !horaInicio) {
+      return { ok: false, error: "faltan datos (fecha y hora de la última comida son obligatorias)" };
+    }
+    let duracionHoras = null;
+    if (fechaFin && horaFin) {
+      duracionHoras = computeAyunoDurationHoras_(fechaInicio, horaInicio, fechaFin, horaFin);
+      if (duracionHoras == null) {
+        return { ok: false, error: "la hora en que rompiste el ayuno debe ser después de tu última comida" };
+      }
+    }
+    const rompioCon = hasValue(body.rompio_con) ? body.rompio_con : (fechaFin ? current.rompio_con : "");
+    const notas = body.notas !== undefined ? (body.notas || "") : current.notas;
+    const { rowCount } = await pool.query(
+      `UPDATE ayunos SET fecha_inicio = $1, hora_inicio = $2, fecha_fin = $3, hora_fin = $4,
+              duracion_horas = $5, rompio_con = $6, notas = $7, updated_at = $8
+       WHERE id = $9 AND patient_id = $10`,
+      [fechaInicio, horaInicio, fechaFin, horaFin, duracionHoras, rompioCon, notas, now, body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "ayuno");
+    return { ok: true };
+  }
+  if (body.action === "delete_ayuno") {
+    const { rowCount } = await pool.query(`DELETE FROM ayunos WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "ayuno");
+    return { ok: true };
+  }
+  // update_ayuno_meta: meta de horas de ayuno (ej. 16 para 16:8). Mandar
+  // null/"" la borra (vuelve a "sin meta"), a diferencia de
+  // update_patient_params donde un campo vacío significa "no tocar" — aquí
+  // sí tiene sentido poder borrar la meta explícitamente (el paciente puede
+  // querer dejar de perseguir una meta fija).
+  if (body.action === "update_ayuno_meta") {
+    const meta = hasValue(body.ayuno_meta_horas) ? num(body.ayuno_meta_horas) : null;
+    await pool.query(`UPDATE pacientes SET ayuno_meta_horas = $1, updated_at = $2 WHERE id = $3`, [meta, now, body.id]);
+    emitChange(body.id, "ayuno");
+    return { ok: true, ayuno_meta_horas: meta };
   }
 
   // ---- v33: Metas — evento/fecha_limite se pueden editar después, pero los

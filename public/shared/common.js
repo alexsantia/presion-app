@@ -1182,6 +1182,11 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.23", changes: [
+    "Nueva sección \"Ayuno Intermitente\": registra la hora de tu última comida y, cuando vuelvas a comer, con qué rompiste el ayuno — la app calcula las horas ayunadas y te da recomendaciones de qué comer según cuánto llevas.",
+    "Puedes poner una meta de horas de ayuno (esquemas comunes como 16:8, 18:6, 20:4, OMAD, o una meta personalizada) y ver tu racha de metas cumplidas.",
+    "Ahora puedes reordenar las pestañas principales (Presión Arterial, Estadísticas, Sueño, etc.) arrastrándolas a tu gusto.",
+  ] },
   { version: "35.22", changes: [
     "Se corrigió un error al guardar Parámetros cuando algún campo numérico (peso, estatura, perímetro abdominal, colesterol, triglicéridos o dosis del medicamento) se dejaba en blanco — antes podía mostrar \"invalid input syntax for type numeric\" en vez de guardar.",
   ] },
@@ -2142,6 +2147,76 @@ function sleepDurationLabel_(min) {
   const m = Math.round(min % 60);
   return m ? `${h} h ${m} min` : `${h} h`;
 }
+
+// ---- Ayuno intermitente (v35.23) ----
+// Formatea horas de ayuno (puede ser fraccionario, ej. 16.5) como "16 h 30
+// min" — mismo criterio de redondeo/formato que sleepDurationLabel_, pero
+// recibiendo horas (no minutos), porque duracion_horas ya viene así de
+// db-postgres.js (un ayuno puede durar varios días, minutos habría sido un
+// número enorme y menos legible).
+function ayunoDurationLabel_(horas) {
+  if (horas == null) return "";
+  const totalMin = Math.round(horas * 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+// Horas transcurridas desde que empezó un ayuno hasta "ahora" (o hasta
+// fecha_fin/hora_fin si ya se cerró) — usado tanto para el contador en vivo
+// del ayuno abierto como para poblar el formulario de "romper ayuno" con la
+// recomendación correcta desde que se abre.
+function ayunoElapsedHoras_(fechaInicio, horaInicio, refDate) {
+  if (!fechaInicio || !horaInicio) return null;
+  const start = new Date(`${fechaInicio}T${horaInicio}:00`);
+  if (isNaN(start.getTime())) return null;
+  const ref = refDate || new Date();
+  const diffMs = ref.getTime() - start.getTime();
+  if (diffMs < 0) return 0;
+  return diffMs / 3600000;
+}
+// Motor de recomendaciones: qué comer para romper el ayuno, según cuántas
+// horas lleva (o llevó) el paciente ayunando. Reglas generales de sentido
+// común (no es indicación médica individualizada) — mientras más largo el
+// ayuno, más ligero y gradual debe ser para no sentirse mal al romperlo.
+// Se usa tanto en el contador en vivo del ayuno abierto (con las horas
+// transcurridas hasta ahora) como al llenar el formulario de "Romper
+// ayuno" (con las horas que de verdad duró).
+function ayunoRecommendation_(horas) {
+  if (horas == null) return null;
+  if (horas < 12) {
+    return {
+      rango: "Menos de 12 h",
+      items: ["Cualquier comida balanceada normal: proteína, verduras y algo de carbohidrato complejo."],
+      nota: "",
+    };
+  }
+  if (horas < 16) {
+    return {
+      rango: "12–16 h",
+      items: ["Fruta fresca o yogurt natural", "Un huevo o un puñado de nueces", "Evita empezar con azúcares simples o algo muy pesado"],
+      nota: "",
+    };
+  }
+  if (horas < 20) {
+    return {
+      rango: "16–20 h (esquema 16:8 típico)",
+      items: ["Proteína magra: pollo, pescado, huevo, legumbres", "Grasas saludables: aguacate, aceite de oliva, nueces", "Verduras con fibra", "Hidrátate bien — considera electrolitos (sal, potasio, magnesio)"],
+      nota: "",
+    };
+  }
+  if (horas < 24) {
+    return {
+      rango: "20–24 h",
+      items: ["Empieza MUY ligero: caldo de huesos o de verduras, sopa tibia", "Proteína de fácil digestión: huevo, yogurt, pescado blanco", "Evita de entrada algo muy grasoso, muy condimentado o en porción grande"],
+      nota: "",
+    };
+  }
+  return {
+    rango: "24 h o más (ayuno prolongado)",
+    items: ["Rompe con porciones pequeñas y líquidas primero: caldo, jugo de vegetales", "Ve agregando más comida poco a poco durante la siguiente hora, no de golpe", "Prioriza electrolitos"],
+    nota: "Los ayunos de más de 24 h ameritan más cuidado al romperlos. Si vas a ayunar así seguido, coméntalo con tu médico — sobre todo si tomas medicamentos que deban acompañarse de alimento.",
+  };
+}
 function sleepEntryHTML_(s, opts) {
   opts = opts || {};
   const dateLabel = s.fecha ? s.fecha.split("-").reverse().join("/") : "";
@@ -2173,6 +2248,44 @@ function renderSleepListHTML(entries, opts) {
     return `<div style="color:var(--text-muted); font-size:13px;">Aún no se ha registrado ningún sueño.</div>`;
   }
   return entries.map(s => sleepEntryHTML_(s, opts)).join("");
+}
+// v35.23: tarjeta de un ayuno en el historial — mismo criterio visual que
+// sleepEntryHTML_ (.ex-entry), pero con dos estados: abierto (todavía sin
+// fecha_fin, muestra "en curso" en vez de horario/duración) y cerrado
+// (muestra inicio→fin, duración total y con qué se rompió).
+function ayunoEntryHTML_(a, opts) {
+  opts = opts || {};
+  const startLabel = a.fecha_inicio ? a.fecha_inicio.split("-").reverse().join("/") : "";
+  const actions = opts.readOnly ? "" : `
+    <div class="ex-entry-actions">
+      ${a.abierto ? `<button type="button" class="btn-mini ayuno-break-btn" data-ayuno-id="${a.id}">Romper ayuno</button>` : ""}
+      <button type="button" class="btn-mini ayuno-edit-btn" data-ayuno-id="${a.id}">Editar</button>
+      <button type="button" class="btn-mini danger ayuno-delete-btn" data-ayuno-id="${a.id}">Eliminar</button>
+    </div>`;
+  const detailParts = [`Inicio: ${startLabel} ${escapeHtml_(a.hora_inicio || "")}`];
+  if (a.abierto) {
+    detailParts.push("en curso");
+  } else {
+    const endLabel = a.fecha_fin ? a.fecha_fin.split("-").reverse().join("/") : "";
+    detailParts.push(`Fin: ${endLabel} ${escapeHtml_(a.hora_fin || "")}`);
+    if (a.duracion_horas != null) detailParts.push(ayunoDurationLabel_(a.duracion_horas));
+  }
+  return `
+    <div class="ex-entry" data-ayuno-id="${a.id}">
+      <div class="ex-entry-header">
+        <div class="ex-entry-title">${a.abierto ? "⏳" : "✅"} Ayuno${a.abierto ? " (en curso)" : ""}</div>
+        ${actions}
+      </div>
+      <div class="ex-entry-detail">${detailParts.join(" · ")}</div>
+      ${a.rompio_con ? `<div style="margin-top:3px; font-size:13px;">Rompió con: ${escapeHtml_(a.rompio_con)}</div>` : ""}
+      ${a.notas ? `<div class="ex-entry-notes">${escapeHtml_(a.notas)}</div>` : ""}
+    </div>`;
+}
+function renderAyunoListHTML(entries, opts) {
+  if (!entries || !entries.length) {
+    return `<div style="color:var(--text-muted); font-size:13px;">Aún no has registrado ningún ayuno.</div>`;
+  }
+  return entries.map(a => ayunoEntryHTML_(a, opts)).join("");
 }
 function sleepTotalsHTML_(entries) {
   if (!entries || !entries.length) return "";

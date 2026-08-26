@@ -665,3 +665,35 @@ CREATE TABLE IF NOT EXISTS custom_metric_entries (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_custom_metric_entries_metric ON custom_metric_entries(metric_id, date);
+
+-- v35.23: Ayuno intermitente — el paciente registra la hora de su última
+-- comida (inicia el ayuno) y, cuando vuelve a comer, la hora en que lo
+-- rompió y con qué (para poder ver qué tanto se sostiene el patrón y qué
+-- tan seguido rompe con algo pesado). fecha_fin/hora_fin quedan NULL
+-- mientras el ayuno sigue "abierto" (en curso) — solo puede haber UN ayuno
+-- abierto por paciente a la vez, eso se valida en la aplicación, no aquí.
+-- A diferencia de sueño/ejercicio (que solo usan "time" porque nunca duran
+-- más de ~24h), aquí se guardan fecha Y hora por separado tanto para inicio
+-- como para fin, porque un ayuno sí puede cruzar varios días (ayunos
+-- prolongados) y la duración se calcula con la fecha+hora completas, no
+-- solo con la diferencia de horas (ver computeAyunoDurationHoras_ en
+-- db-postgres.js).
+CREATE TABLE IF NOT EXISTS ayunos (
+  id uuid PRIMARY KEY,
+  patient_id uuid NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+  fecha_inicio date NOT NULL,
+  hora_inicio time NOT NULL,
+  fecha_fin date,
+  hora_fin time,
+  duracion_horas numeric,
+  rompio_con text DEFAULT '',
+  notas text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ayunos_patient ON ayunos(patient_id, fecha_inicio DESC);
+
+-- Meta de horas de ayuno (ej. 16 para un esquema 16:8) — un solo valor por
+-- paciente, igual de simple que weight/height/waist; se compara contra
+-- duracion_horas de cada ayuno cerrado para la racha de "metas cumplidas".
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS ayuno_meta_horas numeric;

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.22"></script>
+<script src="/shared/common.js?v=35.23"></script>
 <style>
   :root {
     color-scheme: light;
@@ -345,6 +345,16 @@
   .page-tab-btn + .page-tab-btn { margin-left: 14px; }
   .page-tab-btn:hover { color: var(--text); }
   .page-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  /* v35.23: reordenar pestañas arrastrando — mismo criterio visual que
+     drag-over-top/bottom en .section-chart, pero como el layout aquí es
+     horizontal (no vertical), el indicador de "se va a insertar aquí" es un
+     borde a la izquierda o derecha, no arriba/abajo. Los nombres de clase
+     (drag-over-top = "antes", drag-over-bottom = "después") se reutilizan
+     tal cual del patrón ya existente para no duplicar la lógica JS de
+     wireStatsChartReorder_. */
+  .page-tab-btn.is-dragging { opacity: 0.4; }
+  .page-tab-btn.drag-over-top { box-shadow: inset 3px 0 0 var(--accent); }
+  .page-tab-btn.drag-over-bottom { box-shadow: inset -3px 0 0 var(--accent); }
   /* v30.10: el Directorio Médico es un valor agregado, no parte de la
      captura regular de datos — se separa visualmente con más margen a la
      izquierda, fondo propio y esquinas redondeadas, para que no se confunda
@@ -428,18 +438,19 @@
 <!-- v29: primer intento de navegación por secciones — "Presión Arterial" es
      todo lo que ya existía; "Estadísticas" por ahora es solo un aviso, para
      ir probando la idea antes de construir gráficas nuevas ahí. -->
-<div class="page-tabs">
-  <button type="button" class="page-tab-btn active" data-page-tab="presion">🩸 Presión Arterial</button>
-  <button type="button" class="page-tab-btn" data-page-tab="estadisticas">📊 Estadísticas</button>
-  <button type="button" class="page-tab-btn" data-page-tab="habitos">🚫 Malos hábitos</button>
-  <button type="button" class="page-tab-btn" data-page-tab="sintomas">🌡️ Síntomas diarios</button>
-  <button type="button" class="page-tab-btn" data-page-tab="medicamentos">💊 Medicamentos</button>
-  <button type="button" class="page-tab-btn" data-page-tab="consultas">🩺 Consultas</button>
-  <button type="button" class="page-tab-btn" data-page-tab="ejercicio">🏃 Ejercicio</button>
-  <button type="button" class="page-tab-btn" data-page-tab="wellness">🧘 Wellness</button>
-  <button type="button" class="page-tab-btn" data-page-tab="sueno">🌙 Sueño</button>
-  <button type="button" class="page-tab-btn" data-page-tab="metas">🎯 Metas</button>
-  <button type="button" class="page-tab-btn" data-page-tab="metricas">📈 Métricas</button>
+<div class="page-tabs" id="pageTabsNav">
+  <button type="button" class="page-tab-btn active" data-page-tab="presion" data-order-key="presion" draggable="true">🩸 Presión Arterial</button>
+  <button type="button" class="page-tab-btn" data-page-tab="estadisticas" data-order-key="estadisticas" draggable="true">📊 Estadísticas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="habitos" data-order-key="habitos" draggable="true">🚫 Malos hábitos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="sintomas" data-order-key="sintomas" draggable="true">🌡️ Síntomas diarios</button>
+  <button type="button" class="page-tab-btn" data-page-tab="medicamentos" data-order-key="medicamentos" draggable="true">💊 Medicamentos</button>
+  <button type="button" class="page-tab-btn" data-page-tab="consultas" data-order-key="consultas" draggable="true">🩺 Consultas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="ejercicio" data-order-key="ejercicio" draggable="true">🏃 Ejercicio</button>
+  <button type="button" class="page-tab-btn" data-page-tab="wellness" data-order-key="wellness" draggable="true">🧘 Wellness</button>
+  <button type="button" class="page-tab-btn" data-page-tab="sueno" data-order-key="sueno" draggable="true">🌙 Sueño</button>
+  <button type="button" class="page-tab-btn" data-page-tab="ayuno" data-order-key="ayuno" draggable="true">⏳ Ayuno Intermitente</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metas" data-order-key="metas" draggable="true">🎯 Metas</button>
+  <button type="button" class="page-tab-btn" data-page-tab="metricas" data-order-key="metricas" draggable="true">📈 Métricas</button>
   <!-- v30.10: el Directorio Médico (antes "Catálogo de médicos") se movió al
        extremo derecho y lleva un fondo distinto (.page-tab-btn-directory)
        porque no es parte de la captura habitual de datos del paciente, sino
@@ -1415,6 +1426,60 @@
   </div>
 </div>
 
+<!-- v35.23: Ayuno intermitente — el paciente registra la hora de su última
+     comida (abre el ayuno) y, cuando vuelve a comer, la hora en que lo
+     rompió y con qué. Mientras el ayuno sigue abierto se ve un contador en
+     vivo con una recomendación de qué comer que se actualiza sola según las
+     horas que ya lleva. Solo puede haber un ayuno abierto a la vez. -->
+<div id="tabAyuno" class="tab-panel" style="display:none;">
+  <div class="section">
+    <h2>🎯 Meta de ayuno</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Elige un esquema común o escribe tu propia meta de horas — se compara contra cada ayuno que registres.</p>
+    <div class="chart-filter-mini" id="ayunoMetaPresets" role="group" aria-label="Esquemas de ayuno">
+      <button type="button" class="chart-filter-btn" data-ayuno-meta="14">14:10</button>
+      <button type="button" class="chart-filter-btn" data-ayuno-meta="16">16:8</button>
+      <button type="button" class="chart-filter-btn" data-ayuno-meta="18">18:6</button>
+      <button type="button" class="chart-filter-btn" data-ayuno-meta="20">20:4</button>
+      <button type="button" class="chart-filter-btn" data-ayuno-meta="23">OMAD (23:1)</button>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap;">
+      <label style="font-size:13px;">Meta personalizada (horas)</label>
+      <input type="number" id="ayuno_meta_custom" min="1" max="72" step="0.5" style="width:90px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+      <button type="button" class="btn-mini" id="ayunoMetaSaveBtn">Guardar meta</button>
+      <span id="ayunoMetaCurrentLabel" style="font-size:13px; color:var(--text-muted);"></span>
+    </div>
+  </div>
+
+  <div class="section" id="ayunoCurrentSection">
+    <h2>⏳ Ayuno actual</h2>
+    <div id="ayunoCurrentWrap"></div>
+  </div>
+
+  <div class="section">
+    <h2>Historial</h2>
+    <div id="ayunoTotalsWrap"></div>
+    <div id="ayunoListWrap"></div>
+  </div>
+</div>
+
+<!-- Modal para romper el ayuno abierto -->
+<div class="modal-overlay" id="ayunoBreakModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>Romper ayuno</h2><button type="button" class="modal-close" data-close-modal="ayunoBreakModal">✕</button></div>
+    <form class="add-form" id="ayunoBreakForm">
+      <div><label>Fecha</label><input type="date" id="ayb_fecha" required></div>
+      <div><label>Hora</label><input type="time" id="ayb_hora" data-date-pair="ayb_fecha" required></div>
+      <div class="full"><label>¿Con qué rompiste el ayuno?</label><input type="text" id="ayb_rompio_con" placeholder="Ej. Huevo con aguacate" required></div>
+      <div class="full" id="ayunoBreakRecommendation" style="font-size:13px;"></div>
+      <div class="full"><label>Notas (opcional)</label><input type="text" id="ayb_notas"></div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary">Romper ayuno</button>
+        <button type="button" class="btn-secondary" data-close-modal="ayunoBreakModal">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- v33: sección Metas — objetivos con fecha límite, opcionalmente ligados a
      un evento, dando seguimiento a uno o varios indicadores a la vez. Cada
      indicador se resuelve contra la lectura/valor más reciente que ya existe
@@ -1477,7 +1542,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.22</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.23</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2019,7 +2084,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.22");
+  showAboutOverlay_("35.23");
 });
 
 function openModal(id) {
@@ -2060,6 +2125,7 @@ document.querySelectorAll("[data-page-tab]").forEach(btn => {
     document.getElementById("tabEjercicio").style.display = btn.dataset.pageTab === "ejercicio" ? "" : "none";
     document.getElementById("tabWellness").style.display = btn.dataset.pageTab === "wellness" ? "" : "none";
     document.getElementById("tabSueno").style.display = btn.dataset.pageTab === "sueno" ? "" : "none";
+    document.getElementById("tabAyuno").style.display = btn.dataset.pageTab === "ayuno" ? "" : "none";
     document.getElementById("tabMetas").style.display = btn.dataset.pageTab === "metas" ? "" : "none";
     document.getElementById("tabMetricas").style.display = btn.dataset.pageTab === "metricas" ? "" : "none";
   });
@@ -2549,6 +2615,86 @@ function wireStatsChartReorder_() {
   });
 }
 wireStatsChartReorder_();
+
+// v35.23: reordenar las pestañas principales arrastrándolas — mismo patrón
+// que wireStatsChartReorder_ (orden guardado en localStorage, por
+// dispositivo), pero horizontal: en vez de comparar contra la mitad de
+// arriba/abajo de cada elemento (rect.top/height) se compara contra la
+// mitad izquierda/derecha (rect.left/width), y en vez de insertar
+// antes/después verticalmente se hace en el eje X. El botón de Directorio
+// Médico (.page-tab-btn-directory) queda deliberadamente FUERA de esto —
+// vive al final a propósito, separado visualmente, no es una pestaña más de
+// captura de datos (ver el comentario de v30.10 junto a su HTML).
+function wirePageTabReorder_() {
+  const STORAGE_KEY = "bp_page_tab_order_v1";
+  const container = document.getElementById("pageTabsNav");
+  if (!container) return;
+
+  function applyStoredOrder() {
+    let saved = [];
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (err) { saved = []; }
+    if (!Array.isArray(saved) || !saved.length) return;
+    const items = Array.from(container.children).filter(el => el.dataset && el.dataset.orderKey);
+    const byKey = {};
+    items.forEach(el => { byKey[el.dataset.orderKey] = el; });
+    const seen = new Set();
+    saved.forEach(key => {
+      const el = byKey[key];
+      if (el && !seen.has(key)) { container.appendChild(el); seen.add(key); }
+    });
+    // Cualquier pestaña nueva que no estaba en el orden guardado (ej. esta
+    // misma, Ayuno Intermitente, para quien ya tenía un orden guardado antes
+    // de que existiera) se queda al final de las reordenables, en su orden
+    // original — nunca se pierde ni se manda después del botón fijo de
+    // Directorio Médico (ese nunca entra a "items" porque no tiene
+    // data-order-key).
+    items.forEach(el => { if (!seen.has(el.dataset.orderKey)) container.appendChild(el); });
+  }
+
+  function saveCurrentOrder() {
+    const order = Array.from(container.children)
+      .filter(el => el.dataset && el.dataset.orderKey)
+      .map(el => el.dataset.orderKey);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(order)); } catch (err) { /* ignorar cuota llena */ }
+  }
+
+  applyStoredOrder();
+
+  let dragEl = null;
+  container.querySelectorAll(":scope > [data-order-key]").forEach(el => {
+    el.addEventListener("dragstart", e => {
+      dragEl = el;
+      el.classList.add("is-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", el.dataset.orderKey); } catch (err) {}
+    });
+    el.addEventListener("dragend", () => {
+      el.classList.remove("is-dragging");
+      container.querySelectorAll(".drag-over-top, .drag-over-bottom").forEach(x => x.classList.remove("drag-over-top", "drag-over-bottom"));
+      dragEl = null;
+    });
+    el.addEventListener("dragover", e => {
+      if (!dragEl || dragEl === el) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      el.classList.toggle("drag-over-top", before);
+      el.classList.toggle("drag-over-bottom", !before);
+    });
+    el.addEventListener("dragleave", () => { el.classList.remove("drag-over-top", "drag-over-bottom"); });
+    el.addEventListener("drop", e => {
+      e.preventDefault();
+      el.classList.remove("drag-over-top", "drag-over-bottom");
+      if (!dragEl || dragEl === el) return;
+      const rect = el.getBoundingClientRect();
+      const before = (e.clientX - rect.left) < rect.width / 2;
+      container.insertBefore(dragEl, before ? el : el.nextSibling);
+      saveCurrentOrder();
+    });
+  });
+}
+wirePageTabReorder_();
 
 // ---- Previsualizar el panel como lo ve el médico o la familia (v25) ----
 // No es una réplica exacta de doctor.html/familia.html — es el mismo panel
@@ -3692,6 +3838,7 @@ function renderLabHistoryCharts(onlyKeys) {
 loadLabHistory();
 loadMedicationAdherence().then(() => renderLabHistoryCharts(["medAdherence"]));
 loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"]));
+loadAyuno();
 
 // v33.2: recién aquí CHART_COMPARE_META_ ya está declarado (ver nota más
 // arriba, junto a syncAllChartCompareUI_).
@@ -5469,6 +5616,248 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
 });
 document.getElementById("sl_fecha").value = todayDateStr_();
 
+// ---- v35.23: Ayuno intermitente ----
+let currentAyunos = [];
+let editingAyunoId = null; // usado tanto por "editar" como para saber cuál romper en el modal
+let ayunoLiveTimer_ = null;
+const AYUNO_META_PRESETS_ = [14, 16, 18, 20, 23];
+
+function findOpenAyuno_() { return currentAyunos.find(a => a.abierto); }
+
+function ayunoMetaLabel_(meta) {
+  if (meta == null) return "sin meta";
+  const preset = AYUNO_META_PRESETS_.includes(meta);
+  return `${meta} h${preset ? ` (${meta}:${24 - meta})` : ""}`;
+}
+function syncAyunoMetaUI_() {
+  const meta = currentAccount ? currentAccount.ayuno_meta_horas : null;
+  document.querySelectorAll("#ayunoMetaPresets .chart-filter-btn").forEach(btn => {
+    btn.classList.toggle("active", meta != null && Number(btn.dataset.ayunoMeta) === meta);
+  });
+  document.getElementById("ayuno_meta_custom").value = meta != null ? meta : "";
+  document.getElementById("ayunoMetaCurrentLabel").textContent = `Meta actual: ${ayunoMetaLabel_(meta)}`;
+}
+async function saveAyunoMeta_(horas) {
+  try {
+    const res = await apiPut("/api/ayuno-meta", { ayuno_meta_horas: horas ?? "" });
+    if (currentAccount) currentAccount.ayuno_meta_horas = res.ayuno_meta_horas != null ? res.ayuno_meta_horas : null;
+    syncAyunoMetaUI_();
+    renderAyunoCurrent_();
+    renderAyunoSummaryCards_();
+  } catch (err) {
+    alert("No se pudo guardar la meta: " + err.message);
+  }
+}
+document.getElementById("ayunoMetaPresets").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  saveAyunoMeta_(Number(btn.dataset.ayunoMeta));
+});
+document.getElementById("ayunoMetaSaveBtn").addEventListener("click", () => {
+  const raw = document.getElementById("ayuno_meta_custom").value;
+  saveAyunoMeta_(raw === "" ? null : Number(raw));
+});
+
+// ---- Ayuno actual: o bien "registrar última comida" (sin ayuno abierto),
+// o bien el contador en vivo + recomendación (con uno abierto). Se
+// reconstruye por completo en cada render (más simple que ir mutando
+// nodos) porque cambia poco de frecuencia (solo al abrir/cerrar un ayuno o
+// cada minuto mientras el contador corre).
+function renderAyunoCurrent_() {
+  const wrap = document.getElementById("ayunoCurrentWrap");
+  if (!wrap) return;
+  const open = findOpenAyuno_();
+  const meta = currentAccount ? currentAccount.ayuno_meta_horas : null;
+  if (!open) {
+    wrap.innerHTML = `
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Registra la hora de tu última comida para empezar a contar tu ayuno.</p>
+      <form class="add-form" id="ayunoStartForm">
+        <div><label>Fecha</label><input type="date" id="ays_fecha" required></div>
+        <div><label>Hora</label><input type="time" id="ays_hora" data-date-pair="ays_fecha" required></div>
+        <div class="row-actions"><button type="submit" class="btn-primary">Registrar última comida</button></div>
+      </form>`;
+    document.getElementById("ays_fecha").value = todayDateStr_();
+    autoWireNowTimeButtons_();
+    document.getElementById("ayunoStartForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const fecha_inicio = document.getElementById("ays_fecha").value;
+      const hora_inicio = document.getElementById("ays_hora").value;
+      if (!fecha_inicio || !hora_inicio) return;
+      try {
+        await apiPost("/api/ayuno", { fecha_inicio, hora_inicio });
+        await loadAyuno();
+      } catch (err) {
+        alert("No se pudo registrar: " + err.message);
+      }
+    });
+    if (ayunoLiveTimer_) { clearInterval(ayunoLiveTimer_); ayunoLiveTimer_ = null; }
+    return;
+  }
+  const horas = ayunoElapsedHoras_(open.fecha_inicio, open.hora_inicio) || 0;
+  const rec = ayunoRecommendation_(horas);
+  const metaPct = meta ? Math.min(100, Math.round((horas / meta) * 100)) : null;
+  const metaLine = meta
+    ? (horas >= meta
+      ? `<div style="color:#4F7A6F; font-weight:600; margin-top:2px;">✅ Ya cumpliste tu meta de ${meta} h</div>`
+      : `<div style="color:var(--text-muted); margin-top:2px;">Te faltan ${ayunoDurationLabel_(meta - horas)} para tu meta de ${meta} h (${metaPct}%)</div>`)
+    : "";
+  wrap.innerHTML = `
+    <div class="grid" style="margin-bottom:12px;">
+      <div class="card">
+        <div class="label">Llevas ayunando</div>
+        <div class="value">${ayunoDurationLabel_(horas)}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">desde las ${open.hora_inicio} del ${open.fecha_inicio.split("-").reverse().join("/")}</div>
+        ${metaLine}
+      </div>
+    </div>
+    <div style="font-size:13px;">
+      <strong>Si rompes ahora (${rec.rango}):</strong>
+      <ul style="margin:6px 0 0 18px; padding:0;">${rec.items.map(i => `<li>${escapeHtml_(i)}</li>`).join("")}</ul>
+      ${rec.nota ? `<div style="margin-top:6px; color:var(--text-muted);">${escapeHtml_(rec.nota)}</div>` : ""}
+    </div>
+    <div class="row-actions" style="margin-top:12px;">
+      <button type="button" class="btn-primary" id="ayunoBreakBtn">Romper ayuno</button>
+    </div>`;
+  document.getElementById("ayunoBreakBtn").addEventListener("click", () => openAyunoBreakModal_(open.id));
+  if (ayunoLiveTimer_) clearInterval(ayunoLiveTimer_);
+  ayunoLiveTimer_ = setInterval(() => { if (findOpenAyuno_()) renderAyunoCurrent_(); }, 60000);
+}
+
+function openAyunoBreakModal_(id) {
+  const a = currentAyunos.find(x => x.id === id);
+  if (!a) return;
+  editingAyunoId = id;
+  document.getElementById("ayb_fecha").value = todayDateStr_();
+  document.getElementById("ayb_hora").value = nowTimeStr();
+  document.getElementById("ayb_rompio_con").value = "";
+  document.getElementById("ayb_notas").value = "";
+  updateAyunoBreakRecommendation_();
+  openModal("ayunoBreakModal");
+}
+function updateAyunoBreakRecommendation_() {
+  const el = document.getElementById("ayunoBreakRecommendation");
+  const a = currentAyunos.find(x => x.id === editingAyunoId);
+  if (!a || !el) return;
+  const fecha = document.getElementById("ayb_fecha").value;
+  const hora = document.getElementById("ayb_hora").value;
+  const horas = (fecha && hora) ? ayunoElapsedHoras_(a.fecha_inicio, a.hora_inicio, new Date(`${fecha}T${hora}:00`)) : null;
+  if (horas == null || horas <= 0) { el.innerHTML = ""; return; }
+  const rec = ayunoRecommendation_(horas);
+  el.innerHTML = `<strong>Llevas ${ayunoDurationLabel_(horas)} (${rec.rango}) — te sugerimos:</strong>
+    <ul style="margin:6px 0 0 18px; padding:0;">${rec.items.map(i => `<li>${escapeHtml_(i)}</li>`).join("")}</ul>
+    ${rec.nota ? `<div style="margin-top:6px; color:var(--text-muted);">${escapeHtml_(rec.nota)}</div>` : ""}`;
+}
+document.getElementById("ayb_fecha").addEventListener("change", updateAyunoBreakRecommendation_);
+document.getElementById("ayb_hora").addEventListener("change", updateAyunoBreakRecommendation_);
+document.getElementById("ayunoBreakForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const fecha_fin = document.getElementById("ayb_fecha").value;
+  const hora_fin = document.getElementById("ayb_hora").value;
+  const rompio_con = document.getElementById("ayb_rompio_con").value.trim();
+  const notas = document.getElementById("ayb_notas").value.trim();
+  if (!fecha_fin || !hora_fin || !rompio_con) return;
+  try {
+    await apiPut(`/api/ayuno/${editingAyunoId}/romper`, { fecha_fin, hora_fin, rompio_con, notas });
+    closeModal("ayunoBreakModal");
+    editingAyunoId = null;
+    await loadAyuno();
+  } catch (err) {
+    alert("No se pudo romper el ayuno: " + err.message);
+  }
+});
+
+function ayunoCardsPeriodLabel_(startStr, endStr) {
+  const fmt = s => s.split("-").reverse().join("/");
+  return `Últimos 8 días (${startStr === endStr ? fmt(startStr) : `${fmt(startStr)} – ${fmt(endStr)}`})`;
+}
+function renderAyunoSummaryCards_() {
+  const wrap = document.getElementById("ayunoTotalsWrap");
+  if (!wrap) return;
+  const closed = currentAyunos.filter(a => !a.abierto && a.duracion_horas != null);
+  if (!closed.length) { wrap.innerHTML = ""; return; }
+  const meta = currentAccount ? currentAccount.ayuno_meta_horas : null;
+
+  const today = todayStr();
+  const cutoff = reportAddDays_(today, -7);
+  const sorted = closed.slice().sort((a, b) => a.fecha_inicio.localeCompare(b.fecha_inicio));
+  const periodEntries = sorted.filter(a => a.fecha_inicio >= cutoff);
+  const periodLabelTxt = ayunoCardsPeriodLabel_(cutoff, today);
+
+  const last = sorted[sorted.length - 1];
+  const lastWhen = last.fecha_inicio.split("-").reverse().join("/");
+  const last5Spark = sparklineSVG_(sorted.slice(-5).map(a => a.duracion_horas), { color: "#6E8FB0" });
+
+  const avgDur = periodEntries.length ? periodEntries.reduce((s, a) => s + a.duracion_horas, 0) / periodEntries.length : null;
+  const periodSpark = sparklineSVG_(periodEntries.map(a => a.duracion_horas), { color: "#6E8FB0" });
+
+  const metCount = meta ? periodEntries.filter(a => a.duracion_horas >= meta).length : null;
+
+  wrap.innerHTML = `
+    <div class="grid" style="margin-bottom:14px;">
+      <div class="card">
+        <div class="label">Último ayuno</div>
+        <div class="value">${ayunoDurationLabel_(last.duracion_horas)}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${lastWhen}${last.rompio_con ? ` · rompió con ${escapeHtml_(last.rompio_con)}` : ""}</div>
+        ${last5Spark ? `<div style="margin-top:6px;">${last5Spark}</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="label">Duración promedio</div>
+        <div class="value">${avgDur != null ? ayunoDurationLabel_(avgDur) : "—"}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabelTxt}</div>
+        ${periodSpark ? `<div style="margin-top:6px;">${periodSpark}</div>` : ""}
+      </div>
+      <div class="card">
+        <div class="label">Meta actual</div>
+        <div class="value">${ayunoMetaLabel_(meta)}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${meta ? `${metCount}/${periodEntries.length} ayunos la cumplieron` : "sin meta capturada"}</div>
+      </div>
+      <div class="card">
+        <div class="label">Ayunos registrados</div>
+        <div class="value">${periodEntries.length}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">${periodLabelTxt}</div>
+      </div>
+    </div>`;
+}
+
+async function loadAyuno() {
+  ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
+  try { currentAyunos = await apiGet("/api/ayuno"); } catch (err) { currentAyunos = []; }
+  renderAyunoCurrent_();
+  renderAyunoSummaryCards_();
+  document.getElementById("ayunoListWrap").innerHTML = renderAyunoListHTML(currentAyunos);
+  syncAyunoMetaUI_();
+}
+document.getElementById("ayunoListWrap").addEventListener("click", async e => {
+  const breakBtn = e.target.closest(".ayuno-break-btn");
+  if (breakBtn) { openAyunoBreakModal_(breakBtn.dataset.ayunoId); return; }
+  const editBtn = e.target.closest(".ayuno-edit-btn");
+  if (editBtn) {
+    const a = currentAyunos.find(x => x.id === editBtn.dataset.ayunoId);
+    if (!a) return;
+    const nuevaFechaInicio = prompt("Fecha de última comida (YYYY-MM-DD):", a.fecha_inicio);
+    if (nuevaFechaInicio === null) return;
+    const nuevaHoraInicio = prompt("Hora de última comida (HH:MM):", a.hora_inicio);
+    if (nuevaHoraInicio === null) return;
+    try {
+      await apiPut(`/api/ayuno/${a.id}`, { fecha_inicio: nuevaFechaInicio, hora_inicio: nuevaHoraInicio });
+      await loadAyuno();
+    } catch (err) {
+      alert("No se pudo editar: " + err.message);
+    }
+    return;
+  }
+  const delBtn = e.target.closest(".ayuno-delete-btn");
+  if (delBtn) {
+    if (!confirm("¿Eliminar este registro de ayuno?")) return;
+    try {
+      await apiDelete(`/api/ayuno/${delBtn.dataset.ayunoId}`);
+      await loadAyuno();
+    } catch (err) {
+      alert("No se pudo eliminar: " + err.message);
+    }
+  }
+});
+
 // ---- v33: sección Metas — objetivos con fecha límite, opcionalmente
 // ligados a un evento, dando seguimiento a uno o varios indicadores. Cada
 // indicador aquí (GOAL_INDICATOR_DEFS_) debe coincidir con
@@ -6082,6 +6471,7 @@ connectRealtime("/api/stream", kind => {
   if (kind === "exercise_reading") loadExerciseReadings(); // v31
   if (kind === "wellness") loadWellness(); // v31
   if (kind === "sleep") loadSleep().then(() => renderLabHistoryCharts(["sleepDuration", "sleepQuality"])); // v32
+  if (kind === "ayuno") loadAyuno(); // v35.23
   if (kind === "metas") loadGoals(); // v33
   if (kind === "custom_metrics") loadAndRenderCustomMetrics_(); // v35.0
   if (kind === "consultation") loadConsultations();
