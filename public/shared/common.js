@@ -1182,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.24", changes: [
+    "Se corrigió que, tras reordenar las pestañas principales y recargar la página, el botón de Directorio Médico se moviera al principio en vez de quedarse al final.",
+    "Reordenar pestañas ahora también se puede hacer con flechas ▲▼ desde Ajustes (\"Reordenar pestañas\"), sin necesidad de arrastrar — más fácil en el celular.",
+  ] },
   { version: "35.23", changes: [
     "Nueva sección \"Ayuno Intermitente\": registra la hora de tu última comida y, cuando vuelvas a comer, con qué rompiste el ayuno — la app calcula las horas ayunadas y te da recomendaciones de qué comer según cuánto llevas.",
     "Puedes poner una meta de horas de ayuno (esquemas comunes como 16:8, 18:6, 20:4, OMAD, o una meta personalizada) y ver tu racha de metas cumplidas.",

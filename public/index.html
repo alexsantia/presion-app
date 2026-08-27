@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.23"></script>
+<script src="/shared/common.js?v=35.24"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1542,7 +1542,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.23</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.24</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1727,6 +1727,7 @@
     <div class="settings-actions">
       <button type="button" class="btn-secondary" id="settingsBackupBtn">⬇️ Respaldar historial (CSV)</button>
       <button type="button" class="btn-secondary" id="settingsRegenFamilyBtn">🔄 Regenerar enlace de familia</button>
+      <button type="button" class="btn-secondary" id="openPageTabReorderBtn">↕️ Reordenar pestañas</button>
     </div>
 
     <div class="modal-section-title">Notificaciones</div>
@@ -1770,6 +1771,17 @@
         <button type="submit" class="btn-secondary">Responder</button>
       </form>
     </div>
+  </div>
+</div>
+
+<!-- v35.24: modal con flechas ▲▼ para reordenar las pestañas principales sin
+     arrastrar — alternativa táctil al drag-and-drop, mismo patrón que el
+     diseñador de métricas personalizadas (metric-field-move-btns). -->
+<div class="modal-overlay" id="pageTabReorderModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>↕️ Reordenar pestañas</h2><button type="button" class="modal-close" data-close-modal="pageTabReorderModal">✕</button></div>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Usa las flechas para cambiar el orden en que aparecen las pestañas. También puedes arrastrarlas directamente. El Directorio Médico siempre queda al final.</p>
+    <div id="pageTabReorderList" style="display:flex; flex-direction:column; gap:6px;"></div>
   </div>
 </div>
 
@@ -2084,7 +2096,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.23");
+  showAboutOverlay_("35.24");
 });
 
 function openModal(id) {
@@ -2625,22 +2637,40 @@ wireStatsChartReorder_();
 // Médico (.page-tab-btn-directory) queda deliberadamente FUERA de esto —
 // vive al final a propósito, separado visualmente, no es una pestaña más de
 // captura de datos (ver el comentario de v30.10 junto a su HTML).
+// v35.24: dos bugs/mejoras reportadas tras usarlo:
+// (1) applyStoredOrder() usaba container.appendChild(el) para cada pestaña
+//     guardada — appendChild manda el elemento al final ABSOLUTO del
+//     contenedor, así que tras reordenar y RECARGAR la página, las 12
+//     pestañas rastreadas terminaban todas después de Directorio Médico
+//     (que nunca se toca, por no tener data-order-key), dejándolo como el
+//     único elemento "atrasado" — es decir, empujado al PRINCIPIO. Ahora se
+//     inserta siempre antes de "anchor" (el primer hijo sin
+//     data-order-key, o sea Directorio Médico), nunca al final a secas.
+// (2) arrastrar con el dedo en el celular es difícil (drag-and-drop nativo
+//     de HTML5 no tiene buen soporte táctil) — se agrega un modal con
+//     flechas ▲▼ (mismo patrón ya usado en el diseñador de métricas
+//     personalizadas) como alternativa, accesible desde Ajustes.
 function wirePageTabReorder_() {
   const STORAGE_KEY = "bp_page_tab_order_v1";
   const container = document.getElementById("pageTabsNav");
   if (!container) return;
+
+  function fixedAnchor_() {
+    return Array.from(container.children).find(el => !(el.dataset && el.dataset.orderKey)) || null;
+  }
 
   function applyStoredOrder() {
     let saved = [];
     try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (err) { saved = []; }
     if (!Array.isArray(saved) || !saved.length) return;
     const items = Array.from(container.children).filter(el => el.dataset && el.dataset.orderKey);
+    const anchor = fixedAnchor_();
     const byKey = {};
     items.forEach(el => { byKey[el.dataset.orderKey] = el; });
     const seen = new Set();
     saved.forEach(key => {
       const el = byKey[key];
-      if (el && !seen.has(key)) { container.appendChild(el); seen.add(key); }
+      if (el && !seen.has(key)) { container.insertBefore(el, anchor); seen.add(key); }
     });
     // Cualquier pestaña nueva que no estaba en el orden guardado (ej. esta
     // misma, Ayuno Intermitente, para quien ya tenía un orden guardado antes
@@ -2648,7 +2678,7 @@ function wirePageTabReorder_() {
     // original — nunca se pierde ni se manda después del botón fijo de
     // Directorio Médico (ese nunca entra a "items" porque no tiene
     // data-order-key).
-    items.forEach(el => { if (!seen.has(el.dataset.orderKey)) container.appendChild(el); });
+    items.forEach(el => { if (!seen.has(el.dataset.orderKey)) container.insertBefore(el, anchor); });
   }
 
   function saveCurrentOrder() {
@@ -2693,6 +2723,54 @@ function wirePageTabReorder_() {
       saveCurrentOrder();
     });
   });
+
+  // v35.24: alternativa táctil — modal con flechas ▲▼, sin necesidad de
+  // arrastrar nada. Vive dentro de la misma función para compartir
+  // container/saveCurrentOrder sin duplicarlos.
+  const TAB_LABELS_ = {};
+  Array.from(container.children).forEach(el => {
+    if (el.dataset && el.dataset.orderKey) TAB_LABELS_[el.dataset.orderKey] = el.textContent.trim();
+  });
+  function renderReorderModalList_() {
+    const list = document.getElementById("pageTabReorderList");
+    if (!list) return;
+    const keys = Array.from(container.children).filter(el => el.dataset && el.dataset.orderKey).map(el => el.dataset.orderKey);
+    list.innerHTML = keys.map((key, i) => `
+      <div class="metric-field-card" data-order-key="${key}" style="cursor:default;">
+        <span style="flex:1;">${escapeHtml_(TAB_LABELS_[key] || key)}</span>
+        <div class="metric-field-move-btns">
+          <button type="button" class="btn-mini page-tab-move-up" title="Mover arriba" ${i === 0 ? "disabled" : ""}>▲</button>
+          <button type="button" class="btn-mini page-tab-move-down" title="Mover abajo" ${i === keys.length - 1 ? "disabled" : ""}>▼</button>
+        </div>
+      </div>`).join("");
+  }
+  function moveTabByKey_(key, dir) {
+    const el = container.querySelector(`[data-order-key="${key}"]`);
+    if (!el) return;
+    const sibling = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+    if (!sibling || !sibling.dataset || !sibling.dataset.orderKey) return; // ya es el primero/último reordenable
+    if (dir < 0) container.insertBefore(el, sibling); else container.insertBefore(sibling, el);
+    saveCurrentOrder();
+    renderReorderModalList_();
+  }
+  const reorderListEl = document.getElementById("pageTabReorderList");
+  if (reorderListEl) {
+    reorderListEl.addEventListener("click", e => {
+      const card = e.target.closest("[data-order-key]");
+      if (!card) return;
+      if (e.target.closest(".page-tab-move-up")) moveTabByKey_(card.dataset.orderKey, -1);
+      else if (e.target.closest(".page-tab-move-down")) moveTabByKey_(card.dataset.orderKey, 1);
+    });
+  }
+  const reorderBtn = document.getElementById("openPageTabReorderBtn");
+  if (reorderBtn) {
+    reorderBtn.addEventListener("click", () => {
+      hamburgerMenu.style.display = "none";
+      closeModal("settingsModal");
+      renderReorderModalList_();
+      openModal("pageTabReorderModal");
+    });
+  }
 }
 wirePageTabReorder_();
 
