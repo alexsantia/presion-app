@@ -1356,7 +1356,16 @@ const AI_DAILY_NOTE_MODEL = process.env.AI_DAILY_NOTE_MODEL || "claude-haiku-4-5
 // metas), y cuando de verdad hay varios insights que vale la pena mencionar
 // más la frase célebre del cierre, la respuesta se cortaba a media frase.
 // Sube a 320 para dar margen sin perder el objetivo de mantenerla barata.
-const AI_DAILY_NOTE_MAX_TOKENS = 320;
+// v35.25: 320 volvió a quedarse corto — desde v33.9/v35.14/v35.15 el prompt
+// le pide a la IA evaluar CADA sección (presión, IMC, cintura, sueño,
+// malestares, apego, metas) contra su rango saludable, no solo reportar si
+// cambió, y cuando de verdad hay varios insights que comentar (ej. presión al
+// alza + IMC con sobrepeso + sueño corto + un malestar registrado) el texto
+// resultante es bastante más largo que antes — se estaba cortando a media
+// frase de nuevo (reportado por el usuario: "Notamos zumbido en oídos... que
+// podrían" sin terminar). Sube a 600, con margen amplio, porque sigue siendo
+// un modelo económico (Haiku) con tope de 3 llamadas/día por paciente.
+const AI_DAILY_NOTE_MAX_TOKENS = 600;
 // v33.9: la nota ahora debe EVALUAR cada medición contra su rango saludable
 // de referencia, no solo describir si "se mantiene estable" — estabilidad no
 // es lo mismo que estar en un rango sano. Para peso, eso significa mandarle
@@ -1579,6 +1588,20 @@ function dailyNoteQuoteExclusionText_(history) {
 // por la regeneración forzada (forceDailyNote). quoteHistory (arreglo de
 // {quote, author}) se manda como parte del system prompt para que la frase
 // de cierre nunca repita una ya usada con este paciente.
+// v35.25: red de seguridad para cuando el modelo se queda sin espacio
+// (stop_reason "max_tokens") a pesar del margen de AI_DAILY_NOTE_MAX_TOKENS
+// — recorta al último punto/cierre de frase completo (., !, ?, o » de una
+// cita) en vez de guardar el texto cortado a media palabra/frase. Se pierde
+// lo que quedó incompleto (a veces la cita de cierre), pero lo que queda se
+// lee como una nota terminada, no rota. Si no hay ni una sola frase completa
+// (caso extremo), se deja el texto tal cual — mejor algo que nada.
+function trimToLastCompleteSentence_(text) {
+  if (!text) return text;
+  const matches = [...text.matchAll(/[.!?»](?=\s|$)/g)];
+  if (!matches.length) return text;
+  const lastIdx = matches[matches.length - 1].index;
+  return text.slice(0, lastIdx + 1).trim();
+}
 async function callAnthropicDailyNote_(summary, quoteHistory) {
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1592,7 +1615,9 @@ async function callAnthropicDailyNote_(summary, quoteHistory) {
   if (!resp.ok) throw new Error(`Anthropic API ${resp.status}`);
   const data = await resp.json();
   logAiUsage_("nota_diaria", data);
-  return (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+  let text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").trim();
+  if (text && data.stop_reason === "max_tokens") text = trimToLastCompleteSentence_(text);
+  return text;
 }
 // v35.4: genera el texto de la nota diaria evitando repetir una frase célebre
 // ya usada con este paciente. Si el modelo de todas formas repite una (puede
