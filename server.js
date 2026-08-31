@@ -722,6 +722,11 @@ app.delete("/api/ayuno/:id", requireRole("patient"), asyncRoute(async (req, res)
 app.put("/api/ayuno-meta", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "update_ayuno_meta", id: req.session.patientId, ...req.body }));
 }));
+// v35.26: "lecturas por página" sincronizado en la cuenta — ver
+// update_page_size_pref en db-postgres.js.
+app.put("/api/page-size-pref", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "update_page_size_pref", id: req.session.patientId, ...req.body }));
+}));
 
 // ---- v33: Metas — objetivos con fecha límite, opcionalmente ligados a un
 // evento, que dan seguimiento a uno o varios indicadores (peso, cintura,

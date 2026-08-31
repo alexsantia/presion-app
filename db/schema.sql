@@ -697,3 +697,12 @@ CREATE INDEX IF NOT EXISTS idx_ayunos_patient ON ayunos(patient_id, fecha_inicio
 -- paciente, igual de simple que weight/height/waist; se compara contra
 -- duracion_horas de cada ayuno cerrado para la racha de "metas cumplidas".
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS ayuno_meta_horas numeric;
+
+-- v35.26: preferencia de "lecturas por página" para TODAS las listas
+-- paginadas de la app (Presión Arterial, Síntomas, Sueño, Ayuno, etc.).
+-- Antes vivía solo en localStorage (bp_page_size), por dispositivo — un
+-- paciente que la cambiaba en su compu no la veía reflejada en su celular.
+-- Ahora se guarda en la cuenta, igual que ayuno_meta_horas, para que
+-- cualquier dispositivo que inicie sesión vea el mismo valor. Default 5
+-- (antes el default de localStorage era 10).
+ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS page_size_pref integer NOT NULL DEFAULT 5;

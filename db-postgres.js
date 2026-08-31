@@ -1784,6 +1784,12 @@ function patientRaw(row) {
     // v35.23: meta de horas de ayuno intermitente (ej. 16 para un esquema
     // 16:8) — ver sección Ayuno en schema.sql.
     ayuno_meta_horas: num(row.ayuno_meta_horas),
+    // v35.26: "lecturas por página" sincronizado en la cuenta (antes vivía
+    // solo en localStorage, por dispositivo). row.page_size_pref siempre
+    // trae un valor por el DEFAULT 5 de la columna, pero num()+fallback por
+    // si algún día llega null (ej. una fila muy vieja restaurada de un
+    // respaldo anterior a esta columna).
+    page_size_pref: num(row.page_size_pref) || 5,
   };
 }
 function patientPublic(row) {
@@ -1797,7 +1803,7 @@ function patientPublic(row) {
 const PATIENT_SELECT = `SELECT id, name, email, password_hash, to_char(birthdate, 'YYYY-MM-DD') AS birthdate,
   share_token, created_at, updated_at, to_char(last_lab_date, 'YYYY-MM-DD') AS last_lab_date,
   cholesterol, triglycerides, med_brand, med_mg, gender, weight, waist, height, avatar_mime, suspended, plan,
-  ayuno_meta_horas FROM pacientes`;
+  ayuno_meta_horas, page_size_pref FROM pacientes`;
 
 async function findPatientByEmail(email) {
   const { rows } = await pool.query(`${PATIENT_SELECT} WHERE email = $1`, [String(email || "").toLowerCase()]);
@@ -3018,6 +3024,18 @@ async function handlePost(body) {
     await pool.query(`UPDATE pacientes SET ayuno_meta_horas = $1, updated_at = $2 WHERE id = $3`, [meta, now, body.id]);
     emitChange(body.id, "ayuno");
     return { ok: true, ayuno_meta_horas: meta };
+  }
+  // v35.26: "lecturas por página", sincronizado en la cuenta (antes vivía
+  // solo en localStorage, por dispositivo — ver page_size_pref en
+  // schema.sql). A diferencia de ayuno_meta_horas, aquí SIEMPRE hay un valor
+  // (la columna tiene DEFAULT 5, no admite null), así que un valor vacío/no
+  // numérico se ignora y se conserva 5 en vez de guardar null.
+  const PAGE_SIZE_OPTIONS_ = [5, 10, 20, 30];
+  if (body.action === "update_page_size_pref") {
+    const raw = num(body.page_size_pref);
+    const pageSize = PAGE_SIZE_OPTIONS_.includes(raw) ? raw : 5;
+    await pool.query(`UPDATE pacientes SET page_size_pref = $1, updated_at = $2 WHERE id = $3`, [pageSize, now, body.id]);
+    return { ok: true, page_size_pref: pageSize };
   }
 
   // ---- v33: Metas — evento/fecha_limite se pueden editar después, pero los

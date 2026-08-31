@@ -1182,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.26", changes: [
+    "Todas las secciones con listas (Síntomas, Sueño, Ayuno, Ejercicio, Bienestar, Malos hábitos, Medicamentos eventuales, Consultas, Métricas personalizadas) ahora tienen paginación, con 5 registros por página de default — antes solo el historial de Presión Arterial la tenía.",
+    "\"Lecturas por página\" (en Ajustes) ahora se guarda en tu cuenta en vez de solo en este navegador — antes, cambiarla en la computadora no se reflejaba en el celular y viceversa.",
+  ] },
   { version: "35.25", changes: [
     "Se corrigió que la Nota del día en \"Alertas y notas\" a veces se cortara a media frase cuando había varios temas que comentar (presión, IMC, sueño, malestares).",
   ] },

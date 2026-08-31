@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.25"></script>
+<script src="/shared/common.js?v=35.26"></script>
 <style>
   :root {
     color-scheme: light;
@@ -603,8 +603,8 @@
     <div class="pagination-controls">
       <label>Por página
         <select id="pageSizeSelect">
-          <option value="5">5</option>
-          <option value="10" selected>10</option>
+          <option value="5" selected>5</option>
+          <option value="10">10</option>
           <option value="20">20</option>
           <option value="30">30</option>
         </select>
@@ -1542,7 +1542,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.25</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.26</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1714,7 +1714,7 @@
 
     <div class="modal-section-title">Historial de lecturas</div>
     <div class="field">
-      <label>Lecturas por página (por defecto)</label>
+      <label>Lecturas por página</label>
       <select id="setting_pagesize">
         <option value="5">5</option>
         <option value="10">10</option>
@@ -1722,6 +1722,7 @@
         <option value="30">30</option>
       </select>
     </div>
+    <div class="modal-hint">Aplica a todas las listas de la app (lecturas, síntomas, sueño, ayuno, etc.) y se guarda en tu cuenta, así que ves lo mismo en cualquier dispositivo donde inicies sesión.</div>
 
     <div class="modal-section-title">Accesos directos</div>
     <div class="settings-actions">
@@ -1955,6 +1956,15 @@ async function apiDelete(url) {
 async function loadAccount() {
   try {
     currentAccount = await apiGet("/api/account");
+    // v35.26: "lecturas por página" sincronizado — aplica lo que ya trae la
+    // cuenta (sin volver a guardarlo, persist:false por default) para que
+    // todas las secciones paginadas usen el mismo valor en cualquier
+    // dispositivo. Solo se re-renderiza si de verdad cambió, para no
+    // reiniciar la página actual de cada sección en cada refresco silencioso
+    // de loadAccount() (ej. tras guardar Parámetros).
+    if (currentAccount.page_size_pref && currentAccount.page_size_pref !== pageSize) {
+      setPageSize_(currentAccount.page_size_pref);
+    }
     document.getElementById("p_name").value = currentAccount.name || "";
     document.getElementById("p_birthdate").value = currentAccount.birthdate || "";
     updateAgeDisplay();
@@ -2096,7 +2106,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.25");
+  showAboutOverlay_("35.26");
 });
 
 function openModal(id) {
@@ -2200,17 +2210,17 @@ document.getElementById("paramsForm").addEventListener("submit", async e => {
 const settingsUnitsEl = document.getElementById("setting_units");
 const settingsPageSizeEl = document.getElementById("setting_pagesize");
 settingsUnitsEl.value = getUnitPref();
-settingsPageSizeEl.value = localStorage.getItem("bp_page_size") || "10";
+// v35.26: "Lecturas por página" era localStorage puro (por eso no se veía
+// igual en la compu y en el celular) — ahora se guarda en la cuenta
+// (page_size_pref) y este valor de arranque es solo el placeholder hasta
+// que loadAccount() traiga el real (ver setPageSize_ más abajo). Default 5.
+settingsPageSizeEl.value = "5";
 settingsUnitsEl.addEventListener("change", () => {
   localStorage.setItem("bp_units", settingsUnitsEl.value);
   fillParamsForm();
 });
 settingsPageSizeEl.addEventListener("change", () => {
-  localStorage.setItem("bp_page_size", settingsPageSizeEl.value);
-  pageSize = Number(settingsPageSizeEl.value);
-  currentPage = 1;
-  document.getElementById("pageSizeSelect").value = settingsPageSizeEl.value;
-  renderTablePage();
+  setPageSize_(Number(settingsPageSizeEl.value), { persist: true });
 });
 document.getElementById("settingsBackupBtn").addEventListener("click", () => {
   closeModal("settingsModal");
@@ -2966,8 +2976,105 @@ function renderStreak() {
 // ---- Paginación de la tabla ----
 let currentPage = 1;
 let currentTotalPages = 1; // v35.0: para poder saltar directo a la última página
-let pageSize = Number(localStorage.getItem("bp_page_size")) || 10;
+// v35.26: "lecturas por página" ya NO vive en localStorage (bp_page_size) —
+// ahora es una sola preferencia sincronizada en la cuenta (page_size_pref,
+// default 5), para que cambiarla en un dispositivo se refleje en todos. El
+// valor de arranque es solo un placeholder hasta que loadAccount() traiga el
+// real; setPageSize_() es el único lugar que debe cambiar `pageSize` de ahí
+// en adelante, para mantener sincronizados el <select> de la tabla, el de
+// Ajustes, y TODAS las demás secciones paginadas (ver sectionPaginators_).
+let pageSize = 5;
 document.getElementById("pageSizeSelect").value = String(pageSize);
+
+// v35.26: paginación reutilizable para el resto de las secciones con listas
+// (Síntomas, Sueño, Ayuno, Ejercicio, Wellness, Malos hábitos, Medicamentos
+// eventuales, Consultas, Métricas personalizadas). Antes solo el historial
+// de lecturas (arriba) tenía paginación; en vez de repetir esa lógica en
+// cada sección, createSectionPaginator_() la genera bajo demanda: crea la
+// barra de paginación (mismo look que #paginationBar, sin selector de
+// tamaño propio — todas comparten el `pageSize` de arriba, controlado desde
+// Ajustes), la inserta justo después del contenedor de la lista, y sabe
+// re-renderizar solo esa sección cuando cambia de página o cuando cambia el
+// tamaño de página global.
+const sectionPaginators_ = [];
+function createSectionPaginator_(idPrefix, wrapElId, getDescendingList, renderListHTML) {
+  let localPage = 1;
+  let localTotalPages = 1;
+  function barEl_() {
+    let bar = document.getElementById(`${idPrefix}PagBar`);
+    if (bar) return bar;
+    const wrap = document.getElementById(wrapElId);
+    bar = document.createElement("div");
+    bar.className = "pagination";
+    bar.id = `${idPrefix}PagBar`;
+    bar.style.display = "none";
+    bar.innerHTML = `
+      <div class="pagination-info" id="${idPrefix}PagInfo"></div>
+      <div class="pagination-controls">
+        <button type="button" class="btn-mini" id="${idPrefix}PagFirst" title="Primera página">« Primera</button>
+        <button type="button" class="btn-mini" id="${idPrefix}PagPrev">‹ Anterior</button>
+        <span id="${idPrefix}PagIndicator"></span>
+        <button type="button" class="btn-mini" id="${idPrefix}PagNext">Siguiente ›</button>
+        <button type="button" class="btn-mini" id="${idPrefix}PagLast" title="Última página">Última »</button>
+      </div>`;
+    wrap.insertAdjacentElement("afterend", bar);
+    bar.querySelector(`#${idPrefix}PagFirst`).addEventListener("click", () => { localPage = 1; paginator.render(); });
+    bar.querySelector(`#${idPrefix}PagPrev`).addEventListener("click", () => { localPage--; paginator.render(); });
+    bar.querySelector(`#${idPrefix}PagNext`).addEventListener("click", () => { localPage++; paginator.render(); });
+    bar.querySelector(`#${idPrefix}PagLast`).addEventListener("click", () => { localPage = localTotalPages; paginator.render(); });
+    return bar;
+  }
+  const paginator = {
+    render() {
+      const list = getDescendingList() || [];
+      const wrap = document.getElementById(wrapElId);
+      if (!wrap) return; // la sección todavía no está en el DOM (ej. plan sin acceso)
+      const bar = barEl_();
+      if (!list.length) {
+        wrap.innerHTML = renderListHTML([]);
+        bar.style.display = "none";
+        return;
+      }
+      const { pageData, page, totalPages } = paginateData(list, localPage, pageSize);
+      localPage = page;
+      localTotalPages = totalPages;
+      wrap.innerHTML = renderListHTML(pageData);
+      bar.style.display = "flex";
+      const start = (page - 1) * pageSize + 1;
+      const end = Math.min(page * pageSize, list.length);
+      document.getElementById(`${idPrefix}PagInfo`).textContent = `Mostrando ${start}–${end} de ${list.length}`;
+      document.getElementById(`${idPrefix}PagIndicator`).textContent = `Página ${page} de ${totalPages}`;
+      document.getElementById(`${idPrefix}PagFirst`).disabled = page <= 1;
+      document.getElementById(`${idPrefix}PagPrev`).disabled = page <= 1;
+      document.getElementById(`${idPrefix}PagNext`).disabled = page >= totalPages;
+      document.getElementById(`${idPrefix}PagLast`).disabled = page >= totalPages;
+    },
+    resetPage() { localPage = 1; },
+  };
+  sectionPaginators_.push(paginator);
+  return paginator;
+}
+// Cambia el tamaño de página global y re-renderiza TODO lo paginado (la
+// tabla de lecturas + todas las secciones registradas en
+// sectionPaginators_), manteniendo en sincronía los dos <select> visibles
+// (el de la tabla y el de Ajustes). persist:true además guarda el valor en
+// la cuenta (llamado desde el <select>, nunca desde loadAccount() al
+// aplicar lo que YA vino del servidor, para no generar un PUT innecesario
+// en cada carga de página).
+async function setPageSize_(size, { persist } = {}) {
+  pageSize = size;
+  currentPage = 1;
+  document.getElementById("pageSizeSelect").value = String(size);
+  document.getElementById("setting_pagesize").value = String(size);
+  renderTablePage();
+  sectionPaginators_.forEach(p => { p.resetPage(); p.render(); });
+  if (persist) {
+    try {
+      await apiPut("/api/page-size-pref", { page_size_pref: size });
+      if (currentAccount) currentAccount.page_size_pref = size;
+    } catch (err) { /* si falla el guardado, el valor sigue aplicado localmente esta sesión */ }
+  }
+}
 
 // ---- Mostrar/ocultar columnas del Historial de lecturas (v25) ----
 // Fecha y Acciones siempre se muestran; el resto es opcional. La
@@ -3064,12 +3171,7 @@ function renderTablePage() {
 }
 
 document.getElementById("pageSizeSelect").addEventListener("change", e => {
-  pageSize = Number(e.target.value);
-  currentPage = 1;
-  localStorage.setItem("bp_page_size", String(pageSize));
-  const settingsSel = document.getElementById("setting_pagesize");
-  if (settingsSel) settingsSel.value = String(pageSize);
-  renderTablePage();
+  setPageSize_(Number(e.target.value), { persist: true });
 });
 document.getElementById("prevPageBtn").addEventListener("click", () => { currentPage--; renderTablePage(); });
 document.getElementById("nextPageBtn").addEventListener("click", () => { currentPage++; renderTablePage(); });
@@ -4570,10 +4672,13 @@ function fillHabitFormFields_() {
 document.getElementById("h_tipo").addEventListener("change", fillHabitFormFields_);
 document.getElementById("h_fecha").value = todayStr();
 fillHabitFormFields_();
+// v35.26: paginación (5 por defecto, sincronizada — ver createSectionPaginator_).
+const habitsPaginator_ = createSectionPaginator_("habits", "habitsListWrap", () => currentHabits, list => renderHabitsListHTML(list));
 async function loadHabits() {
   ensureHabitStyles_();
   try { currentHabits = await apiGet("/api/habits"); } catch (err) { currentHabits = []; }
-  document.getElementById("habitsListWrap").innerHTML = renderHabitsListHTML(currentHabits);
+  habitsPaginator_.resetPage();
+  habitsPaginator_.render();
 }
 document.getElementById("habitForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -4658,9 +4763,11 @@ document.getElementById("sy_temperatura").addEventListener("input", e => {
   hint.style.display = temp != null ? "" : "none";
 });
 let currentSymptoms = [];
+const symptomsPaginator_ = createSectionPaginator_("symptoms", "symptomsListWrap", () => currentSymptoms, list => renderSymptomsListHTML(list));
 async function loadSymptoms() {
   try { currentSymptoms = await apiGet("/api/symptoms"); } catch (err) { currentSymptoms = []; }
-  document.getElementById("symptomsListWrap").innerHTML = renderSymptomsListHTML(currentSymptoms);
+  symptomsPaginator_.resetPage();
+  symptomsPaginator_.render();
 }
 document.getElementById("symptomForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -4840,9 +4947,11 @@ setInterval(loadTodayDoses, 60000);
 
 // ---- Medicamentos eventuales (v30.13) ----
 let currentEventualMeds = [];
+const eventualMedsPaginator_ = createSectionPaginator_("eventualMeds", "eventualMedsListWrap", () => currentEventualMeds, list => renderEventualMedicationsListHTML(list));
 async function loadEventualMedications() {
   try { currentEventualMeds = await apiGet("/api/eventual-medications"); } catch (err) { currentEventualMeds = []; }
-  document.getElementById("eventualMedsListWrap").innerHTML = renderEventualMedicationsListHTML(currentEventualMeds);
+  eventualMedsPaginator_.resetPage();
+  eventualMedsPaginator_.render();
 }
 document.getElementById("ev_fecha").value = todayDateStr_();
 document.getElementById("eventualMedForm").addEventListener("submit", async e => {
@@ -4913,10 +5022,12 @@ loadMedicationLog();
 let currentConsultations = [];
 let editingConsultationId = null;
 let pendingRecetaBase64 = null, pendingRecetaMime = null, pendingRecetaRemoved = false;
+const consultationsPaginator_ = createSectionPaginator_("consultations", "consultationsListWrap", () => currentConsultations, list => renderConsultationsListHTML(list, { photoBaseUrl: "/api/consultations/" }));
 async function loadConsultations() {
   ensureConsultationStyles_();
   try { currentConsultations = await apiGet("/api/consultations"); } catch (err) { currentConsultations = []; }
-  document.getElementById("consultationsListWrap").innerHTML = renderConsultationsListHTML(currentConsultations, { photoBaseUrl: "/api/consultations/" });
+  consultationsPaginator_.resetPage();
+  consultationsPaginator_.render();
 }
 function resetConsultationForm_() {
   editingConsultationId = null;
@@ -5034,6 +5145,7 @@ loadConsultations();
 // Las calorías las calcula el servidor al guardar (ver calcExerciseCalories_
 // en db-postgres.js), con el peso/estatura/edad/género de Parámetros.
 let currentExercises = [];
+const exercisesPaginator_ = createSectionPaginator_("exercises", "exercisesListWrap", () => currentExercises, list => renderExercisesListHTML(list));
 let editingExerciseId = null;
 async function loadExerciseTypes_() {
   const sel = document.getElementById("ex_tipo");
@@ -5083,7 +5195,8 @@ async function loadExercises() {
   ensureExerciseStyles_();
   try { currentExercises = await apiGet("/api/exercises"); } catch (err) { currentExercises = []; }
   document.getElementById("exerciseTotalsWrap").innerHTML = exerciseTotalsHTML_(currentExercises);
-  document.getElementById("exercisesListWrap").innerHTML = renderExercisesListHTML(currentExercises);
+  exercisesPaginator_.resetPage();
+  exercisesPaginator_.render();
 }
 function resetExerciseForm_() {
   editingExerciseId = null;
@@ -5164,12 +5277,18 @@ loadExercises();
 // ---- v31: lecturas de presión durante actividad física (sección Ejercicio)
 // — panel y gráfica separados de la Presión Arterial en reposo. ----
 let currentExerciseReadings = [];
+// v35.26: listExerciseReadings() regresa orden ascendente (a diferencia de
+// la mayoría de las demás listas, que ya vienen DESC del backend), por eso
+// aquí sí hace falta invertir antes de paginar — mismo criterio que la
+// tabla de lecturas de Presión Arterial.
+const exerciseReadingsPaginator_ = createSectionPaginator_("exerciseReadings", "exerciseReadingsListWrap", () => [...currentExerciseReadings].reverse(), list => renderExerciseReadingsListHTML(list));
 let editingExerciseReadingId = null;
 let exerciseReadingChartInstance = null;
 async function loadExerciseReadings() {
   ensureExerciseStyles_();
   try { currentExerciseReadings = await apiGet("/api/exercise-readings"); } catch (err) { currentExerciseReadings = []; }
-  document.getElementById("exerciseReadingsListWrap").innerHTML = renderExerciseReadingsListHTML(currentExerciseReadings);
+  exerciseReadingsPaginator_.resetPage();
+  exerciseReadingsPaginator_.render();
   renderExerciseReadingChart();
 }
 function renderExerciseReadingChart() {
@@ -5269,6 +5388,7 @@ loadExerciseReadings();
 
 // ---- v31: sección Wellness ----
 let currentWellness = [];
+const wellnessPaginator_ = createSectionPaginator_("wellness", "wellnessListWrap", () => currentWellness, list => renderWellnessListHTML(list));
 let editingWellnessId = null;
 function loadWellnessTypes_() {
   document.getElementById("well_tipo").innerHTML = WELLNESS_CATALOG.map(w => `<option value="${w.value}">${escapeHtml_(w.label)}</option>`).join("");
@@ -5277,7 +5397,8 @@ async function loadWellness() {
   ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
   try { currentWellness = await apiGet("/api/wellness"); } catch (err) { currentWellness = []; }
   document.getElementById("wellnessTotalsWrap").innerHTML = wellnessTotalsHTML_(currentWellness);
-  document.getElementById("wellnessListWrap").innerHTML = renderWellnessListHTML(currentWellness);
+  wellnessPaginator_.resetPage();
+  wellnessPaginator_.render();
 }
 function resetWellnessForm_() {
   editingWellnessId = null;
@@ -5379,12 +5500,14 @@ document.getElementById("sl_calidad_stars").addEventListener("click", e => {
   if (!btn) return;
   setSleepQualityStars_(Number(btn.dataset.star));
 });
+const sleepPaginator_ = createSectionPaginator_("sleep", "sleepListWrap", () => currentSleep, list => renderSleepListHTML(list));
 async function loadSleep() {
   ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
   ensureSymptomStyles_(); // reutiliza .symptom-intensity-wrap/.symptom-scale-chip
   try { currentSleep = await apiGet("/api/sleep"); } catch (err) { currentSleep = []; }
   renderSleepSummaryCards_();
-  document.getElementById("sleepListWrap").innerHTML = renderSleepListHTML(currentSleep);
+  sleepPaginator_.resetPage();
+  sleepPaginator_.render();
   renderSleepCircadianDashboard_();
 }
 
@@ -5696,6 +5819,7 @@ document.getElementById("sl_fecha").value = todayDateStr_();
 
 // ---- v35.23: Ayuno intermitente ----
 let currentAyunos = [];
+const ayunoPaginator_ = createSectionPaginator_("ayuno", "ayunoListWrap", () => currentAyunos, list => renderAyunoListHTML(list));
 let editingAyunoId = null; // usado tanto por "editar" como para saber cuál romper en el modal
 let ayunoLiveTimer_ = null;
 const AYUNO_META_PRESETS_ = [14, 16, 18, 20, 23];
@@ -5902,7 +6026,8 @@ async function loadAyuno() {
   try { currentAyunos = await apiGet("/api/ayuno"); } catch (err) { currentAyunos = []; }
   renderAyunoCurrent_();
   renderAyunoSummaryCards_();
-  document.getElementById("ayunoListWrap").innerHTML = renderAyunoListHTML(currentAyunos);
+  ayunoPaginator_.resetPage();
+  ayunoPaginator_.render();
   syncAyunoMetaUI_();
 }
 document.getElementById("ayunoListWrap").addEventListener("click", async e => {
@@ -6141,6 +6266,16 @@ function customMetricCardHTML_(metric) {
           <tbody data-metric-id="${metric.id}"></tbody>
         </table>
       </div>
+      <div class="pagination" data-metric-pag="${metric.id}" style="display:none;">
+        <div class="pagination-info" data-metric-pag-info="${metric.id}"></div>
+        <div class="pagination-controls">
+          <button type="button" class="btn-mini cm-pag-btn" data-metric-id="${metric.id}" data-dir="first" title="Primera página">« Primera</button>
+          <button type="button" class="btn-mini cm-pag-btn" data-metric-id="${metric.id}" data-dir="prev">‹ Anterior</button>
+          <span data-metric-pag-indicator="${metric.id}"></span>
+          <button type="button" class="btn-mini cm-pag-btn" data-metric-id="${metric.id}" data-dir="next">Siguiente ›</button>
+          <button type="button" class="btn-mini cm-pag-btn" data-metric-id="${metric.id}" data-dir="last" title="Última página">Última »</button>
+        </div>
+      </div>
       <div class="chart-wrap" style="margin-top:14px;"><canvas class="custom-metric-chart" data-metric-id="${metric.id}"></canvas></div>
       <div class="custom-metric-chart-empty" data-metric-id="${metric.id}" style="display:none; font-size:13px; color:var(--text-muted); text-align:center; padding:10px;">Todavía no hay suficientes registros numéricos o sí/no para graficar.</div>
     </div>`;
@@ -6152,15 +6287,23 @@ function customMetricEntryCellValue_(field, value) {
   if (field.type === "scale") return `${value}/10`;
   return escapeHtml_(String(value));
 }
+// v35.26: página actual por métrica (cada tabla se pagina por separado,
+// pero todas comparten el mismo pageSize sincronizado — ver setPageSize_).
+const customMetricPageState_ = {};
 function renderCustomMetricTable_(metric, entries) {
   const tbody = document.querySelector(`.custom-metric-table tbody[data-metric-id="${metric.id}"]`);
+  const bar = document.querySelector(`[data-metric-pag="${metric.id}"]`);
   if (!tbody) return;
   const sorted = [...entries].sort((a, b) => b.date.localeCompare(a.date)); // más reciente primero
   if (!sorted.length) {
     tbody.innerHTML = `<tr><td colspan="${metric.fields.length + 2}" style="text-align:center; color:var(--text-muted);">Todavía no tienes registros</td></tr>`;
+    if (bar) bar.style.display = "none";
     return;
   }
-  tbody.innerHTML = sorted.map(entry => `
+  const requestedPage = (customMetricPageState_[metric.id] && customMetricPageState_[metric.id].page) || 1;
+  const { pageData, page, totalPages } = paginateData(sorted, requestedPage, pageSize);
+  customMetricPageState_[metric.id] = { page, totalPages };
+  tbody.innerHTML = pageData.map(entry => `
     <tr data-entry-id="${entry.id}">
       <td>${fmtDate(entry.date)}</td>
       ${metric.fields.map(f => `<td>${customMetricEntryCellValue_(f, entry.field_values[f.key])}</td>`).join("")}
@@ -6169,6 +6312,17 @@ function renderCustomMetricTable_(metric, entries) {
         <button type="button" class="btn-mini danger custom-metric-entry-delete-btn" data-metric-id="${metric.id}" data-entry-id="${entry.id}">Eliminar</button>
       </div></td>
     </tr>`).join("");
+  if (bar) {
+    bar.style.display = "flex";
+    const start = (page - 1) * pageSize + 1;
+    const end = Math.min(page * pageSize, sorted.length);
+    bar.querySelector(`[data-metric-pag-info="${metric.id}"]`).textContent = `Mostrando ${start}–${end} de ${sorted.length}`;
+    bar.querySelector(`[data-metric-pag-indicator="${metric.id}"]`).textContent = `Página ${page} de ${totalPages}`;
+    bar.querySelectorAll(".cm-pag-btn").forEach(btn => {
+      const dir = btn.dataset.dir;
+      btn.disabled = (dir === "first" || dir === "prev") ? page <= 1 : page >= totalPages;
+    });
+  }
 }
 function renderCustomMetricChart_(metric, entries) {
   const canvas = document.querySelector(`.custom-metric-chart[data-metric-id="${metric.id}"]`);
@@ -6220,6 +6374,7 @@ function renderCustomMetricsTab_() {
   emptyEl.style.display = "none";
   container.innerHTML = currentCustomMetrics.map(customMetricCardHTML_).join("");
   currentCustomMetrics.forEach(metric => {
+    customMetricPageState_[metric.id] = { page: 1, totalPages: 1 }; // v35.26: reinicia a la página 1 en cada recarga
     renderCustomMetricTable_(metric, currentCustomMetricEntries.filter(e => e.metric_id === metric.id));
     const dateInput = document.querySelector(`.custom-metric-entry-form[data-metric-id="${metric.id}"] .custom-metric-entry-date`);
     if (dateInput && !dateInput.value) dateInput.value = todayStr();
@@ -6259,6 +6414,18 @@ function cancelEditCustomMetricEntry_(metricId) {
   form.querySelector(".custom-metric-cancel-edit-btn").style.display = "none";
 }
 document.getElementById("customMetricsContainer").addEventListener("click", e => {
+  const pagBtn = e.target.closest(".cm-pag-btn");
+  if (pagBtn) {
+    const metricId = pagBtn.dataset.metricId;
+    const metric = currentCustomMetrics.find(m => m.id === metricId);
+    if (!metric) return;
+    const state = customMetricPageState_[metricId] || { page: 1, totalPages: 1 };
+    const dir = pagBtn.dataset.dir;
+    const nextPage = dir === "first" ? 1 : dir === "prev" ? state.page - 1 : dir === "next" ? state.page + 1 : state.totalPages;
+    customMetricPageState_[metricId] = { page: nextPage, totalPages: state.totalPages };
+    renderCustomMetricTable_(metric, currentCustomMetricEntries.filter(en => en.metric_id === metricId));
+    return;
+  }
   const editBtn = e.target.closest(".custom-metric-edit-btn");
   if (editBtn) {
     const metric = currentCustomMetrics.find(m => m.id === editBtn.dataset.metricId);
