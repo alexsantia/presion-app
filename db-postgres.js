@@ -1919,8 +1919,8 @@ async function findInviteById(id) {
   return rows[0] || null;
 }
 async function listInvitesForPatient(patientId) {
-  const { rows } = await pool.query(`SELECT id, token, email, created_at FROM medico_invites WHERE patient_id = $1 ORDER BY created_at`, [patientId]);
-  return rows.map(r => ({ id: r.id, token: r.token, email: r.email || null, created_at: new Date(r.created_at).toISOString() }));
+  const { rows } = await pool.query(`SELECT id, token, email, phone, created_at FROM medico_invites WHERE patient_id = $1 ORDER BY created_at`, [patientId]);
+  return rows.map(r => ({ id: r.id, token: r.token, email: r.email || null, phone: r.phone || null, created_at: new Date(r.created_at).toISOString() }));
 }
 async function countPendingInvitesForPatient(patientId) {
   const { rows } = await pool.query(`SELECT count(*)::int AS c FROM medico_invites WHERE patient_id = $1`, [patientId]);
@@ -3573,7 +3573,13 @@ async function handlePost(body) {
     }
     const inviteToken = uuid().replace(/-/g, "");
     const email = body.email ? String(body.email).toLowerCase().trim() : null;
-    await pool.query(`INSERT INTO medico_invites (id, patient_id, token, email, created_at) VALUES ($1,$2,$3,$4,$5)`, [uuid(), p.id, inviteToken, email, now]);
+    // v35.29: teléfono opcional para invitar por WhatsApp — se guarda tal
+    // cual lo escribió el paciente (solo para mostrarlo/reabrir el enlace
+    // de WhatsApp después); a diferencia del correo, no dispara ningún
+    // envío del lado del servidor, eso lo arma el cliente con un enlace
+    // wa.me que el propio paciente confirma.
+    const phone = body.phone ? String(body.phone).trim() : null;
+    await pool.query(`INSERT INTO medico_invites (id, patient_id, token, email, phone, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, [uuid(), p.id, inviteToken, email, phone, now]);
     let emailResult = null;
     if (email) {
       const origin = String(body.origin || "").replace(/\/+$/, "");

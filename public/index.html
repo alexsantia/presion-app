@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.28"></script>
+<script src="/shared/common.js?v=35.29"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1569,7 +1569,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.28</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.29</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1706,12 +1706,20 @@
   <div class="modal-card">
     <div class="modal-header"><h2>✉️ Invitar a tu médico</h2><button type="button" class="modal-close" data-close-modal="inviteDoctorModal">✕</button></div>
 
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Si escribes su correo, se lo mandamos directo; si lo dejas en blanco, solo se genera el enlace para que lo copies.</p>
+    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">Genera un enlace de un solo uso para que tu médico cree su propia cuenta y quede ligado a tus datos, en modo de solo lectura. Puedes mandárselo por correo o por WhatsApp; si dejas el campo en blanco, solo se genera el enlace para que lo copies.</p>
     <div id="doctorCapInfo" style="font-size:12px; color:var(--text-muted); margin-bottom:8px;"></div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
-      <div style="flex:1; min-width:200px;">
+    <div class="chart-filter-mini" id="inviteMethodToggle" role="group" aria-label="Método de invitación">
+      <button type="button" class="chart-filter-btn active" data-invite-method="email">✉️ Correo</button>
+      <button type="button" class="chart-filter-btn" data-invite-method="whatsapp">💬 WhatsApp</button>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:8px;">
+      <div style="flex:1; min-width:200px;" id="inviteEmailFieldWrap">
         <label style="font-size:12px;">Correo del médico (opcional)</label>
         <input type="email" id="inviteDoctorEmail" placeholder="doctor@ejemplo.com">
+      </div>
+      <div style="flex:1; min-width:200px; display:none;" id="invitePhoneFieldWrap">
+        <label style="font-size:12px;">WhatsApp del médico (opcional)</label>
+        <input type="tel" id="inviteDoctorPhone" placeholder="+52 55 1234 5678">
       </div>
       <button type="button" class="btn-secondary" id="generateInviteBtn">Generar enlace para un médico</button>
     </div>
@@ -2133,7 +2141,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.28");
+  showAboutOverlay_("35.29");
 });
 
 function openModal(id) {
@@ -2322,6 +2330,25 @@ document.getElementById("fullRestoreFile").addEventListener("change", async (e) 
 
 // ---- Médicos vinculados e invitaciones pendientes (hasta 5 en total) ----
 const MAX_DOCTORS = 5;
+// v35.29: invitar por WhatsApp — no hay integración con la API de WhatsApp
+// Business (eso requeriría cuenta de negocio verificada con Meta, fuera de
+// alcance), así que se arma un enlace wa.me con el mensaje ya escrito y se
+// abre en una pestaña nueva; el paciente confirma el envío desde WhatsApp,
+// igual que ya pasaba al copiar el enlace a mano, pero sin tener que
+// pegarlo él mismo. wa.me solo acepta el número en dígitos (sin "+", espacios
+// ni guiones), por eso se limpia con una regex antes de armar la URL; si no
+// se da un número, wa.me abre el selector de contactos de WhatsApp.
+function waPhoneDigits_(phone) {
+  return String(phone || "").replace(/[^\d]/g, "");
+}
+function buildWaInviteUrl_(phone, link) {
+  const patientName = currentAccount && currentAccount.name ? currentAccount.name : "";
+  const text = `Hola, ${patientName ? patientName + " te" : "te"} invitó a ver su presión arterial en modo de solo lectura en Reigning Blood Pressure App. Crea tu cuenta de médico aquí: ${link}\n\nEste enlace es de un solo uso.`;
+  return `https://wa.me/${waPhoneDigits_(phone)}?text=${encodeURIComponent(text)}`;
+}
+function openWhatsAppInvite_(phone, link) {
+  window.open(buildWaInviteUrl_(phone, link), "_blank", "noopener");
+}
 async function loadDoctorsAndInvites() {
   try {
     const [doctors, invites] = await Promise.all([
@@ -2358,9 +2385,10 @@ function renderDoctorsAndInvites(doctors, invites) {
   invitesWrap.innerHTML = invites.length
     ? `<div class="doctor-list-title">Invitaciones pendientes</div>` + invites.map(i => `
         <div class="doctor-row">
-          <div class="doctor-info">${i.email ? `<strong>${i.email}</strong>` : ""}<code>${window.location.origin}/doctor/invite/${i.token}</code></div>
+          <div class="doctor-info">${i.email ? `<strong>${escapeHtml_(i.email)}</strong>` : (i.phone ? `<strong>💬 ${escapeHtml_(i.phone)}</strong>` : "")}<code>${window.location.origin}/doctor/invite/${i.token}</code></div>
           <div class="doctor-actions">
             <button type="button" class="btn-mini copy-invite-btn" data-token="${i.token}">Copiar</button>
+            <button type="button" class="btn-mini whatsapp-invite-btn" data-token="${i.token}" data-phone="${escapeHtml_(i.phone || "")}" title="Abrir WhatsApp con el enlace de esta invitación">💬 WhatsApp</button>
             <button type="button" class="btn-mini danger cancel-invite-btn" data-id="${i.id}">Cancelar</button>
           </div>
         </div>`).join("")
@@ -2388,6 +2416,12 @@ document.getElementById("pendingInvitesWrap").addEventListener("click", async e 
     setTimeout(() => setStatus(null), 1200);
     return;
   }
+  const waBtn = e.target.closest(".whatsapp-invite-btn");
+  if (waBtn) {
+    const link = window.location.origin + "/doctor/invite/" + waBtn.dataset.token;
+    openWhatsAppInvite_(waBtn.dataset.phone, link);
+    return;
+  }
   const cancelBtn = e.target.closest(".cancel-invite-btn");
   if (cancelBtn) {
     try {
@@ -2402,27 +2436,55 @@ document.getElementById("pendingInvitesWrap").addEventListener("click", async e 
   }
 });
 
+// v35.29: método de invitación (correo o WhatsApp) — alterna qué campo se
+// ve y qué hace el botón de generar, sin duplicar el flujo entero.
+let inviteMethod_ = "email";
+document.getElementById("inviteMethodToggle").addEventListener("click", e => {
+  const btn = e.target.closest("[data-invite-method]");
+  if (!btn) return;
+  inviteMethod_ = btn.dataset.inviteMethod;
+  document.querySelectorAll("#inviteMethodToggle [data-invite-method]").forEach(b => b.classList.toggle("active", b === btn));
+  document.getElementById("inviteEmailFieldWrap").style.display = inviteMethod_ === "email" ? "" : "none";
+  document.getElementById("invitePhoneFieldWrap").style.display = inviteMethod_ === "whatsapp" ? "" : "none";
+  document.getElementById("generateInviteBtn").textContent = inviteMethod_ === "whatsapp" ? "Generar enlace y abrir WhatsApp" : "Generar enlace para un médico";
+  document.getElementById("inviteEmailStatus").style.display = "none";
+});
 document.getElementById("generateInviteBtn").addEventListener("click", async () => {
-  const emailEl = document.getElementById("inviteDoctorEmail");
-  const email = emailEl.value.trim();
   const statusEl = document.getElementById("inviteEmailStatus");
   statusEl.style.display = "none";
   try {
-    setStatus("loading", email ? "Generando enlace y enviando correo…" : "Generando enlace…");
-    const result = await apiPost("/api/account/invite", email ? { email } : {});
-    const link = window.location.origin + "/doctor/invite/" + result.invite_token;
-    document.getElementById("inviteLink").textContent = link;
-    document.getElementById("inviteBox").style.display = "block";
-    if (result.email_sent === true) {
-      statusEl.textContent = `✅ Correo enviado a ${email}.`;
-      statusEl.style.color = "var(--success, #4F9E8C)";
+    if (inviteMethod_ === "email") {
+      const emailEl = document.getElementById("inviteDoctorEmail");
+      const email = emailEl.value.trim();
+      setStatus("loading", email ? "Generando enlace y enviando correo…" : "Generando enlace…");
+      const result = await apiPost("/api/account/invite", email ? { email } : {});
+      const link = window.location.origin + "/doctor/invite/" + result.invite_token;
+      document.getElementById("inviteLink").textContent = link;
+      document.getElementById("inviteBox").style.display = "block";
+      if (result.email_sent === true) {
+        statusEl.textContent = `✅ Correo enviado a ${email}.`;
+        statusEl.style.color = "var(--success, #4F9E8C)";
+        statusEl.style.display = "block";
+      } else if (result.email_sent === false) {
+        statusEl.textContent = `No se pudo enviar el correo (${result.email_error || "intenta de nuevo"}). Copia el enlace y mándaselo tú.`;
+        statusEl.style.color = "var(--danger, #C97064)";
+        statusEl.style.display = "block";
+      }
+      emailEl.value = "";
+    } else {
+      const phoneEl = document.getElementById("inviteDoctorPhone");
+      const phone = phoneEl.value.trim();
+      setStatus("loading", "Generando enlace…");
+      const result = await apiPost("/api/account/invite", phone ? { phone } : {});
+      const link = window.location.origin + "/doctor/invite/" + result.invite_token;
+      document.getElementById("inviteLink").textContent = link;
+      document.getElementById("inviteBox").style.display = "block";
+      openWhatsAppInvite_(phone, link);
+      statusEl.textContent = "Se abrió WhatsApp con el mensaje listo — solo confirma el envío ahí.";
+      statusEl.style.color = "var(--text-muted)";
       statusEl.style.display = "block";
-    } else if (result.email_sent === false) {
-      statusEl.textContent = `No se pudo enviar el correo (${result.email_error || "intenta de nuevo"}). Copia el enlace y mándaselo tú.`;
-      statusEl.style.color = "var(--danger, #C97064)";
-      statusEl.style.display = "block";
+      phoneEl.value = "";
     }
-    emailEl.value = "";
     setStatus(null);
     await loadDoctorsAndInvites();
   } catch (err) {

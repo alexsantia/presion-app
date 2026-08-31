@@ -706,3 +706,12 @@ ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS ayuno_meta_horas numeric;
 -- cualquier dispositivo que inicie sesión vea el mismo valor. Default 5
 -- (antes el default de localStorage era 10).
 ALTER TABLE pacientes ADD COLUMN IF NOT EXISTS page_size_pref integer NOT NULL DEFAULT 5;
+
+-- v35.29: invitar al médico también por WhatsApp, no solo por correo — el
+-- teléfono es opcional (igual que email ya lo era), se guarda solo para
+-- mostrarlo en "Invitaciones pendientes" y para poder reabrir el enlace de
+-- WhatsApp de esa invitación más tarde. No hay envío automático por
+-- WhatsApp (no hay integración con la API de WhatsApp Business): se abre
+-- un enlace wa.me con el mensaje ya armado y el propio paciente confirma
+-- el envío desde WhatsApp.
+ALTER TABLE medico_invites ADD COLUMN IF NOT EXISTS phone text;

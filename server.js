@@ -1071,6 +1071,8 @@ app.post("/api/account/invite", requireRole("patient"), asyncRoute(async (req, r
   const result = await callSheetsApi(null, {
     action: "generate_doctor_invite", patient_id: req.session.patientId,
     email: req.body && req.body.email ? req.body.email : undefined,
+    // v35.29: teléfono opcional, para invitar por WhatsApp en vez de correo.
+    phone: req.body && req.body.phone ? req.body.phone : undefined,
     origin: requestOrigin_(req),
   });
   res.json(result);

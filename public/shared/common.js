@@ -1182,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.29", changes: [
+    "Ahora puedes invitar a tu médico por WhatsApp, no solo por correo — desde \"Invitar a tu médico\" elige el método, y con WhatsApp se abre una conversación con el mensaje y el enlace ya listos para que solo confirmes el envío.",
+    "Las invitaciones pendientes por WhatsApp también se ven en la lista, con su propio botón para reabrir la conversación si hace falta.",
+  ] },
   { version: "35.28", changes: [
     "La tabla de Historial (Presión Arterial) ahora tiene una columna PAM (Presión Arterial Media), justo después de FC — se puede mostrar/ocultar igual que las demás columnas opcionales.",
     "Se reacomodó el ancho de las columnas de esa tabla para que se lean mejor: las columnas cortas (Hora, FC, PAM, Peso) ya no desperdician espacio, y Observaciones tiene más lugar para el texto.",
