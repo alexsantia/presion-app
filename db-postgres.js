@@ -747,6 +747,7 @@ function sleepRowToObject_(row) {
     duracion_min: row.duracion_min != null ? Number(row.duracion_min) : null,
     calidad: row.calidad != null ? Number(row.calidad) : null,
     notas: row.notas || "",
+    abierto: !row.hora_fin,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : "",
   };
 }
@@ -759,6 +760,15 @@ async function listSleep(patientId) {
     [patientId]
   );
   return rows.map(sleepRowToObject_);
+}
+// v35.27: mirror de findOpenAyuno_ — solo puede haber UNA noche de sueño
+// abierta (sin hora_fin) por paciente a la vez.
+async function findOpenSleep_(patientId) {
+  const { rows } = await pool.query(
+    `SELECT id FROM sueno WHERE patient_id = $1 AND hora_fin IS NULL LIMIT 1`,
+    [patientId]
+  );
+  return rows[0] || null;
 }
 
 // ---- Ayuno intermitente (v35.23) ----
@@ -2880,38 +2890,86 @@ async function handlePost(body) {
     return { ok: true };
   }
 
-  // ---- v32: sección Sueño — hora_inicio/hora_fin con duración calculada
-  // sola (misma red de seguridad que ejercicio: si el cliente no manda
-  // duracion_min, se calcula aquí; si sí la manda —porque el usuario la
-  // editó a mano—, esa gana). calidad es opcional, 1-10; se guarda null si
-  // no se captura. ----
-  if (body.action === "add_sleep" || body.action === "update_sleep") {
-    let duracionMin = hasValue(body.duracion_min) ? num(body.duracion_min) : null;
-    if (duracionMin == null) duracionMin = computeSleepDurationMinutes_(body.hora_inicio, body.hora_fin);
-    if (!body.fecha || !hasValue(duracionMin)) {
-      return { ok: false, error: "faltan datos (fecha y duración —u hora de inicio/fin— son obligatorios)" };
+  // ---- v35.27: sección Sueño rediseñada como abrir/cerrar (igual que Ayuno
+  // Intermitente) — antes era una sola entrada con hora_inicio Y hora_fin
+  // capturadas juntas, lo cual no reflejaba la realidad: uno registra la
+  // hora de dormir ANTES de saber a qué hora va a despertar. Ahora
+  // start_sleep abre la noche (solo hora de dormir) y wake_sleep la cierra
+  // (hora de despertar + calidad/notas opcionales), calculando la duración
+  // sola con computeSleepDurationMinutes_ (misma red de seguridad que
+  // ejercicio: si el reloj de "despertar" es numéricamente antes que el de
+  // "dormir", asume que cruzó la medianoche y suma 24h). update_sleep sigue
+  // disponible para correcciones manuales de cualquier campo, incluida la
+  // posibilidad de reabrir una noche (quitándole hora_fin) o cerrarla a
+  // mano — igual que update_ayuno.
+  if (body.action === "start_sleep") {
+    if (!body.fecha || !body.hora_inicio) {
+      return { ok: false, error: "faltan datos (fecha y hora de dormir son obligatorias)" };
     }
+    const open = await findOpenSleep_(body.patient_id);
+    if (open) return { ok: false, error: "ya tienes una noche de sueño en curso — registra la hora de despertar antes de abrir otra" };
+    const id = uuid();
+    await pool.query(
+      `INSERT INTO sueno (id, patient_id, fecha, hora_inicio, notas, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+      [id, body.patient_id, body.fecha, body.hora_inicio, body.notas || "", now]
+    );
+    emitChange(body.patient_id, "sleep");
+    return { ok: true, id };
+  }
+  // wake_sleep: cierra una noche abierta (hora_fin + calidad/notas
+  // opcionales) y calcula la duración.
+  if (body.action === "wake_sleep") {
+    if (!body.hora_fin) {
+      return { ok: false, error: "falta la hora en que despertaste" };
+    }
+    const existing = (await pool.query(
+      `SELECT to_char(hora_inicio,'HH24:MI') AS hora_inicio, notas FROM sueno WHERE id = $1 AND patient_id = $2`,
+      [body.id, body.patient_id]
+    )).rows[0];
+    if (!existing) return { ok: false, error: "no encontrado" };
+    const duracionMin = computeSleepDurationMinutes_(existing.hora_inicio, body.hora_fin);
     let calidad = hasValue(body.calidad) ? num(body.calidad) : null;
     if (calidad != null) calidad = Math.min(10, Math.max(1, Math.round(calidad)));
-    if (body.action === "add_sleep") {
-      const id = uuid();
-      await pool.query(
-        `INSERT INTO sueno (id, patient_id, fecha, hora_inicio, hora_fin, duracion_min, calidad, notas, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)`,
-        [id, body.patient_id, body.fecha, body.hora_inicio || null, body.hora_fin || null, duracionMin, calidad, body.notas || "", now]
-      );
-      emitChange(body.patient_id, "sleep");
-      return { ok: true, id };
-    } else {
-      const { rowCount } = await pool.query(
-        `UPDATE sueno SET fecha = $1, hora_inicio = $2, hora_fin = $3, duracion_min = $4, calidad = $5, notas = $6, updated_at = $7
-         WHERE id = $8 AND patient_id = $9`,
-        [body.fecha, body.hora_inicio || null, body.hora_fin || null, duracionMin, calidad, body.notas || "", now, body.id, body.patient_id]
-      );
-      if (!rowCount) return { ok: false, error: "no encontrado" };
-      emitChange(body.patient_id, "sleep");
-      return { ok: true };
+    const notas = hasValue(body.notas) ? body.notas : existing.notas;
+    await pool.query(
+      `UPDATE sueno SET hora_fin = $1, duracion_min = $2, calidad = $3, notas = $4, updated_at = $5
+       WHERE id = $6 AND patient_id = $7`,
+      [body.hora_fin, duracionMin, calidad, notas, now, body.id, body.patient_id]
+    );
+    emitChange(body.patient_id, "sleep");
+    return { ok: true, duracion_min: duracionMin };
+  }
+  // update_sleep: corregir a mano cualquier campo de una noche ya existente
+  // (abierta o cerrada) — igual que update_ayuno. Si se le manda hora_fin
+  // vacía a propósito, la noche se "reabre" (duracion_min vuelve a null).
+  if (body.action === "update_sleep") {
+    const current = (await pool.query(
+      `SELECT to_char(fecha,'YYYY-MM-DD') AS fecha, to_char(hora_inicio,'HH24:MI') AS hora_inicio,
+              to_char(hora_fin,'HH24:MI') AS hora_fin, calidad, notas
+       FROM sueno WHERE id = $1 AND patient_id = $2`,
+      [body.id, body.patient_id]
+    )).rows[0];
+    if (!current) return { ok: false, error: "no encontrado" };
+    const fecha = hasValue(body.fecha) ? body.fecha : current.fecha;
+    const horaInicio = hasValue(body.hora_inicio) ? body.hora_inicio : current.hora_inicio;
+    const horaFin = body.hora_fin !== undefined ? (body.hora_fin || null) : current.hora_fin;
+    if (!fecha || !horaInicio) {
+      return { ok: false, error: "faltan datos (fecha y hora de dormir son obligatorias)" };
     }
+    let duracionMin = hasValue(body.duracion_min) ? num(body.duracion_min) : null;
+    if (duracionMin == null && horaFin) duracionMin = computeSleepDurationMinutes_(horaInicio, horaFin);
+    let calidad = body.calidad !== undefined ? (hasValue(body.calidad) ? num(body.calidad) : null) : current.calidad;
+    if (calidad != null) calidad = Math.min(10, Math.max(1, Math.round(calidad)));
+    const notas = body.notas !== undefined ? (body.notas || "") : current.notas;
+    const { rowCount } = await pool.query(
+      `UPDATE sueno SET fecha = $1, hora_inicio = $2, hora_fin = $3, duracion_min = $4, calidad = $5, notas = $6, updated_at = $7
+       WHERE id = $8 AND patient_id = $9`,
+      [fecha, horaInicio, horaFin, duracionMin, calidad, notas, now, body.id, body.patient_id]
+    );
+    if (!rowCount) return { ok: false, error: "no encontrado" };
+    emitChange(body.patient_id, "sleep");
+    return { ok: true };
   }
   if (body.action === "delete_sleep") {
     const { rowCount } = await pool.query(`DELETE FROM sueno WHERE id = $1 AND patient_id = $2`, [body.id, body.patient_id]);

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.26"></script>
+<script src="/shared/common.js?v=35.27"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1353,43 +1353,16 @@
   </div>
 </div>
 
-<!-- v32: sección Sueño — hora de inicio/fin (casi siempre cruza la
-     medianoche), duración calculada sola (mismo patrón que Ejercicio, editable
-     a mano), y calidad de sueño opcional 1-10. -->
+<!-- v35.27: sección Sueño rediseñada como abrir/cerrar (igual que Ayuno
+     Intermitente) — se registra la hora de dormir y, por separado, la hora
+     de despertar (antes eran capturadas juntas en una sola entrada, lo cual
+     no reflejaba la realidad: uno no sabe a qué hora va a despertar cuando
+     se acuesta). Mientras la noche sigue abierta se ve un contador en vivo;
+     "Desperté" la cierra calculando la duración sola. -->
 <div id="tabSueno" class="tab-panel" style="display:none;">
-  <div class="section section-add">
-    <h2 id="slFormTitle">Registrar sueño</h2>
-    <p style="font-size:13px; color:var(--text-muted); margin-top:-6px;">La duración se calcula sola a partir de la hora de inicio y fin; puedes editarla a mano si lo prefieres.</p>
-    <form class="add-form" id="sleepForm">
-      <div><label>Fecha</label><input type="date" id="sl_fecha" required></div>
-      <div><label>Hora de inicio</label><input type="time" id="sl_hora_inicio" data-date-pair="sl_fecha"></div>
-      <div><label>Hora de fin</label><input type="time" id="sl_hora_fin" data-date-pair="sl_fecha"></div>
-      <div><label>Duración (horas)</label><input type="number" id="sl_duracion_horas" min="0.1" max="24" step="0.1" required></div>
-      <div class="full checkbox-field">
-        <label class="checkbox-label"><input type="checkbox" id="sl_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
-      </div>
-      <div class="full symptom-intensity-wrap" id="sl_calidad_wrap" style="display:none;">
-        <input type="hidden" id="sl_calidad" value="5">
-        <div class="star-rating" id="sl_calidad_stars" role="group" aria-label="Calidad de sueño, de 1 a 10 estrellas">
-          <button type="button" class="star-btn" data-star="1" aria-label="1 estrella">★</button>
-          <button type="button" class="star-btn" data-star="2" aria-label="2 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="3" aria-label="3 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="4" aria-label="4 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="5" aria-label="5 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="6" aria-label="6 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="7" aria-label="7 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="8" aria-label="8 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="9" aria-label="9 estrellas">★</button>
-          <button type="button" class="star-btn" data-star="10" aria-label="10 estrellas">★</button>
-        </div>
-        <span class="symptom-intensity-value" id="sl_calidad_label">5/10 – Regular-buena</span>
-      </div>
-      <div class="full"><label>Notas (opcional)</label><input type="text" id="sl_notas" placeholder="Ej. desperté varias veces"></div>
-      <div class="row-actions">
-        <button type="submit" class="btn-primary" id="slFormSubmitBtn">Registrar</button>
-        <button type="button" class="btn-secondary" id="slFormCancelBtn" style="display:none;">Cancelar edición</button>
-      </div>
-    </form>
+  <div class="section" id="sleepCurrentSection">
+    <h2>😴 Sueño actual</h2>
+    <div id="sleepCurrentWrap"></div>
   </div>
   <!-- v35.16: dashboard de ritmo circadiano — muestra cada noche como una
        barra de "hora de dormir" a "hora de despertar" (en vez de solo la
@@ -1423,6 +1396,40 @@
     <h2>Tu sueño</h2>
     <div id="sleepTotalsWrap"></div>
     <div id="sleepListWrap"></div>
+  </div>
+</div>
+
+<!-- Modal para registrar la hora de despertar (cierra la noche abierta) -->
+<div class="modal-overlay" id="sleepWakeModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>Desperté</h2><button type="button" class="modal-close" data-close-modal="sleepWakeModal">✕</button></div>
+    <form class="add-form" id="sleepWakeForm">
+      <div><label>Hora de despertar</label><input type="time" id="slw_hora" required></div>
+      <div class="full checkbox-field">
+        <label class="checkbox-label"><input type="checkbox" id="slw_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
+      </div>
+      <div class="full symptom-intensity-wrap" id="slw_calidad_wrap" style="display:none;">
+        <input type="hidden" id="slw_calidad" value="5">
+        <div class="star-rating" id="slw_calidad_stars" role="group" aria-label="Calidad de sueño, de 1 a 10 estrellas">
+          <button type="button" class="star-btn" data-star="1" aria-label="1 estrella">★</button>
+          <button type="button" class="star-btn" data-star="2" aria-label="2 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="3" aria-label="3 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="4" aria-label="4 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="5" aria-label="5 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="6" aria-label="6 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="7" aria-label="7 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="8" aria-label="8 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="9" aria-label="9 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="10" aria-label="10 estrellas">★</button>
+        </div>
+        <span class="symptom-intensity-value" id="slw_calidad_label">5/10 – Regular-buena</span>
+      </div>
+      <div class="full"><label>Notas (opcional)</label><input type="text" id="slw_notas" placeholder="Ej. desperté varias veces"></div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary">Registrar despertar</button>
+        <button type="button" class="btn-secondary" data-close-modal="sleepWakeModal">Cancelar</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -1542,7 +1549,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.26</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.27</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2106,7 +2113,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.26");
+  showAboutOverlay_("35.27");
 });
 
 function openModal(id) {
@@ -5463,48 +5470,129 @@ document.getElementById("well_fecha").value = todayDateStr_();
 loadWellnessTypes_();
 loadWellness();
 
-// ---- v32: sección Sueño — hora de inicio/fin calculan la duración solas
-// (mismo patrón que Ejercicio), editable a mano; calidad de sueño opcional
-// 1-10 (mismo patrón que la intensidad de Síntomas), oculta detrás de un
-// checkbox porque a diferencia de los síntomas, aquí sí es opcional. ----
-let editingSleepId = null;
-let slDurationManuallyEdited_ = false;
-function recomputeSleepDuration_() {
-  if (slDurationManuallyEdited_) return;
-  const start = document.getElementById("sl_hora_inicio").value;
-  const end = document.getElementById("sl_hora_fin").value;
-  if (!start || !end) return;
-  const toMin = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-  let diff = toMin(end) - toMin(start);
-  if (diff <= 0) diff += 24 * 60; // cruzó la medianoche (lo normal en sueño)
-  document.getElementById("sl_duracion_horas").value = Math.round((diff / 60) * 10) / 10;
-}
-document.getElementById("sl_hora_inicio").addEventListener("change", () => { slDurationManuallyEdited_ = false; recomputeSleepDuration_(); });
-document.getElementById("sl_hora_fin").addEventListener("change", () => { slDurationManuallyEdited_ = false; recomputeSleepDuration_(); });
-document.getElementById("sl_duracion_horas").addEventListener("input", () => { slDurationManuallyEdited_ = true; });
-document.getElementById("sl_calidad_toggle").addEventListener("change", e => {
-  document.getElementById("sl_calidad_wrap").style.display = e.target.checked ? "" : "none";
-});
+// ---- v35.27: sección Sueño como abrir/cerrar (igual que Ayuno
+// Intermitente) — se registra la hora de dormir (abre la noche) y, por
+// separado, la hora de despertar ("Desperté", cierra la noche y calcula la
+// duración sola); calidad de sueño opcional 1-10 (mismo patrón que la
+// intensidad de Síntomas) se captura al despertar. ----
+let editingSleepId = null; // cuál noche se está cerrando en el modal "Desperté"
+let sleepLiveTimer_ = null;
+function findOpenSleep_() { return currentSleep.find(s => s.abierto); }
 // v32.2: calidad de sueño con estrellas (1-10) en vez de barra deslizable —
 // setSleepQualityStars_ actualiza el input oculto, el texto y qué estrellas
 // se ven llenas, todo en un solo lugar para no repetirlo en cada callsite.
 function setSleepQualityStars_(n) {
-  document.getElementById("sl_calidad").value = n;
-  document.getElementById("sl_calidad_label").textContent = `${n}/10 – ${SLEEP_QUALITY_LABELS_[n] || ""}`;
-  document.querySelectorAll("#sl_calidad_stars .star-btn").forEach(btn => {
+  document.getElementById("slw_calidad").value = n;
+  document.getElementById("slw_calidad_label").textContent = `${n}/10 – ${SLEEP_QUALITY_LABELS_[n] || ""}`;
+  document.querySelectorAll("#slw_calidad_stars .star-btn").forEach(btn => {
     btn.classList.toggle("is-filled", Number(btn.dataset.star) <= n);
   });
 }
-document.getElementById("sl_calidad_stars").addEventListener("click", e => {
+document.getElementById("slw_calidad_toggle").addEventListener("change", e => {
+  document.getElementById("slw_calidad_wrap").style.display = e.target.checked ? "" : "none";
+});
+document.getElementById("slw_calidad_stars").addEventListener("click", e => {
   const btn = e.target.closest(".star-btn");
   if (!btn) return;
   setSleepQualityStars_(Number(btn.dataset.star));
+});
+
+// ---- Sueño actual: o bien "registrar hora de dormir" (sin noche abierta),
+// o bien el contador en vivo + botón "Desperté" (con una abierta) — mismo
+// patrón que renderAyunoCurrent_. Se reconstruye por completo en cada
+// render (más simple que ir mutando nodos) porque cambia poco de
+// frecuencia (solo al abrir/cerrar una noche o cada minuto mientras corre
+// el contador).
+function sleepElapsedMin_(fecha, horaInicio, refDate) {
+  if (!fecha || !horaInicio) return null;
+  const start = new Date(`${fecha}T${horaInicio}:00`);
+  if (isNaN(start.getTime())) return null;
+  const ref = refDate || new Date();
+  const diffMs = ref.getTime() - start.getTime();
+  if (diffMs < 0) return 0;
+  return diffMs / 60000;
+}
+function renderSleepCurrent_() {
+  const wrap = document.getElementById("sleepCurrentWrap");
+  if (!wrap) return;
+  const open = findOpenSleep_();
+  if (!open) {
+    wrap.innerHTML = `
+      <p style="font-size:13px; color:var(--text-muted); margin-top:-4px;">Registra la hora en que te acuestas a dormir para empezar a contar tu noche.</p>
+      <form class="add-form" id="sleepStartForm">
+        <div><label>Fecha</label><input type="date" id="sls_fecha" required></div>
+        <div><label>Hora de dormir</label><input type="time" id="sls_hora" data-date-pair="sls_fecha" required></div>
+        <div class="row-actions"><button type="submit" class="btn-primary">Registrar hora de dormir</button></div>
+      </form>`;
+    document.getElementById("sls_fecha").value = todayDateStr_();
+    autoWireNowTimeButtons_();
+    document.getElementById("sleepStartForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const fecha = document.getElementById("sls_fecha").value;
+      const hora_inicio = document.getElementById("sls_hora").value;
+      if (!fecha || !hora_inicio) return;
+      try {
+        await apiPost("/api/sleep", { fecha, hora_inicio });
+        await loadSleep();
+      } catch (err) {
+        alert("No se pudo registrar: " + err.message);
+      }
+    });
+    if (sleepLiveTimer_) { clearInterval(sleepLiveTimer_); sleepLiveTimer_ = null; }
+    return;
+  }
+  const minutos = sleepElapsedMin_(open.fecha, open.hora_inicio) || 0;
+  wrap.innerHTML = `
+    <div class="grid" style="margin-bottom:12px;">
+      <div class="card">
+        <div class="label">Llevas durmiendo</div>
+        <div class="value">${sleepDurationLabel_(minutos)}</div>
+        <div class="value small" style="color:var(--text-muted); font-size:12px;">desde las ${open.hora_inicio} del ${open.fecha.split("-").reverse().join("/")}</div>
+      </div>
+    </div>
+    <div class="row-actions">
+      <button type="button" class="btn-primary" id="sleepWakeBtn">Desperté</button>
+    </div>`;
+  document.getElementById("sleepWakeBtn").addEventListener("click", () => openSleepWakeModal_(open.id));
+  if (sleepLiveTimer_) clearInterval(sleepLiveTimer_);
+  sleepLiveTimer_ = setInterval(() => { if (findOpenSleep_()) renderSleepCurrent_(); }, 60000);
+}
+function openSleepWakeModal_(id) {
+  const s = currentSleep.find(x => x.id === id);
+  if (!s) return;
+  editingSleepId = id;
+  document.getElementById("slw_hora").value = nowTimeStr();
+  document.getElementById("slw_calidad_toggle").checked = false;
+  document.getElementById("slw_calidad_wrap").style.display = "none";
+  setSleepQualityStars_(5);
+  document.getElementById("slw_notas").value = "";
+  openModal("sleepWakeModal");
+}
+document.getElementById("sleepWakeForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const hora_fin = document.getElementById("slw_hora").value;
+  if (!hora_fin) return;
+  const payload = {
+    hora_fin,
+    calidad: document.getElementById("slw_calidad_toggle").checked ? Number(document.getElementById("slw_calidad").value) : null,
+    notas: document.getElementById("slw_notas").value.trim(),
+  };
+  try {
+    await apiPut(`/api/sleep/${editingSleepId}/despertar`, payload);
+    closeModal("sleepWakeModal");
+    editingSleepId = null;
+    await loadSleep();
+    renderLabHistoryCharts(["sleepDuration", "sleepQuality"]);
+  } catch (err) {
+    alert("No se pudo registrar el despertar: " + err.message);
+  }
 });
 const sleepPaginator_ = createSectionPaginator_("sleep", "sleepListWrap", () => currentSleep, list => renderSleepListHTML(list));
 async function loadSleep() {
   ensureExerciseStyles_(); // reutiliza .ex-entry/.ex-totals
   ensureSymptomStyles_(); // reutiliza .symptom-intensity-wrap/.symptom-scale-chip
   try { currentSleep = await apiGet("/api/sleep"); } catch (err) { currentSleep = []; }
+  renderSleepCurrent_();
   renderSleepSummaryCards_();
   sleepPaginator_.resetPage();
   sleepPaginator_.render();
@@ -5741,65 +5829,27 @@ document.getElementById("sleepCircadianWeekendToggle").addEventListener("change"
   sleepCircadianMarkWeekends_ = e.target.checked;
   renderSleepCircadianDashboard_();
 });
-function resetSleepForm_() {
-  editingSleepId = null;
-  slDurationManuallyEdited_ = false;
-  document.getElementById("sleepForm").reset();
-  document.getElementById("sl_fecha").value = todayDateStr_();
-  document.getElementById("sl_calidad_toggle").checked = false;
-  document.getElementById("sl_calidad_wrap").style.display = "none";
-  setSleepQualityStars_(5);
-  document.getElementById("slFormTitle").textContent = "Registrar sueño";
-  document.getElementById("slFormSubmitBtn").textContent = "Registrar";
-  document.getElementById("slFormCancelBtn").style.display = "none";
-}
-document.getElementById("sleepForm").addEventListener("submit", async e => {
-  e.preventDefault();
-  const fecha = document.getElementById("sl_fecha").value;
-  const duracionHoras = document.getElementById("sl_duracion_horas").value;
-  if (!fecha || !duracionHoras) return;
-  const payload = {
-    fecha, duracion_min: Math.round(Number(duracionHoras) * 60),
-    hora_inicio: document.getElementById("sl_hora_inicio").value || "",
-    hora_fin: document.getElementById("sl_hora_fin").value || "",
-    calidad: document.getElementById("sl_calidad_toggle").checked ? Number(document.getElementById("sl_calidad").value) : null,
-    notas: document.getElementById("sl_notas").value.trim(),
-  };
-  try {
-    if (editingSleepId) await apiPut(`/api/sleep/${editingSleepId}`, payload);
-    else await apiPost("/api/sleep", payload);
-    resetSleepForm_();
-    await loadSleep();
-    renderLabHistoryCharts(["sleepDuration", "sleepQuality"]);
-  } catch (err) {
-    alert("No se pudo guardar el sueño: " + err.message);
-  }
-});
-document.getElementById("slFormCancelBtn").addEventListener("click", () => resetSleepForm_());
+// editar (prompt de fecha/hora de dormir) y eliminar — mismo patrón mínimo
+// que el editar de Ayuno (.ayuno-edit-btn): solo corrige los datos de
+// apertura de la noche; la hora de despertar/calidad se corrige reabriendo
+// desde "Desperté" o con .sleep-wake-btn si la noche sigue abierta.
 document.getElementById("sleepListWrap").addEventListener("click", async e => {
+  const wakeBtn = e.target.closest(".sleep-wake-btn");
+  if (wakeBtn) { openSleepWakeModal_(wakeBtn.dataset.sleepId); return; }
   const editBtn = e.target.closest(".sleep-edit-btn");
   if (editBtn) {
     const s = currentSleep.find(x => x.id === editBtn.dataset.sleepId);
     if (!s) return;
-    editingSleepId = s.id;
-    slDurationManuallyEdited_ = false;
-    document.getElementById("sl_fecha").value = s.fecha || "";
-    document.getElementById("sl_hora_inicio").value = s.hora_inicio || "";
-    document.getElementById("sl_hora_fin").value = s.hora_fin || "";
-    document.getElementById("sl_duracion_horas").value = s.duracion_min != null ? Math.round((s.duracion_min / 60) * 10) / 10 : "";
-    if (s.calidad != null) {
-      document.getElementById("sl_calidad_toggle").checked = true;
-      document.getElementById("sl_calidad_wrap").style.display = "";
-      setSleepQualityStars_(s.calidad);
-    } else {
-      document.getElementById("sl_calidad_toggle").checked = false;
-      document.getElementById("sl_calidad_wrap").style.display = "none";
+    const nuevaFecha = prompt("Fecha de la noche (YYYY-MM-DD):", s.fecha);
+    if (nuevaFecha === null) return;
+    const nuevaHoraInicio = prompt("Hora de dormir (HH:MM):", s.hora_inicio);
+    if (nuevaHoraInicio === null) return;
+    try {
+      await apiPut(`/api/sleep/${s.id}`, { fecha: nuevaFecha, hora_inicio: nuevaHoraInicio });
+      await loadSleep();
+    } catch (err) {
+      alert("No se pudo editar: " + err.message);
     }
-    document.getElementById("sl_notas").value = s.notas || "";
-    document.getElementById("slFormTitle").textContent = "Editar sueño";
-    document.getElementById("slFormSubmitBtn").textContent = "Guardar cambios";
-    document.getElementById("slFormCancelBtn").style.display = "";
-    document.getElementById("sleepForm").scrollIntoView({ behavior: "smooth", block: "center" });
     return;
   }
   const delBtn = e.target.closest(".sleep-delete-btn");
@@ -5807,7 +5857,6 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
     if (!confirm("¿Eliminar este registro de sueño?")) return;
     try {
       await apiDelete(`/api/sleep/${delBtn.dataset.sleepId}`);
-      if (editingSleepId === delBtn.dataset.sleepId) resetSleepForm_();
       await loadSleep();
       renderLabHistoryCharts(["sleepDuration", "sleepQuality"]);
     } catch (err) {
@@ -5815,7 +5864,6 @@ document.getElementById("sleepListWrap").addEventListener("click", async e => {
     }
   }
 });
-document.getElementById("sl_fecha").value = todayDateStr_();
 
 // ---- v35.23: Ayuno intermitente ----
 let currentAyunos = [];

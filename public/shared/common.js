@@ -1182,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.27", changes: [
+    "La sección Sueño ahora se registra en dos pasos, como el Ayuno Intermitente: registras la hora en que te acuestas a dormir y, por separado, la hora en que despiertas (con \"Desperté\") — antes se capturaban juntas en una sola entrada, aunque casi nunca se sabe a qué hora se va a despertar cuando uno se acuesta.",
+    "Mientras la noche sigue abierta se ve un contador en vivo (\"Llevas durmiendo...\"), igual que el contador del ayuno en curso.",
+  ] },
   { version: "35.26", changes: [
     "Todas las secciones con listas (Síntomas, Sueño, Ayuno, Ejercicio, Bienestar, Malos hábitos, Medicamentos eventuales, Consultas, Métricas personalizadas) ahora tienen paginación, con 5 registros por página de default — antes solo el historial de Presión Arterial la tenía.",
     "\"Lecturas por página\" (en Ajustes) ahora se guarda en tu cuenta en vez de solo en este navegador — antes, cambiarla en la computadora no se reflejaba en el celular y viceversa.",
@@ -2228,25 +2232,35 @@ function ayunoRecommendation_(horas) {
     nota: "Los ayunos de más de 24 h ameritan más cuidado al romperlos. Si vas a ayunar así seguido, coméntalo con tu médico — sobre todo si tomas medicamentos que deban acompañarse de alimento.",
   };
 }
+// v35.27: dos estados, igual que ayunoEntryHTML_ — abierto (todavía sin
+// hora_fin, solo se registró la hora de dormir; muestra "en curso" con un
+// botón "Desperté" para cerrarla) y cerrado (muestra inicio–fin, duración y
+// calidad, igual que antes).
 function sleepEntryHTML_(s, opts) {
   opts = opts || {};
   const dateLabel = s.fecha ? s.fecha.split("-").reverse().join("/") : "";
   const actions = opts.readOnly ? "" : `
     <div class="ex-entry-actions">
+      ${s.abierto ? `<button type="button" class="btn-mini sleep-wake-btn" data-sleep-id="${s.id}">Desperté</button>` : ""}
       <button type="button" class="btn-mini sleep-edit-btn" data-sleep-id="${s.id}">Editar</button>
       <button type="button" class="btn-mini danger sleep-delete-btn" data-sleep-id="${s.id}">Eliminar</button>
     </div>`;
   const detailParts = [dateLabel];
-  if (s.hora_inicio && s.hora_fin) detailParts.push(`${escapeHtml_(s.hora_inicio)}–${escapeHtml_(s.hora_fin)}`);
-  else if (s.hora_inicio) detailParts.push(escapeHtml_(s.hora_inicio));
-  if (s.duracion_min != null) detailParts.push(sleepDurationLabel_(s.duracion_min));
+  if (s.abierto) {
+    detailParts.push(`Se durmió: ${escapeHtml_(s.hora_inicio || "")}`);
+    detailParts.push("en curso");
+  } else {
+    if (s.hora_inicio && s.hora_fin) detailParts.push(`${escapeHtml_(s.hora_inicio)}–${escapeHtml_(s.hora_fin)}`);
+    else if (s.hora_inicio) detailParts.push(escapeHtml_(s.hora_inicio));
+    if (s.duracion_min != null) detailParts.push(sleepDurationLabel_(s.duracion_min));
+  }
   const qualityChip = s.calidad != null
     ? `<span class="symptom-scale-chip">Calidad ${s.calidad}/10 – ${escapeHtml_(SLEEP_QUALITY_LABELS_[s.calidad] || "")}</span>`
     : "";
   return `
     <div class="ex-entry" data-sleep-id="${s.id}">
       <div class="ex-entry-header">
-        <div class="ex-entry-title">🌙 Sueño</div>
+        <div class="ex-entry-title">${s.abierto ? "⏳" : "🌙"} Sueño${s.abierto ? " (en curso)" : ""}</div>
         ${actions}
       </div>
       <div class="ex-entry-detail">${detailParts.join(" · ")}</div>

@@ -687,13 +687,17 @@ app.delete("/api/wellness/:id", requireRole("patient"), asyncRoute(async (req, r
   res.json(await callSheetsApi(null, { action: "delete_wellness", patient_id: req.session.patientId, id: req.params.id }));
 }));
 
-// ---- v32: sección Sueño (hora de inicio/fin, duración calculada sola o
-// editable a mano, calidad opcional 1-10). ----
+// ---- v35.27: sección Sueño como abrir/cerrar (igual que Ayuno
+// Intermitente) — se registra la hora de dormir y de despertar por
+// separado, no en una sola entrada. ----
 app.get("/api/sleep", requireAnyRole, asyncRoute(async (req, res) => {
   res.json(await callSheetsApi({ action: "list_sleep", patient_id: req.session.patientId }));
 }));
 app.post("/api/sleep", requireRole("patient"), asyncRoute(async (req, res) => {
-  res.json(await callSheetsApi(null, { action: "add_sleep", patient_id: req.session.patientId, ...req.body }));
+  res.json(await callSheetsApi(null, { action: "start_sleep", patient_id: req.session.patientId, ...req.body }));
+}));
+app.put("/api/sleep/:id/despertar", requireRole("patient"), asyncRoute(async (req, res) => {
+  res.json(await callSheetsApi(null, { action: "wake_sleep", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
 }));
 app.put("/api/sleep/:id", requireRole("patient"), asyncRoute(async (req, res) => {
   res.json(await callSheetsApi(null, { action: "update_sleep", patient_id: req.session.patientId, id: req.params.id, ...req.body }));
