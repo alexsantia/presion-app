@@ -1182,6 +1182,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.28", changes: [
+    "La tabla de Historial (Presión Arterial) ahora tiene una columna PAM (Presión Arterial Media), justo después de FC — se puede mostrar/ocultar igual que las demás columnas opcionales.",
+    "Se reacomodó el ancho de las columnas de esa tabla para que se lean mejor: las columnas cortas (Hora, FC, PAM, Peso) ya no desperdician espacio, y Observaciones tiene más lugar para el texto.",
+  ] },
   { version: "35.27", changes: [
     "La sección Sueño ahora se registra en dos pasos, como el Ayuno Intermitente: registras la hora en que te acuestas a dormir y, por separado, la hora en que despiertas (con \"Desperté\") — antes se capturaban juntas en una sola entrada, aunque casi nunca se sabe a qué hora se va a despertar cuando uno se acuesta.",
     "Mientras la noche sigue abierta se ve un contador en vivo (\"Llevas durmiendo...\"), igual que el contador del ayuno en curso.",

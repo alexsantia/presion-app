@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.27"></script>
+<script src="/shared/common.js?v=35.28"></script>
 <style>
   :root {
     color-scheme: light;
@@ -64,6 +64,24 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--text-muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  /* v35.28: columnas del Historial de lecturas con ancho proporcional a su
+     contenido — antes todas competían por el mismo espacio (auto-layout sin
+     pistas), dejando columnas cortas (Hora, FC, PAM, Peso) con exceso de
+     aire y Observaciones apretada. Los anchos son solo una sugerencia (no
+     table-layout:fixed), para que una insignia larga como "Hipertensión
+     etapa 2" en Categoría no se corte si el contenido la necesita más
+     ancha. También se compacta un poco el padding entre columnas. */
+  #readingsTable th, #readingsTable td { padding: 8px 8px; }
+  #readingsTable th[data-col="date"], #readingsTable td[data-col="date"] { width: 8%; }
+  #readingsTable th[data-col="time"], #readingsTable td[data-col="time"] { width: 6%; }
+  #readingsTable th[data-col="pressure"], #readingsTable td[data-col="pressure"] { width: 8%; }
+  #readingsTable th[data-col="hr"], #readingsTable td[data-col="hr"] { width: 6%; text-align: center; }
+  #readingsTable th[data-col="pam"], #readingsTable td[data-col="pam"] { width: 7%; text-align: center; }
+  #readingsTable th[data-col="weight"], #readingsTable td[data-col="weight"] { width: 7%; text-align: center; }
+  #readingsTable th[data-col="category"], #readingsTable td[data-col="category"] { width: 15%; }
+  #readingsTable th[data-col="medicated"], #readingsTable td[data-col="medicated"] { width: 9%; }
+  #readingsTable th[data-col="obs"], #readingsTable td[data-col="obs"] { width: 23%; }
+  #readingsTable th[data-col="actions"], #readingsTable td[data-col="actions"] { width: 11%; }
   .badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; color: white; white-space: nowrap; }
   .obs { color: var(--text-muted); font-size: 12px; max-width: 300px; }
   .flag { color: var(--etapa2); font-size: 11px; font-weight: 600; margin-top: 3px; }
@@ -273,7 +291,7 @@
     .grid { grid-template-columns: 1fr 1fr; }
     form.add-form { grid-template-columns: 1fr 1fr; }
     .modal-form { grid-template-columns: 1fr; }
-    #readingsTable { min-width: 720px; }
+    #readingsTable { min-width: 800px; }
   }
 
   /* Feed de comentarios por día (v18) */
@@ -591,7 +609,9 @@
   <table id="readingsTable">
     <thead><tr>
       <th data-col="date">Fecha</th><th data-col="time">Hora</th><th data-col="pressure">Presión</th>
-      <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th><th data-col="weight">Peso</th>
+      <th data-col="hr" title="Frecuencia cardíaca (pulsaciones por minuto)">FC</th>
+      <th data-col="pam" title="Presión Arterial Media = (Sistólica + 2 × Diastólica) / 3">PAM</th>
+      <th data-col="weight">Peso</th>
       <th data-col="category">Categoría</th><th data-col="medicated" id="medicatedColHeader">Medicado</th>
       <th data-col="obs">Observaciones</th><th data-col="actions">Acciones</th>
     </tr></thead>
@@ -1549,7 +1569,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.27</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.28</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2113,7 +2133,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.27");
+  showAboutOverlay_("35.28");
 });
 
 function openModal(id) {
@@ -3090,6 +3110,7 @@ const TOGGLABLE_COLUMNS = [
   { key: "time", label: "Hora" },
   { key: "pressure", label: "Presión" },
   { key: "hr", label: "FC" },
+  { key: "pam", label: "PAM" },
   { key: "weight", label: "Peso" },
   { key: "category", label: "Categoría" },
   { key: "medicated", label: "Medicado" },
@@ -3154,6 +3175,7 @@ function renderTablePage() {
       <td data-col="date">${fmtDate(r.date)}</td><td data-col="time">${r.time}</td>
       <td data-col="pressure"><strong>${r.sys}/${r.dia}</strong></td>
       <td data-col="hr">${r.hr ?? "—"}</td>
+      <td data-col="pam">${pamValue_(r.sys, r.dia) ?? "—"}</td>
       <td data-col="weight">${r.weight != null ? r.weight + " kg" : "—"}</td>
       <td data-col="category"><span class="badge" style="background:${categoryColors[cat.key]}">${cat.label}</span></td>
       <td data-col="medicated">${r.medicated ? '<span class="medicated-badge">💊 Sí</span>' : "—"}</td>
