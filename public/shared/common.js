@@ -361,7 +361,14 @@ function chartDataForFilter(data, chartPeriod, selectedDay, timeView, customRang
     const day = selectedDay || todayStr();
     let filtered = (data || []).filter(r => r.date === day);
     filtered = filterByTimeView(filtered, timeView);
-    return aggregateReadings(filtered, "hour");
+    // v35.30: cada lectura del día es su propio punto en la gráfica —
+    // antes se agrupaba/promediaba por hora (aggregateReadings(_, "hour")),
+    // así que dos lecturas en la misma hora (ej. 14:00 y 14:39) se veían
+    // como un solo punto promediado, escondiendo que en realidad hubo dos
+    // lecturas distintas. Mismo criterio que semana/mes/año/libre
+    // (rawSeriesForChart, sin agrupar), solo que aquí la etiqueta muestra
+    // nada más la hora (ya se sabe la fecha: es un solo día).
+    return rawSeriesForChart(filtered).map(g => ({ ...g, label: g.label.split(" ")[1] || g.label }));
   }
   if (chartPeriod === "custom") {
     if (!customRange || !customRange.start || !customRange.end) return [];
@@ -1182,6 +1189,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.30", changes: [
+    "Se corrigió que la gráfica de Tendencia en modo \"Día\" mostrara menos puntos que lecturas reales había ese día: antes promediaba las lecturas que caían dentro de la misma hora del reloj (ej. una a las 14:00 y otra a las 14:39 se veían como un solo punto). Ahora cada lectura del día aparece como su propio punto, igual que ya pasaba en Semana/Mes/Año/Libre.",
+  ] },
   { version: "35.29", changes: [
     "Ahora puedes invitar a tu médico por WhatsApp, no solo por correo — desde \"Invitar a tu médico\" elige el método, y con WhatsApp se abre una conversación con el mensaje y el enlace ya listos para que solo confirmes el envío.",
     "Las invitaciones pendientes por WhatsApp también se ven en la lista, con su propio botón para reabrir la conversación si hace falta.",
