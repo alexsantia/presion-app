@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.30"></script>
+<script src="/shared/common.js?v=35.31"></script>
 <style>
   :root {
     color-scheme: light;
@@ -188,6 +188,13 @@
   .chart-filter-mini .chart-filter-btn { font-size: 11px; padding: 3px 8px; }
   .chart-filter-mini.is-override { border-color: var(--accent); }
   .chart-filter-mini-label { font-size: 11px; color: var(--text-muted); margin-right: 4px; align-self: center; }
+  /* v35.31: mismo look que .chart-filter-mini pero SIN esa clase — los
+     interruptores de calendario/días corridos no llevan data-chart-key, así
+     que si usaran .chart-filter-mini quedarían atrapados por los listeners y
+     sincronizadores delegados que sí esperan esa clase (pensados para las
+     ~12 gráficas de Estadísticas, no para este interruptor aparte). */
+  .chart-filter-mini-standalone { display: flex; gap: 3px; background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+  .chart-filter-mini-standalone .chart-filter-btn { font-size: 11px; padding: 3px 8px; }
   /* v32.1: reordenar gráficas de Estadísticas arrastrando */
   .chart-drag-handle { cursor: grab; color: var(--text-muted); margin-right: 6px; font-size: 15px; user-select: none; display: inline-block; }
   .chart-drag-handle:active { cursor: grabbing; }
@@ -545,6 +552,13 @@
       <button type="button" class="chart-filter-btn" data-granularity="year">Año</button>
       <button type="button" class="chart-filter-btn" data-granularity="custom">Libre</button>
     </div>
+    <!-- v35.31: en semana/mes/año, elegir si es la semana/mes/año real del
+         calendario o los últimos 7/30/365 días desde hoy. Solo aplica a esas
+         3 granularidades — se oculta en Día/Libre, que no tienen ambigüedad. -->
+    <div class="chart-filter-mini-standalone" id="chartPeriodModeToggle" role="group" aria-label="Calendario o días corridos" style="display:none;">
+      <button type="button" class="chart-filter-btn" data-period-mode="rolling">🔁 Días corridos</button>
+      <button type="button" class="chart-filter-btn" data-period-mode="calendar">📅 Calendario</button>
+    </div>
     <input type="date" id="chartDayPicker" class="chart-day-picker" style="display:none;">
     <!-- v35.0: "Libre" — de una fecha específica a otra, no atado a
          día/semana/mes/año del calendario. -->
@@ -805,9 +819,17 @@
         <button type="button" class="chart-filter-btn" data-stats-period="year">Año</button>
         <button type="button" class="chart-filter-btn" data-stats-period="custom">Libre</button>
       </div>
+      <!-- v35.31: calendario vs días corridos — solo aplica a semana/mes/año
+           (se oculta en Día/Libre). En días corridos no hay navegación por
+           ancla ni "Comparar" (esas dos cosas siguen siendo de calendario). -->
+      <div class="chart-filter-mini-standalone" id="statsPeriodModeToggle" role="group" aria-label="Calendario o días corridos" style="display:none; margin-left:8px;">
+        <button type="button" class="chart-filter-btn" data-period-mode="calendar">📅 Calendario</button>
+        <button type="button" class="chart-filter-btn" data-period-mode="rolling">🔁 Días corridos</button>
+      </div>
       <button type="button" class="btn-mini" id="statsClearFiltersBtn" style="margin-left:8px;">Eliminar filtros</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin:0;">Aplica por default a todas las gráficas de abajo. Cada gráfica también puede tener su propio filtro (queda marcada en el borde); "Eliminar filtros" regresa todas a seguir este filtro general.</p>
+    <p id="statsRollingNote" style="font-size:12px; color:var(--text-muted); margin:4px 0 0; display:none;">🔁 Mostrando los últimos días hasta hoy — en este modo no hay navegación a periodos pasados ni "Comparar".</p>
     <!-- v33.1: elegir cualquier día/semana/mes/año concreto, no solo "el
          actual". El control que se muestra cambia según la granularidad
          elegida arriba (ver syncStatsAnchorPicker_). -->
@@ -1569,7 +1591,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.30</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.31</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -1827,6 +1849,17 @@ let statsChartInstance = null;
 let statsWeekdayChartInstance = null;
 let statsWeekdayTimeView = "regular";
 let statsChartPeriod = "month";
+// v35.31: calendario vs días corridos para TODO Estadísticas (filtro general
+// y cada gráfica, siga o no al general) — un solo interruptor, no uno por
+// gráfica, para no llenar la sección de controles repetidos. Default
+// "calendar": es el criterio que Estadísticas ya usaba antes de v35.31
+// (desde la v33.1), así que nadie ve cambiar sus gráficas sin haber tocado
+// nada.
+const STATS_PERIOD_MODE_KEY_ = "bp_stats_period_mode";
+function loadStatsPeriodMode_() {
+  try { return localStorage.getItem(STATS_PERIOD_MODE_KEY_) === "rolling" ? "rolling" : "calendar"; } catch (err) { return "calendar"; }
+}
+let statsPeriodMode = loadStatsPeriodMode_();
 let editingId = null;
 let currentData = [];
 let currentComments = [];
@@ -2141,7 +2174,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.30");
+  showAboutOverlay_("35.31");
 });
 
 function openModal(id) {
@@ -3271,6 +3304,20 @@ document.getElementById("lastPageBtn").addEventListener("click", () => { current
 
 // ---- Filtro de la gráfica por periodo ----
 let chartGranularity = "week";
+// v35.31: calendario vs días corridos, solo relevante para semana/mes/año.
+// Default "rolling" — es el criterio que esta gráfica ya usaba antes de
+// v35.31, así que nadie ve cambiar su gráfica de Tendencia sin haber tocado
+// nada.
+const TREND_PERIOD_MODE_KEY_ = "bp_trend_period_mode";
+function loadTrendPeriodMode_() {
+  try { return localStorage.getItem(TREND_PERIOD_MODE_KEY_) === "calendar" ? "calendar" : "rolling"; } catch (err) { return "rolling"; }
+}
+let chartPeriodMode = loadTrendPeriodMode_();
+function syncChartPeriodModeToggle_() {
+  const wrap = document.getElementById("chartPeriodModeToggle");
+  wrap.style.display = ROLLING_DAYS_MAP_[chartGranularity] ? "" : "none";
+  wrap.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.periodMode === chartPeriodMode));
+}
 let chartDay = todayStr();
 // v35.0: rango "Libre" del filtro de la gráfica de Tendencia — null hasta
 // que el paciente elija ambas fechas.
@@ -3290,6 +3337,15 @@ document.getElementById("chartFilter").addEventListener("click", e => {
   document.querySelectorAll("#chartFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
   chartDayPickerEl.style.display = chartGranularity === "day" ? "inline-block" : "none";
   chartRangePickerEl.style.display = chartGranularity === "custom" ? "inline-flex" : "none";
+  syncChartPeriodModeToggle_();
+  renderChart();
+});
+document.getElementById("chartPeriodModeToggle").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  chartPeriodMode = btn.dataset.periodMode;
+  try { localStorage.setItem(TREND_PERIOD_MODE_KEY_, chartPeriodMode); } catch (err) { /* ignorar cuota llena */ }
+  syncChartPeriodModeToggle_();
   renderChart();
 });
 chartDayPickerEl.addEventListener("change", e => {
@@ -3351,7 +3407,7 @@ document.getElementById("chartLegend").addEventListener("click", e => {
 
 function renderChart() {
   const data = currentData;
-  const grouped = chartDataForFilter(data, chartGranularity, chartDay, chartTimeView, chartRange);
+  const grouped = chartDataForFilter(data, chartGranularity, chartDay, chartTimeView, chartRange, chartPeriodMode);
   const ctx = document.getElementById("trendChart").getContext("2d");
   const labels = grouped.map(g => g.label);
   if (chartInstance) chartInstance.destroy();
@@ -3418,7 +3474,7 @@ function filterForChartPeriod_(data, chartKey, dateField) {
     const range = statsChartOverrides[chartKey] ? statsChartRange[chartKey] : statsAnchors_.custom;
     return filterByPeriodField_(data, "custom", dateField, { custom: range });
   }
-  return filterByPeriodField_(data, period, dateField);
+  return filterByPeriodField_(data, period, dateField, null, statsPeriodMode);
 }
 function syncStatsFilterButtons_() {
   document.querySelectorAll("#statsGeneralFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.statsPeriod === statsChartPeriod));
@@ -3463,8 +3519,25 @@ function populateYearSelect_(selectEl) {
     selectEl.appendChild(opt);
   }
 }
+// v35.31: interruptor calendario/días corridos del filtro general — solo se
+// muestra en semana/mes/año (Día/Libre no son ambiguos, siempre significan
+// lo mismo en ambos modos).
+function syncStatsPeriodModeToggle_() {
+  const wrap = document.getElementById("statsPeriodModeToggle");
+  wrap.style.display = ROLLING_DAYS_MAP_[statsChartPeriod] ? "" : "none";
+  wrap.querySelectorAll(".chart-filter-btn").forEach(b => b.classList.toggle("active", b.dataset.periodMode === statsPeriodMode));
+}
 function syncStatsAnchorPicker_() {
   const gran = statsChartPeriod;
+  syncStatsPeriodModeToggle_();
+  // v35.31: en "días corridos" la ventana siempre termina hoy — no hay ancla
+  // que navegar, así que todo el bloque "Ver: ..." se oculta para
+  // semana/mes/año (Día/Libre no usan este modo, se muestran igual que
+  // siempre). En su lugar se ve la nota #statsRollingNote.
+  const rolling = statsPeriodMode === "rolling" && !!ROLLING_DAYS_MAP_[gran];
+  document.getElementById("statsAnchorPickerWrap").style.display = rolling ? "none" : "flex";
+  document.getElementById("statsRollingNote").style.display = rolling ? "" : "none";
+  if (rolling) return;
   document.getElementById("statsAnchorDay").style.display = gran === "day" ? "" : "none";
   document.getElementById("statsAnchorWeek").style.display = gran === "week" ? "" : "none";
   document.getElementById("statsAnchorMonth").style.display = gran === "month" ? "" : "none";
@@ -3513,7 +3586,7 @@ function defaultPreviousAnchor_(gran, anchor) {
 function renderStatsChart() {
   const canvas = document.getElementById("statsTimeOfDayChart");
   if (!canvas) return;
-  const grouped = timeOfDayComparisonData(currentData, effectivePeriod_("timeOfDay"));
+  const grouped = timeOfDayComparisonData(currentData, effectivePeriod_("timeOfDay"), statsPeriodMode);
   const emptyEl = document.getElementById("statsTimeOfDayEmpty");
   const hasData = grouped.some(g => g.sys != null || g.dia != null);
   emptyEl.style.display = hasData ? "none" : "block";
@@ -3560,7 +3633,7 @@ function renderStatsChart() {
 function renderWeekdayChart() {
   const canvas = document.getElementById("statsWeekdayChart");
   if (!canvas) return;
-  const grouped = weekdayComparisonData(currentData, effectivePeriod_("weekday"), statsWeekdayTimeView);
+  const grouped = weekdayComparisonData(currentData, effectivePeriod_("weekday"), statsWeekdayTimeView, statsPeriodMode);
   const emptyEl = document.getElementById("statsWeekdayEmpty");
   const hasData = grouped.some(g => g.sys != null || g.dia != null);
   emptyEl.style.display = hasData ? "none" : "block";
@@ -3620,6 +3693,17 @@ document.getElementById("statsGeneralFilter").addEventListener("click", e => {
   // Al volver a tocar el filtro general, todas las gráficas se resincronizan
   // con él, incluso las que se habían desligado con su filtro propio.
   Object.keys(statsChartOverrides).forEach(k => { statsChartOverrides[k] = null; });
+  syncStatsFilterButtons_();
+  rerenderAllStatsCharts_();
+});
+document.getElementById("statsPeriodModeToggle").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  statsPeriodMode = btn.dataset.periodMode;
+  try { localStorage.setItem(STATS_PERIOD_MODE_KEY_, statsPeriodMode); } catch (err) { /* ignorar cuota llena */ }
+  // Cambia el criterio para TODAS las gráficas (general y las que tengan su
+  // propio filtro), así que se resincroniza/redibuja todo, igual que al
+  // tocar el filtro general.
   syncStatsFilterButtons_();
   rerenderAllStatsCharts_();
 });
@@ -3798,7 +3882,16 @@ function syncChartCompareUI_(key) {
   // Ahora sí funciona: el paciente elige a mano el segundo rango con el que
   // comparar (ver los inputs .chart-compare-anchor-custom más abajo), así
   // que el control ya no se oculta ni se apaga para ningún periodo.
+  // v35.31: "Comparar" navega a periodos de CALENDARIO anteriores (semana
+  // pasada, mes pasado, etc.) — en modo "días corridos" no hay un periodo
+  // anterior fijo que navegar (la ventana siempre termina hoy), así que se
+  // oculta para semana/mes/año mientras ese modo esté activo (Día/Libre no
+  // usan el nuevo modo, siguen funcionando igual que siempre).
   const wholeWrap = document.querySelector(`.chart-compare-wrap[data-chart-key="${key}"]`);
+  if (statsPeriodMode === "rolling" && ROLLING_DAYS_MAP_[gran]) {
+    if (wholeWrap) wholeWrap.style.display = "none";
+    return;
+  }
   if (wholeWrap) wholeWrap.style.display = "";
   const anchorWrap = document.querySelector(`.chart-compare-anchor-wrap[data-chart-key="${key}"]`);
   if (!anchorWrap) return;
@@ -4033,7 +4126,13 @@ function renderTrendOrCompare_(key, instanceGetter, instanceSetter, canvasId, em
   const canvasEl = document.getElementById(canvasId);
   const emptyEl = document.getElementById(emptyId);
   const unit = typeof opts.unit === "function" ? opts.unit() : opts.unit;
-  if (chartCompareOn_[key]) {
+  // v35.31: "Comparar" no está disponible en modo "días corridos" para
+  // semana/mes/año (ver syncChartCompareUI_) — si el paciente lo había
+  // dejado encendido y luego cambió a este modo, se ignora aquí también
+  // (se ve la tendencia normal) sin apagar chartCompareOn_[key], para que
+  // vuelva a aparecer tal como estaba al regresar a modo calendario.
+  const compareAvailable = !(statsPeriodMode === "rolling" && ROLLING_DAYS_MAP_[effectivePeriod_(key)]);
+  if (chartCompareOn_[key] && compareAvailable) {
     const cmp = buildCompareForChart_(key);
     instanceSetter(renderMetricCompareChart_(instanceGetter(), canvasEl, emptyEl, cmp, {
       labelA: cmp.labelA, labelB: cmp.labelB, color: opts.color, unit,
@@ -4340,6 +4439,7 @@ function render() {
   document.getElementById("alertsContent").innerHTML = fallbackAlertsHtml_(data);
   loadDailyNote_();
 
+  syncChartPeriodModeToggle_();
   renderChart();
   renderStatsChart();
   renderWeekdayChart();

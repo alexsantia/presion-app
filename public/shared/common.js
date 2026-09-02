@@ -356,7 +356,13 @@ function filterByTimeView(data, timeView) {
 // — filtra además por franja horaria, combinable con cualquier chartPeriod.
 // v35.0: customRange (opcional) = { start, end } en YYYY-MM-DD, solo se usa
 // cuando chartPeriod === "custom" ("Libre" — una fecha específica a otra).
-function chartDataForFilter(data, chartPeriod, selectedDay, timeView, customRange) {
+// v35.31: periodMode ("calendar" | "rolling", default "rolling" para no
+// cambiar el comportamiento de siempre en quien no lo pase explícitamente —
+// doctor.html/familia.html siguen llamando esta función sin ese argumento)
+// decide, solo para semana/mes/año, si se usa la semana/mes/año real del
+// calendario o los últimos 7/30/365 días desde hoy (el criterio que ya
+// tenía esta función antes de v35.31).
+function chartDataForFilter(data, chartPeriod, selectedDay, timeView, customRange, periodMode) {
   if (chartPeriod === "day") {
     const day = selectedDay || todayStr();
     let filtered = (data || []).filter(r => r.date === day);
@@ -376,7 +382,9 @@ function chartDataForFilter(data, chartPeriod, selectedDay, timeView, customRang
     filtered = filterByTimeView(filtered, timeView);
     return rawSeriesForChart(filtered);
   }
-  let filtered = filterByPeriod(data, chartPeriod);
+  let filtered = (periodMode || "rolling") === "calendar"
+    ? filterByPeriodField_(data, chartPeriod, "date", { [chartPeriod]: null }, "calendar")
+    : filterByPeriod(data, chartPeriod);
   filtered = filterByTimeView(filtered, timeView);
   return rawSeriesForChart(filtered);
 }
@@ -394,8 +402,8 @@ const TIME_OF_DAY_BUCKETS_ = [
   { key: "tarde", label: "Tarde (12–19h)" },
   { key: "noche", label: "Noche (19–1h)" },
 ];
-function timeOfDayComparisonData(data, granularity) {
-  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date");
+function timeOfDayComparisonData(data, granularity, periodMode) {
+  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date", null, periodMode);
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return TIME_OF_DAY_BUCKETS_.map(bucket => {
     const bucketData = filterByTimeView(periodFiltered, bucket.key);
@@ -428,8 +436,8 @@ function dateStrToWeekday_(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   return (d.getDay() + 6) % 7; // lunes = 0 ... domingo = 6
 }
-function weekdayComparisonData(data, granularity, timeView) {
-  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date");
+function weekdayComparisonData(data, granularity, timeView, periodMode) {
+  const periodFiltered = filterByPeriodField_(data, granularity || "month", "date", null, periodMode);
   const timeFiltered = filterByTimeView(periodFiltered, timeView);
   const avg = arr => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
   return WEEKDAY_BUCKETS_.map(bucket => {
@@ -500,12 +508,39 @@ function calendarRangeForGranularity_(granularity, anchor) {
   }
   return null; // "all" u otro valor no soportado
 }
+// v35.31: "calendario" (semana/mes/año real) vs "días corridos" (últimos
+// 7/30/365 días) — antes cada sección tenía uno de los dos criterios fijo
+// (Tendencia siempre días corridos, Estadísticas siempre calendario); ahora
+// se puede elegir. anchor aquí es la fecha FINAL de la ventana (o null para
+// que termine hoy) — mismo criterio que ya usaba "Día", para poder reusar la
+// idea de "ancla" sin inventar un concepto nuevo.
+const ROLLING_DAYS_MAP_ = { week: 7, month: 30, year: 365 };
+function rollingRangeForGranularity_(granularity, anchor) {
+  const days = ROLLING_DAYS_MAP_[granularity];
+  if (!days) return calendarRangeForGranularity_(granularity, anchor); // day/custom: sin diferencia entre modos
+  const end = anchor || todayStr();
+  const start = new Date(end + "T00:00:00");
+  start.setDate(start.getDate() - (days - 1));
+  return { start: localDateStr_(start), end };
+}
+// periodMode: "calendar" (default) | "rolling". Punto único de entrada para
+// que filterByPeriodField_/chartDataForFilter no tengan que decidir ellas
+// mismas cuál de las dos funciones de rango llamar.
+function periodRangeForGranularity_(granularity, anchor, periodMode) {
+  return periodMode === "rolling" ? rollingRangeForGranularity_(granularity, anchor) : calendarRangeForGranularity_(granularity, anchor);
+}
 const MESES_ES_ = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 // Etiqueta legible del periodo, para mostrar junto al selector y en la
 // tarjeta de comparación (ej. "Semana del 10 al 16 de agosto, 2026").
-function periodRangeLabel_(granularity, range) {
+// v35.31: en modo "días corridos" la etiqueta ya no tiene sentido como
+// "semana/mes/año de calendario" (el rango no empieza ni termina en un
+// límite fijo) — se muestra en su lugar "Últimos N días (hasta el ...)".
+function periodRangeLabel_(granularity, range, periodMode) {
   if (!range) return "";
   const fmt = s => s.split("-").reverse().join("/");
+  if (periodMode === "rolling" && ROLLING_DAYS_MAP_[granularity]) {
+    return `Últimos ${ROLLING_DAYS_MAP_[granularity]} días (hasta el ${fmt(range.end)})`;
+  }
   if (granularity === "day") return fmt(range.start);
   if (granularity === "week") return `Semana del ${fmt(range.start)} al ${fmt(range.end)}`;
   if (granularity === "month") {
@@ -533,11 +568,17 @@ function readingsPeriodLabel_(data) {
 // de una ventana móvil de días. anchors (opcional) permite pasar un juego
 // de anclas propio (ver el modo "Comparar" por gráfica en index.html); por
 // default usa statsAnchors_.
-function filterByPeriodField_(data, granularity, dateField, anchors) {
+function filterByPeriodField_(data, granularity, dateField, anchors, periodMode) {
   const list = data || [];
   if (granularity === "all" || !granularity) return list.slice();
   const anchorSet = anchors || statsAnchors_;
-  const range = calendarRangeForGranularity_(granularity, anchorSet[granularity]);
+  // v35.31: en modo "días corridos" no hay navegación por ancla — la
+  // ventana siempre termina hoy (ver rollingRangeForGranularity_), así que
+  // cualquier ancla que haya quedado de una navegación previa en modo
+  // calendario se ignora para semana/mes/año (día/libre no usan este mapa,
+  // así que su ancla sigue funcionando igual en ambos modos).
+  const effectiveAnchor = (periodMode === "rolling" && ROLLING_DAYS_MAP_[granularity]) ? null : anchorSet[granularity];
+  const range = periodRangeForGranularity_(granularity, effectiveAnchor, periodMode);
   if (!range) {
     // v35.0: para "Libre" sin un rango completo elegido todavía, no hay
     // periodo que aplicar — a diferencia de "all", aquí lo correcto es "sin
@@ -1189,6 +1230,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.31", changes: [
+    "En los filtros de Semana/Mes/Año de Tendencia y de Estadísticas (filtro general) ahora puedes elegir si el periodo es el de calendario real (la semana, el mes o el año actual) o \"días corridos\" (los últimos 7, 30 o 365 días desde hoy) — el interruptor aparece junto a esos filtros y se recuerda entre visitas.",
+    "En \"días corridos\", Estadísticas siempre muestra la ventana terminando hoy: la navegación a periodos pasados y \"Comparar\" (que sí navegan por calendario) se ocultan mientras ese modo esté activo, y vuelven a aparecer al regresar a modo calendario.",
+  ] },
   { version: "35.30", changes: [
     "Se corrigió que la gráfica de Tendencia en modo \"Día\" mostrara menos puntos que lecturas reales había ese día: antes promediaba las lecturas que caían dentro de la misma hora del reloj (ej. una a las 14:00 y otra a las 14:39 se veían como un solo punto). Ahora cada lectura del día aparece como su propio punto, igual que ya pasaba en Semana/Mes/Año/Libre.",
   ] },
