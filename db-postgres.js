@@ -98,6 +98,62 @@ function emitChange(patientId, kind) {
   events.emit("change", String(patientId), kind);
 }
 
+// v35.32: uq_sueno_open_per_patient / uq_ayunos_open_per_patient (ver
+// schema.sql) exigen que, para cada paciente, exista COMO MUCHO un registro
+// de sueño y uno de ayuno sin cerrar — es la protección contra el bug que
+// dejaba dos noches/ayunos "en curso" a la vez si dos peticiones de abrir
+// llegaban casi juntas (doble toque, dos pestañas/dispositivos: la
+// revisión de "¿ya hay uno abierto?" y el INSERT no eran atómicos). Si ese
+// bug ya alcanzó a dejar duplicados en la base de datos ANTES de este
+// despliegue, crear esos índices fallaría (violarían la restricción desde
+// el primer momento) y tumbaría el arranque del servidor entero. Esta
+// limpieza se corre una sola vez por arranque, justo antes de crear esos
+// índices (ver ensureSchema), y no hace nada si no hay duplicados. Para
+// cada paciente con más de un registro abierto, se conserva el más
+// reciente (el que de verdad sigue en curso) y los demás se cierran con
+// duración 0 y una nota clara — nunca se borran solos, para no perder la
+// fecha/hora que el paciente sí alcanzó a capturar; quedan visibles en su
+// historial para que los corrija o los borre él mismo si quiere.
+// Código de error estándar de Postgres para "duplicate key value violates
+// unique constraint" — es el mismo código sin importar cuál de las dos
+// restricciones se violó, así que basta checar el código (no el nombre de
+// la restricción, que además pg-mem en pruebas no siempre reporta igual que
+// Postgres real) para saber que start_sleep/start_ayuno chocaron con
+// uq_sueno_open_per_patient/uq_ayunos_open_per_patient.
+function isOpenRecordUniqueViolation_(err) {
+  return !!err && err.code === "23505";
+}
+const DUPLICATE_OPEN_NOTE_ = "[cerrado automáticamente: la app detectó más de un registro abierto a la vez y conservó solo el más reciente]";
+async function resolveDuplicateOpenRecords_() {
+  const { rows: openSleep } = await pool.query(
+    `SELECT id, patient_id, notas FROM sueno WHERE hora_fin IS NULL ORDER BY patient_id, created_at DESC`
+  );
+  const seenSleepPatients = new Set();
+  for (const row of openSleep) {
+    if (seenSleepPatients.has(row.patient_id)) {
+      await pool.query(
+        `UPDATE sueno SET hora_fin = hora_inicio, duracion_min = 0, notas = $1 WHERE id = $2`,
+        [[row.notas || "", DUPLICATE_OPEN_NOTE_].filter(Boolean).join(" "), row.id]
+      );
+    } else {
+      seenSleepPatients.add(row.patient_id);
+    }
+  }
+  const { rows: openAyunos } = await pool.query(
+    `SELECT id, patient_id, notas FROM ayunos WHERE fecha_fin IS NULL ORDER BY patient_id, created_at DESC`
+  );
+  const seenAyunoPatients = new Set();
+  for (const row of openAyunos) {
+    if (seenAyunoPatients.has(row.patient_id)) {
+      await pool.query(
+        `UPDATE ayunos SET fecha_fin = fecha_inicio, hora_fin = hora_inicio, duracion_horas = 0, notas = $1 WHERE id = $2`,
+        [[row.notas || "", DUPLICATE_OPEN_NOTE_].filter(Boolean).join(" "), row.id]
+      );
+    } else {
+      seenAyunoPatients.add(row.patient_id);
+    }
+  }
+}
 // Aplica db/schema.sql automáticamente al arrancar (CREATE TABLE IF NOT
 // EXISTS, seguro de correr una y otra vez), para que crear la instancia de
 // Postgres en Render sea el único paso manual: nadie tiene que copiar/pegar
@@ -119,8 +175,22 @@ function ensureSchema() {
       // comentario en el mismo trozo.
       const sqlWithoutComments = sql.split("\n").filter(line => !line.trim().startsWith("--")).join("\n");
       const statements = sqlWithoutComments.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
-      for (const stmt of statements) {
+      // v35.32: los índices únicos "_open_per_patient" se difieren al final,
+      // después de limpiar cualquier duplicado preexistente (ver comentario
+      // arriba de resolveDuplicateOpenRecords_) — así un despliegue con
+      // datos viejos corruptos por el bug que estos índices previenen no
+      // tumba el arranque del servidor.
+      const deferredIndexPattern = /CREATE UNIQUE INDEX.*_open_per_patient/i;
+      const deferredStatements = statements.filter(s => deferredIndexPattern.test(s));
+      const normalStatements = statements.filter(s => !deferredIndexPattern.test(s));
+      for (const stmt of normalStatements) {
         await pool.query(stmt);
+      }
+      if (deferredStatements.length) {
+        await resolveDuplicateOpenRecords_();
+        for (const stmt of deferredStatements) {
+          await pool.query(stmt);
+        }
       }
       console.log("Postgres: esquema verificado/creado (db/schema.sql)");
     })().catch(err => {
@@ -2909,11 +2979,25 @@ async function handlePost(body) {
     const open = await findOpenSleep_(body.patient_id);
     if (open) return { ok: false, error: "ya tienes una noche de sueño en curso — registra la hora de despertar antes de abrir otra" };
     const id = uuid();
-    await pool.query(
-      `INSERT INTO sueno (id, patient_id, fecha, hora_inicio, notas, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$6)`,
-      [id, body.patient_id, body.fecha, body.hora_inicio, body.notas || "", now]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO sueno (id, patient_id, fecha, hora_inicio, notas, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+        [id, body.patient_id, body.fecha, body.hora_inicio, body.notas || "", now]
+      );
+    } catch (err) {
+      // v35.32: la revisión de arriba (findOpenSleep_) y este INSERT no son
+      // atómicos — dos peticiones casi simultáneas (doble toque, dos
+      // pestañas/dispositivos) podían pasar la revisión las dos y dejar dos
+      // noches abiertas. uq_sueno_open_per_patient (schema.sql) es la red de
+      // seguridad real contra eso: si la violó, es justo ese caso, así que se
+      // responde con el mismo mensaje de siempre en vez del error crudo de
+      // Postgres.
+      if (isOpenRecordUniqueViolation_(err)) {
+        return { ok: false, error: "ya tienes una noche de sueño en curso — registra la hora de despertar antes de abrir otra" };
+      }
+      throw err;
+    }
     emitChange(body.patient_id, "sleep");
     return { ok: true, id };
   }
@@ -2990,11 +3074,21 @@ async function handlePost(body) {
     const open = await findOpenAyuno_(body.patient_id);
     if (open) return { ok: false, error: "ya tienes un ayuno en curso — rómpelo antes de registrar uno nuevo" };
     const id = uuid();
-    await pool.query(
-      `INSERT INTO ayunos (id, patient_id, fecha_inicio, hora_inicio, notas, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$6)`,
-      [id, body.patient_id, body.fecha_inicio, body.hora_inicio, body.notas || "", now]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO ayunos (id, patient_id, fecha_inicio, hora_inicio, notas, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$6)`,
+        [id, body.patient_id, body.fecha_inicio, body.hora_inicio, body.notas || "", now]
+      );
+    } catch (err) {
+      // v35.32: misma protección que start_sleep — findOpenAyuno_ + INSERT
+      // no son atómicos, uq_ayunos_open_per_patient (schema.sql) es la red
+      // de seguridad real.
+      if (isOpenRecordUniqueViolation_(err)) {
+        return { ok: false, error: "ya tienes un ayuno en curso — rómpelo antes de registrar uno nuevo" };
+      }
+      throw err;
+    }
     emitChange(body.patient_id, "ayuno");
     return { ok: true, id };
   }
@@ -3997,4 +4091,4 @@ async function callPostgresApi(params, body) {
   }
 }
 
-module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders, getConsultationReceta, getAiExportPayload };
+module.exports = { callPostgresApi, pool, ensureSchema, events, pushEnabled, VAPID_PUBLIC_KEY, getAvatarData, scanMedicationReminders, getConsultationReceta, getAiExportPayload, resolveDuplicateOpenRecords_ };

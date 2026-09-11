@@ -492,6 +492,17 @@ CREATE TABLE IF NOT EXISTS sueno (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_sueno_patient ON sueno(patient_id, fecha DESC);
+-- v35.32: findOpenSleep_ (db-postgres.js) revisaba "¿ya hay una noche abierta?"
+-- y RECIÉN DESPUÉS insertaba — dos peticiones casi simultáneas (doble toque
+-- en el botón, o el mismo paciente en dos pestañas/dispositivos) podían pasar
+-- esa revisión las dos ANTES de que la primera terminara de insertar, dejando
+-- DOS noches abiertas a la vez. Como el frontend solo muestra/cierra la
+-- primera que encuentra (currentSleep.find), la otra quedaba huérfana y
+-- "atorada" — el paciente veía que no podía volver a registrar ("ya tienes
+-- una noche en curso") aunque la pantalla no mostrara ninguna en curso. Este
+-- índice hace que la base de datos rechace la segunda inserción directamente,
+-- sin importar qué tan rápido lleguen las peticiones.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_sueno_open_per_patient ON sueno(patient_id) WHERE hora_fin IS NULL;
 
 -- v32: interpretación con IA — exportación temporal de todas las capturas
 -- del paciente (lecturas/PAM, sueño, ejercicio, malos hábitos, síntomas,
@@ -692,6 +703,10 @@ CREATE TABLE IF NOT EXISTS ayunos (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_ayunos_patient ON ayunos(patient_id, fecha_inicio DESC);
+-- v35.32: mismo problema y misma solución que uq_sueno_open_per_patient —
+-- findOpenAyuno_ + INSERT no eran atómicos, así que dos peticiones casi
+-- simultáneas podían dejar dos ayunos abiertos a la vez.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ayunos_open_per_patient ON ayunos(patient_id) WHERE fecha_fin IS NULL;
 
 -- Meta de horas de ayuno (ej. 16 para un esquema 16:8) — un solo valor por
 -- paciente, igual de simple que weight/height/waist; se compara contra

@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.31"></script>
+<script src="/shared/common.js?v=35.32"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1591,7 +1591,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.31</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.32</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2174,7 +2174,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.31");
+  showAboutOverlay_("35.32");
 });
 
 function openModal(id) {
@@ -5715,11 +5715,19 @@ function renderSleepCurrent_() {
       const fecha = document.getElementById("sls_fecha").value;
       const hora_inicio = document.getElementById("sls_hora").value;
       if (!fecha || !hora_inicio) return;
+      // v35.32: dos toques rápidos (muy fácil en el celular, sobre todo si
+      // la conexión va lenta y el botón tarda en reaccionar) podían mandar
+      // dos peticiones de "abrir noche" casi juntas. Se deshabilita el botón
+      // mientras la petición está en curso para que un doble toque no
+      // dispare dos veces.
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
       try {
         await apiPost("/api/sleep", { fecha, hora_inicio });
         await loadSleep();
       } catch (err) {
         alert("No se pudo registrar: " + err.message);
+        if (btn) btn.disabled = false;
       }
     });
     if (sleepLiveTimer_) { clearInterval(sleepLiveTimer_); sleepLiveTimer_ = null; }
@@ -5761,6 +5769,11 @@ document.getElementById("sleepWakeForm").addEventListener("submit", async e => {
     calidad: document.getElementById("slw_calidad_toggle").checked ? Number(document.getElementById("slw_calidad").value) : null,
     notas: document.getElementById("slw_notas").value.trim(),
   };
+  // v35.32: este formulario es fijo (el mismo modal se reabre una y otra
+  // vez), así que a diferencia del de "abrir noche" el botón sí se vuelve a
+  // habilitar siempre al final (éxito o error), no solo en el error.
+  const btn = e.target.querySelector('button[type="submit"]');
+  if (btn) btn.disabled = true;
   try {
     await apiPut(`/api/sleep/${editingSleepId}/despertar`, payload);
     closeModal("sleepWakeModal");
@@ -5769,6 +5782,8 @@ document.getElementById("sleepWakeForm").addEventListener("submit", async e => {
     renderLabHistoryCharts(["sleepDuration", "sleepQuality"]);
   } catch (err) {
     alert("No se pudo registrar el despertar: " + err.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
 const sleepPaginator_ = createSectionPaginator_("sleep", "sleepListWrap", () => currentSleep, list => renderSleepListHTML(list));
@@ -6117,11 +6132,16 @@ function renderAyunoCurrent_() {
       const fecha_inicio = document.getElementById("ays_fecha").value;
       const hora_inicio = document.getElementById("ays_hora").value;
       if (!fecha_inicio || !hora_inicio) return;
+      // v35.32: mismo criterio que sleepStartForm — evitar que un doble
+      // toque mande dos peticiones de "abrir ayuno" casi juntas.
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = true;
       try {
         await apiPost("/api/ayuno", { fecha_inicio, hora_inicio });
         await loadAyuno();
       } catch (err) {
         alert("No se pudo registrar: " + err.message);
+        if (btn) btn.disabled = false;
       }
     });
     if (ayunoLiveTimer_) { clearInterval(ayunoLiveTimer_); ayunoLiveTimer_ = null; }
@@ -6190,6 +6210,10 @@ document.getElementById("ayunoBreakForm").addEventListener("submit", async e => 
   const rompio_con = document.getElementById("ayb_rompio_con").value.trim();
   const notas = document.getElementById("ayb_notas").value.trim();
   if (!fecha_fin || !hora_fin || !rompio_con) return;
+  // v35.32: mismo criterio que sleepWakeForm — formulario fijo (el modal se
+  // reabre una y otra vez), se rehabilita siempre al final.
+  const btn = e.target.querySelector('button[type="submit"]');
+  if (btn) btn.disabled = true;
   try {
     await apiPut(`/api/ayuno/${editingAyunoId}/romper`, { fecha_fin, hora_fin, rompio_con, notas });
     closeModal("ayunoBreakModal");
@@ -6197,6 +6221,8 @@ document.getElementById("ayunoBreakForm").addEventListener("submit", async e => 
     await loadAyuno();
   } catch (err) {
     alert("No se pudo romper el ayuno: " + err.message);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 });
 
@@ -7324,6 +7350,9 @@ document.querySelectorAll(".report-quick-btn").forEach(btn => {
 // estático de la página (incluidos los formularios que viven dentro de
 // pestañas/tabs no visibles por defecto) ya existe en el DOM.
 autoWireNowTimeButtons_();
+// v35.32: jalar hacia abajo para refrescar, en móvil (ver initPullToRefresh_
+// en common.js).
+initPullToRefresh_();
 </script>
 </body>
 </html>

@@ -162,6 +162,91 @@ function autoWireNowTimeButtons_() {
     wrap.appendChild(btn);
   });
 }
+// v35.32: "jalar para actualizar" (pull-to-refresh) en móvil — al deslizar
+// hacia abajo con el dedo estando ya arriba del todo de la página, se ve un
+// indicador que crece con el jalón y, al soltar pasado cierto umbral, se
+// recarga la página completa. Antes la única forma de refrescar en el
+// celular era el botón de recargar del navegador — que ni siquiera se ve
+// usando la PWA anclada a la pantalla de inicio (sin barra de navegador).
+// Solo reacciona a eventos táctiles (touchstart/move/end/cancel), así que en
+// escritorio no hace nada (ahí ya existen F5/Ctrl+R). No se activa si hay un
+// modal abierto (.modal-overlay con display:flex — mismo criterio que
+// openModal/closeModal) ni si la página ya tiene scroll (solo cuenta el
+// jalón cuando se empieza exactamente arriba del todo, como en cualquier app
+// nativa). Se llama una sola vez por página (index.html/doctor.html/
+// familia.html la invocan al final de su script, junto a
+// autoWireNowTimeButtons_).
+function initPullToRefresh_() {
+  if (typeof document === "undefined") return;
+  const THRESHOLD = 70; // px "virtuales" (ya con resistencia aplicada) para soltar y refrescar
+  const MAX_PULL = 120; // tope visual, para que el jalón no se sienta infinito
+  const RESISTANCE = 0.5; // el indicador se mueve más lento que el dedo
+  let startY = null;
+  let lastDist = 0;
+  let indicator = null;
+
+  function anyModalOpen_() {
+    return Array.from(document.querySelectorAll(".modal-overlay")).some(m => m.style.display === "flex");
+  }
+  function atTop_() {
+    const scrollTop = document.scrollingElement ? document.scrollingElement.scrollTop : window.scrollY;
+    return scrollTop <= 0;
+  }
+  function ensureIndicator_() {
+    if (indicator) return indicator;
+    indicator = document.createElement("div");
+    indicator.id = "pullToRefreshIndicator";
+    indicator.setAttribute("aria-hidden", "true");
+    indicator.style.cssText = "position:fixed; left:50%; top:10px; width:36px; height:36px; margin-left:-18px; border-radius:50%; background:var(--accent, #2e6fd9); color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px; z-index:9999; box-shadow:0 2px 8px rgba(0,0,0,.25); opacity:0; pointer-events:none; transform:translateY(-60px);";
+    document.body.appendChild(indicator);
+    return indicator;
+  }
+  function renderPull_(dist, refreshing) {
+    const el = ensureIndicator_();
+    const clamped = Math.min(dist, MAX_PULL);
+    const progress = Math.min(clamped / THRESHOLD, 1);
+    el.textContent = refreshing ? "⟳" : "↓";
+    el.style.transition = "none";
+    el.style.opacity = String(progress);
+    el.style.transform = `translateY(${clamped - 60}px) rotate(${refreshing ? 0 : progress * 180}deg)`;
+  }
+  function resetPull_() {
+    if (!indicator) return;
+    indicator.style.transition = "transform .2s ease, opacity .2s ease";
+    indicator.style.opacity = "0";
+    indicator.style.transform = "translateY(-60px)";
+  }
+
+  document.addEventListener("touchstart", e => {
+    if (anyModalOpen_() || !atTop_() || e.touches.length !== 1) { startY = null; return; }
+    startY = e.touches[0].clientY;
+    lastDist = 0;
+  }, { passive: true });
+  document.addEventListener("touchmove", e => {
+    if (startY == null) return;
+    if (!atTop_()) { startY = null; lastDist = 0; resetPull_(); return; }
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0) { lastDist = 0; resetPull_(); return; }
+    lastDist = dy * RESISTANCE;
+    renderPull_(lastDist, false);
+  }, { passive: true });
+  document.addEventListener("touchend", () => {
+    if (startY == null) return;
+    startY = null;
+    if (lastDist >= THRESHOLD) {
+      renderPull_(THRESHOLD, true);
+      setTimeout(() => window.location.reload(), 150);
+    } else {
+      resetPull_();
+    }
+    lastDist = 0;
+  }, { passive: true });
+  document.addEventListener("touchcancel", () => {
+    startY = null;
+    lastDist = 0;
+    resetPull_();
+  }, { passive: true });
+}
 // v35.6: cuántos días de calendario hay entre dos fechas YYYY-MM-DD
 // (inclusivo si se le suma 1 al resultado en quien llame) — usado para
 // alinear "Comparar" cuando el periodo es "Libre" (dos rangos de duración
@@ -1230,6 +1315,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.32", changes: [
+    "Se corrigió un problema de fondo que a veces hacía que abrir una noche de sueño o un ayuno \"no funcionara\" o quedara mal registrado: un doble toque en el botón (muy fácil en el celular con conexión lenta) podía mandar dos peticiones casi juntas y dejar dos registros abiertos a la vez, uno de ellos invisible en pantalla. Ahora el botón se deshabilita apenas se toca, y la base de datos garantiza que nunca haya más de un registro abierto por paciente, sin importar qué tan rápido lleguen las peticiones.",
+    "En el celular, deslizar hacia abajo estando arriba del todo de la página ahora refresca la app (\"jalar para actualizar\"), igual que cualquier app nativa.",
+  ] },
   { version: "35.31", changes: [
     "En los filtros de Semana/Mes/Año de Tendencia y de Estadísticas (filtro general) ahora puedes elegir si el periodo es el de calendario real (la semana, el mes o el año actual) o \"días corridos\" (los últimos 7, 30 o 365 días desde hoy) — el interruptor aparece junto a esos filtros y se recuerda entre visitas.",
     "En \"días corridos\", Estadísticas siempre muestra la ventana terminando hoy: la navegación a periodos pasados y \"Comparar\" (que sí navegan por calendario) se ocultan mientras ese modo esté activo, y vuelven a aparecer al regresar a modo calendario.",
