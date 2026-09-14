@@ -1315,6 +1315,10 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.33", changes: [
+    "Se corrigió que un registro de sueño no se pudiera editar para corregir datos como la hora de despertar, la duración o la calidad: antes \"Editar\" solo dejaba corregir la fecha y la hora de dormir, y para una noche ya cerrada no había forma de tocar nada más. Ahora \"Editar\" abre una ventana donde se puede corregir cualquier dato de la noche, incluyendo la duración directamente si el número de horas registrado no fue el correcto.",
+    "Se agregó una gráfica de barras de \"Horas de sueño por día\" dentro de la sección de Sueño, con filtro de periodo (semana, mes, 3 meses, todo), para ver de un vistazo cuántas horas se durmió cada día.",
+  ] },
   { version: "35.32", changes: [
     "Se corrigió un problema de fondo que a veces hacía que abrir una noche de sueño o un ayuno \"no funcionara\" o quedara mal registrado: un doble toque en el botón (muy fácil en el celular con conexión lenta) podía mandar dos peticiones casi juntas y dejar dos registros abiertos a la vez, uno de ellos invisible en pantalla. Ahora el botón se deshabilita apenas se toca, y la base de datos garantiza que nunca haya más de un registro abierto por paciente, sin importar qué tan rápido lleguen las peticiones.",
     "En el celular, deslizar hacia abajo estando arriba del todo de la página ahora refresca la app (\"jalar para actualizar\"), igual que cualquier app nativa.",

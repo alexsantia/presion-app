@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.32"></script>
+<script src="/shared/common.js?v=35.33"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1434,6 +1434,23 @@
     <div id="sleepCircadianEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Registra la hora de inicio y fin de al menos 2 noches en este periodo para ver tu patrón.</div>
     <div id="sleepCircadianStats" class="grid" style="margin-top:12px;"></div>
   </div>
+  <!-- v35.33: gráfica de barras simple de horas dormidas por noche, dentro
+       de la sección de Sueño — complementa a "Patrón de sueño" (que muestra
+       el horario de cada noche, dormir→despertar) mostrando de un vistazo
+       cuántas horas se durmió cada día. -->
+  <div class="section" id="sleepDurationBarSection">
+    <div class="toolbar">
+      <h2 style="flex:1">📊 Horas de sueño por día</h2>
+      <div class="chart-filter-mini" id="sleepDurationBarFilter" role="group" aria-label="Periodo de horas de sueño por día">
+        <button type="button" class="chart-filter-btn" data-sleepdur-period="week">Sem</button>
+        <button type="button" class="chart-filter-btn active" data-sleepdur-period="month">Mes</button>
+        <button type="button" class="chart-filter-btn" data-sleepdur-period="quarter">3 meses</button>
+        <button type="button" class="chart-filter-btn" data-sleepdur-period="all">Todo</button>
+      </div>
+    </div>
+    <div class="chart-wrap" id="sleepDurationBarChartWrap" style="height:240px;"><canvas id="sleepDurationBarChart"></canvas></div>
+    <div id="sleepDurationBarEmpty" style="display:none; color:var(--text-muted); font-size:13px;">Registra al menos una noche con hora de despertar en este periodo para ver esta gráfica.</div>
+  </div>
   <div class="section">
     <h2>Tu sueño</h2>
     <div id="sleepTotalsWrap"></div>
@@ -1470,6 +1487,53 @@
       <div class="row-actions">
         <button type="submit" class="btn-primary">Registrar despertar</button>
         <button type="button" class="btn-secondary" data-close-modal="sleepWakeModal">Cancelar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- v35.33: modal de edición completa de una noche (abierta o cerrada) —
+     antes "Editar" solo pedía fecha/hora de dormir por prompt() y, para una
+     noche ya cerrada, no había forma de corregir la hora de despertar, la
+     duración, la calidad ni las notas (el botón "Desperté" que permite
+     eso solo aparece mientras la noche sigue abierta). Este modal cubre
+     todos los campos que update_sleep ya soporta en el servidor. -->
+<div class="modal-overlay" id="sleepEditModal" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-header"><h2>Editar noche</h2><button type="button" class="modal-close" data-close-modal="sleepEditModal">✕</button></div>
+    <form class="add-form" id="sleepEditForm">
+      <div><label>Fecha</label><input type="date" id="sle_fecha" required></div>
+      <div><label>Hora de dormir</label><input type="time" id="sle_hora_inicio" required></div>
+      <div><label>Hora de despertar</label><input type="time" id="sle_hora_fin"></div>
+      <div class="full" style="font-size:11.5px; color:var(--text-muted); margin-top:-8px;">Deja la hora de despertar en blanco si la noche sigue en curso.</div>
+      <div>
+        <label>Duración (horas)</label>
+        <input type="number" id="sle_duracion_horas" step="0.1" min="0" placeholder="auto">
+      </div>
+      <div class="full" style="font-size:11.5px; color:var(--text-muted); margin-top:-8px;">Déjala en blanco para calcularla sola a partir de la hora de dormir y despertar, o escribe un número para corregirla directamente (ej. si el reloj registró algo distinto a lo que de verdad dormiste).</div>
+      <div class="full checkbox-field">
+        <label class="checkbox-label"><input type="checkbox" id="sle_calidad_toggle"> Registrar calidad de sueño (opcional)</label>
+      </div>
+      <div class="full symptom-intensity-wrap" id="sle_calidad_wrap" style="display:none;">
+        <input type="hidden" id="sle_calidad" value="5">
+        <div class="star-rating" id="sle_calidad_stars" role="group" aria-label="Calidad de sueño, de 1 a 10 estrellas">
+          <button type="button" class="star-btn" data-star="1" aria-label="1 estrella">★</button>
+          <button type="button" class="star-btn" data-star="2" aria-label="2 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="3" aria-label="3 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="4" aria-label="4 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="5" aria-label="5 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="6" aria-label="6 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="7" aria-label="7 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="8" aria-label="8 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="9" aria-label="9 estrellas">★</button>
+          <button type="button" class="star-btn" data-star="10" aria-label="10 estrellas">★</button>
+        </div>
+        <span class="symptom-intensity-value" id="sle_calidad_label">5/10 – Regular-buena</span>
+      </div>
+      <div class="full"><label>Notas (opcional)</label><input type="text" id="sle_notas" placeholder="Ej. desperté varias veces"></div>
+      <div class="row-actions">
+        <button type="submit" class="btn-primary">Guardar cambios</button>
+        <button type="button" class="btn-secondary" data-close-modal="sleepEditModal">Cancelar</button>
       </div>
     </form>
   </div>
@@ -1591,7 +1655,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.32</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.33</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2174,7 +2238,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.32");
+  showAboutOverlay_("35.33");
 });
 
 function openModal(id) {
@@ -5660,15 +5724,20 @@ loadWellness();
 // duración sola); calidad de sueño opcional 1-10 (mismo patrón que la
 // intensidad de Síntomas) se captura al despertar. ----
 let editingSleepId = null; // cuál noche se está cerrando en el modal "Desperté"
+let editingSleepEditId = null; // v35.33: cuál noche se está corrigiendo en el modal "Editar noche"
 let sleepLiveTimer_ = null;
 function findOpenSleep_() { return currentSleep.find(s => s.abierto); }
 // v32.2: calidad de sueño con estrellas (1-10) en vez de barra deslizable —
 // setSleepQualityStars_ actualiza el input oculto, el texto y qué estrellas
 // se ven llenas, todo en un solo lugar para no repetirlo en cada callsite.
-function setSleepQualityStars_(n) {
-  document.getElementById("slw_calidad").value = n;
-  document.getElementById("slw_calidad_label").textContent = `${n}/10 – ${SLEEP_QUALITY_LABELS_[n] || ""}`;
-  document.querySelectorAll("#slw_calidad_stars .star-btn").forEach(btn => {
+// v35.33: recibe un prefijo de ids ("slw" del modal "Desperté" por default,
+// "sle" del nuevo modal "Editar noche") para poder reutilizar la misma
+// función con los dos widgets de estrellas en vez de duplicar la lógica.
+function setSleepQualityStars_(n, prefix) {
+  prefix = prefix || "slw";
+  document.getElementById(`${prefix}_calidad`).value = n;
+  document.getElementById(`${prefix}_calidad_label`).textContent = `${n}/10 – ${SLEEP_QUALITY_LABELS_[n] || ""}`;
+  document.querySelectorAll(`#${prefix}_calidad_stars .star-btn`).forEach(btn => {
     btn.classList.toggle("is-filled", Number(btn.dataset.star) <= n);
   });
 }
@@ -5679,6 +5748,68 @@ document.getElementById("slw_calidad_stars").addEventListener("click", e => {
   const btn = e.target.closest(".star-btn");
   if (!btn) return;
   setSleepQualityStars_(Number(btn.dataset.star));
+});
+// v35.33: mismo patrón que slw_calidad_toggle/stars pero para el modal
+// "Editar noche".
+document.getElementById("sle_calidad_toggle").addEventListener("change", e => {
+  document.getElementById("sle_calidad_wrap").style.display = e.target.checked ? "" : "none";
+});
+document.getElementById("sle_calidad_stars").addEventListener("click", e => {
+  const btn = e.target.closest(".star-btn");
+  if (!btn) return;
+  setSleepQualityStars_(Number(btn.dataset.star), "sle");
+});
+// v35.33: abre el modal de edición completa con los datos actuales de la
+// noche precargados. La calidad se muestra abierta solo si ya tenía una
+// registrada (si no, el checkbox arranca apagado, igual que al registrar
+// una noche nueva). La duración se deja en blanco a propósito (con el
+// valor actual como placeholder) para que, si el paciente corrige la hora
+// de dormir/despertar y no toca este campo, la duración se recalcule sola
+// en vez de quedarse pegada al número viejo.
+function openSleepEditModal_(id) {
+  const s = currentSleep.find(x => x.id === id);
+  if (!s) return;
+  editingSleepEditId = id;
+  document.getElementById("sle_fecha").value = s.fecha;
+  document.getElementById("sle_hora_inicio").value = s.hora_inicio || "";
+  document.getElementById("sle_hora_fin").value = s.hora_fin || "";
+  const durHoras = document.getElementById("sle_duracion_horas");
+  durHoras.value = "";
+  durHoras.placeholder = s.duracion_min != null ? `auto (actual: ${Math.round((s.duracion_min / 60) * 10) / 10})` : "auto";
+  const hasQuality = s.calidad != null;
+  document.getElementById("sle_calidad_toggle").checked = hasQuality;
+  document.getElementById("sle_calidad_wrap").style.display = hasQuality ? "" : "none";
+  setSleepQualityStars_(hasQuality ? s.calidad : 5, "sle");
+  document.getElementById("sle_notas").value = s.notas || "";
+  openModal("sleepEditModal");
+}
+document.getElementById("sleepEditForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const fecha = document.getElementById("sle_fecha").value;
+  const hora_inicio = document.getElementById("sle_hora_inicio").value;
+  if (!fecha || !hora_inicio) return;
+  const payload = {
+    fecha,
+    hora_inicio,
+    hora_fin: document.getElementById("sle_hora_fin").value, // "" reabre la noche (update_sleep)
+    calidad: document.getElementById("sle_calidad_toggle").checked ? Number(document.getElementById("sle_calidad").value) : null,
+    notas: document.getElementById("sle_notas").value.trim(),
+  };
+  const durHorasVal = document.getElementById("sle_duracion_horas").value;
+  if (durHorasVal !== "") payload.duracion_min = Math.round(Number(durHorasVal) * 60);
+  const btn = e.target.querySelector('button[type="submit"]');
+  if (btn) btn.disabled = true;
+  try {
+    await apiPut(`/api/sleep/${editingSleepEditId}`, payload);
+    closeModal("sleepEditModal");
+    editingSleepEditId = null;
+    await loadSleep();
+    renderLabHistoryCharts(["sleepDuration", "sleepQuality"]);
+  } catch (err) {
+    alert("No se pudo editar: " + err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 });
 
 // ---- Sueño actual: o bien "registrar hora de dormir" (sin noche abierta),
@@ -5796,6 +5927,7 @@ async function loadSleep() {
   sleepPaginator_.resetPage();
   sleepPaginator_.render();
   renderSleepCircadianDashboard_();
+  renderSleepDurationBarChart_();
 }
 
 // ---- v35.17: tarjetas de "Tu sueño" con el mismo estilo dashboard que las
@@ -6028,29 +6160,84 @@ document.getElementById("sleepCircadianWeekendToggle").addEventListener("change"
   sleepCircadianMarkWeekends_ = e.target.checked;
   renderSleepCircadianDashboard_();
 });
-// editar (prompt de fecha/hora de dormir) y eliminar — mismo patrón mínimo
-// que el editar de Ayuno (.ayuno-edit-btn): solo corrige los datos de
-// apertura de la noche; la hora de despertar/calidad se corrige reabriendo
-// desde "Desperté" o con .sleep-wake-btn si la noche sigue abierta.
+
+// ---- v35.33: gráfica de barras de horas de sueño por día ----
+// A diferencia de "Patrón de sueño" (que grafica el horario dormir→
+// despertar de cada noche), esta gráfica muestra directamente cuántas
+// horas se durmió cada día — lo que el paciente pidió explícitamente:
+// una gráfica de barras para ver las horas de sueño por día, dentro de la
+// sección de Sueño (no solo como línea de tendencia en Estadísticas).
+// Reutiliza circadianFilteredSleep_ para el filtro de periodo (su lógica
+// es genérica, filtra currentSleep por fecha, no tiene nada de específico
+// de la gráfica circadiana pese al nombre) y duracion_min como fuente de
+// la duración — el mismo dato que usan las tarjetas de arriba y que ahora
+// se puede corregir a mano desde el modal "Editar noche".
+let sleepDurationBarChartInstance_ = null;
+let sleepDurationBarPeriod_ = "month";
+function renderSleepDurationBarChart_() {
+  const canvas = document.getElementById("sleepDurationBarChart");
+  if (!canvas) return; // solo existe una vez que se montó la sección Sueño
+  const entries = circadianFilteredSleep_(sleepDurationBarPeriod_)
+    .filter(s => s.duracion_min != null)
+    .slice()
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const emptyEl = document.getElementById("sleepDurationBarEmpty");
+  const wrapEl = document.getElementById("sleepDurationBarChartWrap");
+  if (!entries.length) {
+    wrapEl.style.display = "none";
+    emptyEl.style.display = "";
+    if (sleepDurationBarChartInstance_) { sleepDurationBarChartInstance_.destroy(); sleepDurationBarChartInstance_ = null; }
+    return;
+  }
+  wrapEl.style.display = "";
+  emptyEl.style.display = "none";
+
+  const hours = entries.map(s => Math.round((s.duracion_min / 60) * 100) / 100);
+  if (sleepDurationBarChartInstance_) sleepDurationBarChartInstance_.destroy();
+  sleepDurationBarChartInstance_ = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: entries.map(s => fmtDate(s.fecha)),
+      datasets: [{
+        label: "Horas de sueño",
+        data: hours,
+        backgroundColor: entries.map(s => isWeekendFriToSun_(s.fecha) ? WEEKEND_POINT_COLOR_ : "#6E8FB0"),
+        borderRadius: 4,
+        barThickness: entries.length > 25 ? 6 : 18,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 16 } },
+        y: { beginAtZero: true, title: { display: true, text: "Horas" } },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => sleepDurationLabel_(entries[ctx.dataIndex].duracion_min) } },
+      },
+    },
+  });
+}
+document.getElementById("sleepDurationBarFilter").addEventListener("click", e => {
+  const btn = e.target.closest(".chart-filter-btn");
+  if (!btn) return;
+  document.querySelectorAll("#sleepDurationBarFilter .chart-filter-btn").forEach(b => b.classList.toggle("active", b === btn));
+  sleepDurationBarPeriod_ = btn.dataset.sleepdurPeriod;
+  renderSleepDurationBarChart_();
+});
+// v35.33: "Editar" abre el modal #sleepEditModal, que cubre fecha, hora de
+// dormir, hora de despertar, duración (con override manual) calidad y
+// notas — antes solo pedía fecha/hora de dormir por prompt() y, para una
+// noche ya cerrada, no había forma de corregir nada más (ver comentario en
+// openSleepEditModal_ más arriba).
 document.getElementById("sleepListWrap").addEventListener("click", async e => {
   const wakeBtn = e.target.closest(".sleep-wake-btn");
   if (wakeBtn) { openSleepWakeModal_(wakeBtn.dataset.sleepId); return; }
   const editBtn = e.target.closest(".sleep-edit-btn");
-  if (editBtn) {
-    const s = currentSleep.find(x => x.id === editBtn.dataset.sleepId);
-    if (!s) return;
-    const nuevaFecha = prompt("Fecha de la noche (YYYY-MM-DD):", s.fecha);
-    if (nuevaFecha === null) return;
-    const nuevaHoraInicio = prompt("Hora de dormir (HH:MM):", s.hora_inicio);
-    if (nuevaHoraInicio === null) return;
-    try {
-      await apiPut(`/api/sleep/${s.id}`, { fecha: nuevaFecha, hora_inicio: nuevaHoraInicio });
-      await loadSleep();
-    } catch (err) {
-      alert("No se pudo editar: " + err.message);
-    }
-    return;
-  }
+  if (editBtn) { openSleepEditModal_(editBtn.dataset.sleepId); return; }
   const delBtn = e.target.closest(".sleep-delete-btn");
   if (delBtn) {
     if (!confirm("¿Eliminar este registro de sueño?")) return;
