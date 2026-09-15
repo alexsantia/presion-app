@@ -1315,6 +1315,9 @@ function ensureHabitStyles_() {
 // dibuja como un overlay propio y autosuficiente, con su CSS inyectado una
 // sola vez, así funciona igual sin importar desde dónde se llame.
 const APP_VERSION_HISTORY = [
+  { version: "35.34", changes: [
+    "En \"Patrón de sueño\" (pestaña Sueño), las noches ahora se muestran en orden descendente — la más reciente arriba — y cada barra indica también el día de la semana (ej. \"Martes 08/09\"), no solo la fecha.",
+  ] },
   { version: "35.33", changes: [
     "Se corrigió que un registro de sueño no se pudiera editar para corregir datos como la hora de despertar, la duración o la calidad: antes \"Editar\" solo dejaba corregir la fecha y la hora de dormir, y para una noche ya cerrada no había forma de tocar nada más. Ahora \"Editar\" abre una ventana donde se puede corregir cualquier dato de la noche, incluyendo la duración directamente si el número de horas registrado no fue el correcto.",
     "Se agregó una gráfica de barras de \"Horas de sueño por día\" dentro de la sección de Sueño, con filtro de periodo (semana, mes, 3 meses, todo), para ver de un vistazo cuántas horas se durmió cada día.",

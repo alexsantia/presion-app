@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="RBP App">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="/shared/common.js?v=35.33"></script>
+<script src="/shared/common.js?v=35.34"></script>
 <style>
   :root {
     color-scheme: light;
@@ -1655,7 +1655,7 @@
   <div id="customMetricsContainer"></div>
 </div>
 
-<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.33</footer>
+<footer>Reigning Blood Pressure App · creado por Alex Santiago · v35.34</footer>
 
 <!-- ---- Métricas personalizadas: diseñador de arrastrar y soltar (v35.0) ---- -->
 <div class="modal-overlay" id="metricDesignerModal" style="display:none;">
@@ -2238,7 +2238,7 @@ document.addEventListener("click", () => { hamburgerMenu.style.display = "none";
 document.getElementById("aboutMenuItem").addEventListener("click", e => {
   e.stopPropagation();
   hamburgerMenu.style.display = "none";
-  showAboutOverlay_("35.33");
+  showAboutOverlay_("35.34");
 });
 
 function openModal(id) {
@@ -6056,10 +6056,16 @@ let sleepCircadianMarkWeekends_ = true;
 function renderSleepCircadianDashboard_() {
   const canvas = document.getElementById("sleepCircadianChart");
   if (!canvas) return; // v32/v35.16: solo existe una vez que se montó la sección Sueño
+  // v35.34: orden descendente (la noche más reciente arriba) — antes se
+  // ordenaba ascendente (la más vieja arriba), al revés de como se lee el
+  // resto del historial de la app (más reciente primero). Chart.js dibuja
+  // el índice 0 del arreglo arriba en una gráfica de barras horizontales
+  // (indexAxis:"y"), así que ordenar el arreglo descendente por fecha basta
+  // para que la barra de arriba sea la noche más reciente.
   const entries = circadianFilteredSleep_(sleepCircadianPeriod_)
     .filter(s => s.hora_inicio && s.hora_fin)
     .slice()
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
   const pairs = entries.map(s => {
     const bed = circadianNormalizedHour_(s.hora_inicio);
     let wake = circadianNormalizedHour_(s.hora_fin);
@@ -6100,7 +6106,15 @@ function renderSleepCircadianDashboard_() {
       // v35.19: la etiqueta de cada barra ahora incluye la duración de esa
       // noche (ej. "21/08 · 7 h 30 min"), no solo la fecha — así se ve sin
       // pasar el mouse, no solo en el tooltip.
-      labels: pairs.map(p => `${fmtDate(p.fecha)} · ${sleepDurationLabel_(p.durMin)}`),
+      // v35.34: además del día del mes, ahora también dice el día de la
+      // semana (ej. "Martes 21/08 · 7 h 30 min") — reutiliza
+      // dateStrToWeekday_/WEEKDAY_BUCKETS_ (mismo cálculo que usa
+      // Estadísticas para "comparar por día de la semana"), calculado sobre
+      // s.fecha: la fecha de la noche es SIEMPRE la fecha en que se registró
+      // la hora de dormir (ej. si te acostaste el martes, esa noche es "del
+      // martes" aunque hayas despertado miércoles) — es la fecha que ya
+      // guarda start_sleep, nunca la de hora_fin.
+      labels: pairs.map(p => `${WEEKDAY_BUCKETS_[dateStrToWeekday_(p.fecha)].label} ${fmtDate(p.fecha)} · ${sleepDurationLabel_(p.durMin)}`),
       datasets: [{
         label: "Sueño",
         data: pairs.map(p => [p.bed, p.wake]),
